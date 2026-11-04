@@ -104,7 +104,7 @@ pnpm specmock select petstore --add inventory.list      # 선택 4개
 pnpm specmock generate petstore
 ```
 
-상태 파일은 현재 디렉터리의 `.specmock/<system>/`에, 생성 결과는 `./mock/<system>/`에 놓입니다. `--workspace <dir>`, `generate --out <dir>`로 바꿀 수 있습니다.
+상태 파일 `.specmock/<system>/`와 생성 결과 `mock/<system>/`는 **명령을 실행한 디렉터리** 기준입니다(`pnpm specmock`은 repo 루트에서 실행됩니다). `--workspace <dir>`, `generate --out <dir>`로 바꿀 수 있고, `verify`는 마지막 `generate --out` 경로를 기억하므로 `--dir`을 다시 줄 필요가 없습니다.
 
 ## 생성 결과물
 
@@ -113,7 +113,7 @@ mock/<system>/
 ├── package.json                           # npm start → tsx src/server.ts (PORT, 기본 4010)
 ├── src/server.ts, src/routes/<group>.ts   # Hono 서버. 요청 검증(ajv) → fixture 응답
 ├── src/notMocked.ts                       # 선택하지 않은 경로의 501 응답
-├── fixtures/<featureId>/<status>.json     # 응답 데이터. 요청 때마다 읽으므로 재시작 없이 편집 가능
+├── fixtures/<featureId>/<status>.json     # 기본 응답(가장 낮은 2xx) 하나. 요청 때마다 읽으므로 재시작 없이 편집 가능
 ├── contracts/<featureId>.json             # verify가 실행하는 케이스
 ├── specmock.lock.json                     # 생성 시점 정보, fixture 해시(보존 판단 기준)
 └── README.md
@@ -143,6 +143,12 @@ mock/<system>/
 - fixture는 스펙의 example이 없으면 스키마에서 시드 고정 난수로 만듭니다. 구조는 맞지만 값은 임의입니다(coverage.md의 `schema-generated` 수치로 확인).
 - 순환 `$ref`는 되돌아가는 간선을 `x-specmock-circular` 표식으로 끊고, fixture에서는 `null`로 채웁니다.
 - 상태를 가진 동작(POST 후 GET에 반영 등)은 없습니다. 모든 응답은 고정 fixture입니다.
+- 기능마다 가장 낮은 2xx 응답 하나만 서빙하고, 4xx fixture는 생성되지 않습니다(coverage.md 집계에는 포함). 시나리오별 응답 제어는 3단계에서 다룹니다.
+- `source.json`의 비밀값 마스킹은 `Bearer …`, `sk_live_…`, `api_key: …` 류 패턴 기반이라 완전하지 않습니다. 스펙에 실제 토큰을 넣지 마세요.
+- `ingest --refresh`(원문 캐시 재사용)는 없습니다. `ingest`는 항상 파일·URL을 다시 읽습니다.
+- 스펙이 바뀌어 카탈로그가 달라지면 `select`가 경고만 합니다. "새 기능 N개 / 사라진 기능 M개" diff는 아직 없습니다.
+- `generate`는 `src/`를 통째로 다시 씁니다. `mock/<system>/src/`에 직접 추가한 route 파일은 삭제됩니다. 바꿀 것은 fixture에 두세요.
+- `select --add`는 기존 선택이 없으면 새 선택으로 동작합니다(오류가 아님).
 
 ## 문서
 
@@ -150,6 +156,16 @@ mock/<system>/
 - [설계 문서](docs/superpowers/specs/2026-11-04-specmock-design.md)
 - [구현 계획](docs/superpowers/plans/)
 - [Petstore 예제](examples/petstore/README.md)
+
+## 기여 방법
+
+```bash
+pnpm install
+pnpm test          # core 빌드 → vitest (생성된 mock을 실제로 띄우는 테스트 포함)
+pnpm typecheck     # src와 test 모두
+```
+
+변경 후 위 두 명령이 통과하면 PR을 엽니다. 설계 의도는 [설계 문서](docs/superpowers/specs/2026-11-04-specmock-design.md)에, 단계별 작업 단위는 [구현 계획](docs/superpowers/plans/2026-11-04-phase1a-core-openapi-cli.md)에 있습니다. 설계와 다르게 구현한 지점은 설계 문서 12장 "구현 중 변경"에 이유와 함께 적습니다.
 
 ## 로드맵
 

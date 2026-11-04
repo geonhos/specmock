@@ -3502,5 +3502,6 @@ git commit -m "docs: README와 Petstore 예제"
 | 11 | 스폰 오류 즉시 실패, 헬스체크 2초 타임아웃, `onLog`, coverage 표 `\|` 이스케이프 | 없는 명령이면 프로세스가 죽거나 영원히 대기 |
 | 12 | `list --group` 전역 번호, `select` `-id` 인자 허용, `exitCode = 2`, 공용 포맷터, 도움말 정리, 명령별 try/catch 제거 | 사용자 함정 두 개와 중복 제거 |
 | 13 | README에 실제 동작 기준 표현식 표·제한 사항·서버 동작 표 추가 | 계획 시점과 달라진 동작 반영 |
+| 최종 리뷰 | 서빙되는 2xx fixture만 파일로 생성, 손상된 lock은 오류, 비밀값 마스킹(`ingest/mask.ts`), `generate.json`으로 출력 경로 기억, 시스템 이름 유니코드 허용·공백 거부, 테스트 파일 타입체크, 예제 스펙 드리프트 가드, README 제한 사항 보강 | 4xx fixture를 고쳐도 반영되지 않는 함정, 설계 §6 미구현, `generate --out` 뒤 `verify` 실패 |
 
-최종: 17개 테스트 파일, 88개 테스트 통과. `pnpm specmock run petstore examples/petstore/petstore.yaml --select all`이 verify 6/6까지 통과.
+최종: 18개 테스트 파일, 95개 테스트 통과. `pnpm specmock run petstore examples/petstore/petstore.yaml --select all`이 verify 6/6까지 통과.
