@@ -27,3 +27,6 @@ Thumbs.db
 # temp
 tmp/
 .cache/
+
+# git worktrees
+.claude/worktrees/
