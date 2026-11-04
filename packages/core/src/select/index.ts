@@ -20,15 +20,21 @@ export interface SelectResult {
 }
 
 export async function select(ws: Workspace, system: string, exprs: string[], opts: SelectOptions = {}): Promise<SelectResult> {
+  if (opts.add && opts.remove) throw new Error("--add와 --remove는 함께 쓸 수 없습니다.");
   const catalog = await ws.read(system, "catalog.json", CatalogSchema);
   const catalogHash = hashJson(catalog.features);
 
+  const prev = (await ws.exists(system, "selection.json")) ? await ws.read(system, "selection.json", SelectionSchema) : null;
+  const catalogChanged = prev !== null && prev.catalogHash !== catalogHash;
   let selected = [...exprs];
-  let catalogChanged = false;
-  if ((opts.add || opts.remove) && (await ws.exists(system, "selection.json"))) {
-    const prev = await ws.read(system, "selection.json", SelectionSchema);
-    catalogChanged = prev.catalogHash !== catalogHash;
-    selected = opts.add ? [...prev.selected, ...exprs] : [...prev.selected, ...exprs.map((e) => `-${e}`)];
+  if (opts.remove) {
+    if (!prev) throw new Error(`제거할 기존 선택이 없습니다. 먼저 specmock select ${system} <표현식>을 실행하세요.`);
+    const negated = exprs
+      .flatMap((e) => e.split(",").map((s) => s.trim()).filter(Boolean))
+      .map((s) => (s.startsWith("-") ? s : `-${s}`));
+    selected = [...prev.selected, ...negated];
+  } else if (opts.add && prev) {
+    selected = [...prev.selected, ...exprs];
   }
 
   const resolved = await resolveSelection(catalog, selected);

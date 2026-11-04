@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { analyze } from "../src/analyze/index.js";
 import { ingest } from "../src/ingest/index.js";
 import { select } from "../src/select/index.js";
-import { MockSpecSchema, SelectionSchema } from "../src/types.js";
+import { CatalogSchema, MockSpecSchema, SelectionSchema } from "../src/types.js";
 import { Workspace } from "../src/workspace.js";
 import { PETSTORE } from "./helpers.js";
 
@@ -45,6 +45,27 @@ describe("select", () => {
 
     const removed = await select(ws, "petstore", ["getPet"], { remove: true });
     expect(removed.resolved).toEqual(["createPet"]);
+  });
+
+  it("--remove splits comma-joined expressions and negates each", async () => {
+    await select(ws, "petstore", ["all"]);
+    const r = await select(ws, "petstore", ["getPet,createPet"], { remove: true });
+    expect(r.resolved).toEqual(["listPets", "deletePet", "inventory.list"]);
+    expect(r.selected.slice(-2)).toEqual(["-getPet", "-createPet"]);
+  });
+
+  it("--remove without a previous selection and add+remove together are rejected", async () => {
+    await expect(select(ws, "petstore", ["getPet"], { remove: true })).rejects.toThrow(/기존 선택이 없습니다/);
+    await expect(select(ws, "petstore", ["getPet"], { add: true, remove: true })).rejects.toThrow(/함께 쓸 수 없습니다/);
+  });
+
+  it("flags catalogChanged on a plain re-select after the catalog changed", async () => {
+    await select(ws, "petstore", ["getPet"]);
+    const catalog = await ws.read("petstore", "catalog.json", CatalogSchema);
+    catalog.features[0].title = "changed";
+    await ws.write("petstore", "catalog.json", CatalogSchema, catalog);
+    const r = await select(ws, "petstore", ["getPet"]);
+    expect(r.catalogChanged).toBe(true);
   });
 
   it("records assumptions for features without response schema", async () => {
