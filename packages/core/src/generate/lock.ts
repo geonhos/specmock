@@ -15,11 +15,20 @@ export const LockSchema = z.object({
 });
 export type Lock = z.infer<typeof LockSchema>;
 
+/** lock 파일을 읽는다. 없으면 null, 있는데 손상됐으면 던진다(조용히 무시하면 보존 판단이 틀어진다). */
 export async function readLock(dir: string): Promise<Lock | null> {
+  const file = path.join(dir, LOCK_FILE);
+  let text: string;
   try {
-    return LockSchema.parse(JSON.parse(await readFile(path.join(dir, LOCK_FILE), "utf8")));
+    text = await readFile(file, "utf8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw e;
+  }
+  try {
+    return LockSchema.parse(JSON.parse(text));
   } catch {
-    return null;
+    throw new Error(`${file}: specmock.lock.json이 손상되었습니다. 파일을 삭제하고 specmock generate <system> --force 로 다시 생성하세요.`);
   }
 }
 

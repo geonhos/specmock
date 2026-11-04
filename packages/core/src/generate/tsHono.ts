@@ -134,9 +134,12 @@ export async function renderTsHono(spec: MockSpec, outDir: string, opts: { force
 
   // lock의 fixtureHashes에는 "생성기가 썼을 내용"의 해시를 기록한다.
   // 사용자가 수정한 파일을 보존할 때도 생성 텍스트의 해시를 남겨야 다음 재생성에서 다시 수정으로 인식한다.
+  // 라우트는 가장 낮은 2xx 하나만 서빙하므로 그 fixture만 파일로 쓴다. 나머지(4xx 등)는 mockspec에만 남아 coverage 집계에 쓰인다.
   const fixtureHashes: Record<string, string> = {};
   for (const f of spec.features) {
+    const served = lowest2xxStatus(f);
     for (const fx of f.fixtures) {
+      if (fx.status !== served) continue;
       const rel = `fixtures/${f.id}/${fx.status}.json`;
       const text = JSON.stringify(fx.body, null, 2) + "\n";
       const file = path.join(outDir, rel);

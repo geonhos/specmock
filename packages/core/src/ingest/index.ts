@@ -3,6 +3,7 @@ import path from "node:path";
 import { hashText } from "../util/hash.js";
 import { SourceSchema, type SourceInput } from "../types.js";
 import type { Workspace } from "../workspace.js";
+import { maskSecrets } from "./mask.js";
 import { dereferenceOpenApi, isOpenApiDocument, parseSpecText, stringifyCycleSafe } from "./openapi.js";
 
 export type InputKind = SourceInput["kind"];
@@ -43,7 +44,8 @@ export async function ingestOne(origin: string): Promise<SourceInput> {
   }
   const parsed = parseSpecText(raw);
   const doc = await dereferenceOpenApi(origin, parsed);
-  const content = stringifyCycleSafe(doc);
+  // 토큰처럼 보이는 값은 source.json에 남기지 않는다(설계 §6). 해시도 마스킹된 내용 기준이다.
+  const content = maskSecrets(stringifyCycleSafe(doc));
   return { kind, origin, fetchedAt: new Date().toISOString(), contentHash: hashText(content), content };
 }
 

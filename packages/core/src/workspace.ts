@@ -3,8 +3,8 @@ import path from "node:path";
 import { z, type ZodType } from "zod";
 
 function assertSystemName(system: string): void {
-  if (system === "" || system.includes("/") || system.includes("\\") || system.includes("..")) {
-    throw new Error(`시스템 이름이 올바르지 않습니다: '${system}' (영문·숫자·-·_ 만 사용)`);
+  if (!/^[\p{L}\p{N}_-]+$/u.test(system)) {
+    throw new Error(`시스템 이름이 올바르지 않습니다: '${system}' (문자·숫자·-·_ 만 사용)`);
   }
 }
 

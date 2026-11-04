@@ -18,7 +18,7 @@ curl -s localhost:4010/__specmock/health
 <% }) %>
 ## 응답 데이터 바꾸기
 
-`fixtures/<featureId>/<status>.json`을 수정하면 재시작 없이 다음 요청부터 반영됩니다. 수정한 fixture는 `specmock generate`를 다시 실행해도 보존됩니다(`--force`로 덮어쓰기).
+`fixtures/<featureId>/<status>.json`은 기본 응답(가장 낮은 2xx) 하나입니다. 수정하면 재시작 없이 다음 요청부터 반영됩니다. 수정한 fixture는 `specmock generate`를 다시 실행해도 보존됩니다(`--force`로 덮어쓰기).
 
 ## 기능 추가하기
 

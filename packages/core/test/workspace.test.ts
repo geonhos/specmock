@@ -34,6 +34,11 @@ describe("Workspace", () => {
   it("rejects unsafe system names", () => {
     const ws = new Workspace(dir);
     expect(() => ws.dir("../evil")).toThrow(/시스템 이름/);
+    expect(() => ws.dir("my pets")).toThrow(/시스템 이름/);
+    expect(() => ws.dir("")).toThrow(/시스템 이름/);
+    expect(() => ws.dir("a/b")).toThrow(/시스템 이름/);
+    expect(() => ws.dir("my-pets_2")).not.toThrow();
+    expect(() => ws.dir("주문시스템")).not.toThrow();
   });
 });
 

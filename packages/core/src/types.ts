@@ -116,3 +116,10 @@ export const MockSpecSchema = z.object({
   assumptions: z.array(z.string()),
 });
 export type MockSpec = z.infer<typeof MockSpecSchema>;
+
+/** `.specmock/<system>/generate.json` — 마지막 generate의 출력 위치. verify가 `--dir` 없이 찾을 때 쓴다. */
+export const GenerateInfoSchema = z.object({
+  outDir: z.string().min(1),
+  generatedAt: z.string(),
+});
+export type GenerateInfo = z.infer<typeof GenerateInfoSchema>;

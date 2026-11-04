@@ -9,6 +9,7 @@ import { generate } from "../src/generate/index.js";
 import { readLock } from "../src/generate/lock.js";
 import { ingest } from "../src/ingest/index.js";
 import { select } from "../src/select/index.js";
+import { GenerateInfoSchema } from "../src/types.js";
 import { Workspace } from "../src/workspace.js";
 import { PETSTORE, ROOT_NODE_MODULES } from "./helpers.js";
 
@@ -36,9 +37,12 @@ describe("generate(ts-hono)", () => {
     expect(files).toEqual(expect.arrayContaining([
       "package.json", "tsconfig.json", "README.md", "specmock.lock.json",
       "src/server.ts", "src/notMocked.ts", "src/fixtures.ts", "src/validate.ts", "src/routes/pets.ts",
-      "fixtures/getPet/200.json", "fixtures/getPet/404.json", "fixtures/createPet/201.json", "fixtures/createPet/400.json", "fixtures/deletePet/204.json",
+      "fixtures/getPet/200.json", "fixtures/createPet/201.json", "fixtures/deletePet/204.json",
       "contracts/getPet.json", "contracts/createPet.json", "contracts/deletePet.json",
     ]));
+    // 라우트가 서빙하는 가장 낮은 2xx fixture만 파일로 쓴다. 4xx는 mockspec에만 남는다.
+    expect(await readdir(path.join(out, "fixtures/getPet"))).toEqual(["200.json"]);
+    expect(await readdir(path.join(out, "fixtures/createPet"))).toEqual(["201.json"]);
 
     const route = await readFile(path.join(out, "src/routes/pets.ts"), "utf8");
     expect(route).toContain('app.on("GET", "/pets/:petId"');
@@ -125,6 +129,20 @@ describe("generate(ts-hono)", () => {
     expect(report.orphaned).toEqual(["fixtures/listPets/200.json"]);
     expect(JSON.parse(await readFile(fixture, "utf8"))).toEqual([{ id: 7, name: "Kept" }]);
     expect(await exists(path.join(out, "contracts/listPets.json"))).toBe(false);
+  });
+
+  it("records the output directory in generate.json", async () => {
+    const elsewhere = path.join(dir, "elsewhere");
+    await generate(ws, "petstore", { outDir: elsewhere });
+    const info = await ws.read("petstore", "generate.json", GenerateInfoSchema);
+    expect(info.outDir).toBe(elsewhere);
+    expect(() => new Date(info.generatedAt).toISOString()).not.toThrow();
+  });
+
+  it("fails loudly on a corrupt specmock.lock.json instead of overwriting edits", async () => {
+    await generate(ws, "petstore", { outDir: out });
+    await writeFile(path.join(out, "specmock.lock.json"), "{ not json", "utf8");
+    await expect(generate(ws, "petstore", { outDir: out })).rejects.toThrow(/손상/);
   });
 
   it("generated project typechecks under NodeNext", { timeout: 60_000 }, async () => {
