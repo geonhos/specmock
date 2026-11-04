@@ -1,7 +1,7 @@
 # specmock 설계 문서
 
 작성일: 2026-11-04
-상태: 승인됨 (1단계 구현 계획 작성 대기)
+상태: 승인됨. 1A 구현 완료 (2026-11-05). 구현 중 확인된 사항은 11장 "구현 중 변경" 참고.
 대상 범위: 전체 아키텍처 + 1단계 상세. 2·3단계는 인터페이스 경계만 정의.
 
 ---
@@ -141,7 +141,7 @@ interface LlmAdapter {
 
 ## 3. 데이터 모델
 
-세 가지 JSON 파일이 핵심이다. 모두 JSON Schema로 정의하고 core가 읽을 때마다 검증한다. 스키마는 `packages/core/schemas/`에 둔다.
+네 가지 JSON 파일이 핵심이다. 모두 **zod** 스키마(`packages/core/src/types.ts`)로 정의하고 core가 읽을 때마다 검증한다. 타입과 검증이 한 곳에서 나오고, 필요하면 `z.toJSONSchema()`로 JSON Schema를 내보낼 수 있다.
 
 ### 3.1 `source.json` — ingest 결과
 
@@ -242,9 +242,10 @@ confidence 보정 규칙:
       ]
     }
   ],
+  "notMocked": [ { "id": "users.delete", "method": "DELETE", "path": "/users/{id}" } ],   // 선택되지 않은 기능. 501 안내용
   "contracts": [
-    { "featureId": "users.get", "name": "정상 조회",
-      "request": { "method": "GET", "path": "/users/123", "headers": {}, "body": null },
+    { "featureId": "users.get", "name": "정상 요청",
+      "request": { "method": "GET", "path": "/users/123", "headers": {}, "query": {}, "body": null },
       "expect": { "status": 200, "schema": {} } }
   ],
   "assumptions": [ "users.get: 응답 스키마 없음. 빈 객체 반환" ]
@@ -267,8 +268,8 @@ stripe — 47개 기능 (openapi 40 · 문서추출 7)
   #  id                  method  path                       출처   신뢰  샘플
 ── users (5) ─────────────────────────────────────────────────────────────
   1  users.list          GET     /users                     spec   1.0   ●
-  2  users.get           GET     /users/{id}                spec   1.0   ●
-  3  users.create        POST    /users                     spec   1.0   ○
+  2  users.create        POST    /users                     spec   1.0   ○
+  3  users.get           GET     /users/{id}                spec   1.0   ●
   4  users.update        PATCH   /users/{id}                spec   1.0   ○
   5  users.delete        DELETE  /users/{id}                spec   1.0   —
 ── webhooks (2) ──────────────────────────────────────────────────────────
@@ -277,6 +278,8 @@ stripe — 47개 기능 (openapi 40 · 문서추출 7)
 ...
 범례  출처: spec=OpenAPI, doc=문서에서 추출, inf=추론 · 샘플: ●있음 ○스키마만 —없음
 ```
+
+`list --group <그룹>`으로 필터해도 번호는 전체 카탈로그 기준으로 유지된다. 정렬은 로케일과 무관한 코드포인트 비교라 어떤 기기에서도 같다.
 
 스킬 모드에서는 Claude가 같은 내용을 Markdown 표로 보여준다. 기능이 30개를 넘으면 그룹 요약을 먼저 보여주고 "어떤 그룹을 펼칠까요?"로 단계적으로 보여준다.
 
@@ -287,14 +290,17 @@ stripe — 47개 기능 (openapi 40 · 문서추출 7)
 | `all` | 전부 |
 | `1,3,5-8` | 표시 번호 |
 | `users.get,orders.list` | id 직접 지정 |
-| `users.*` | 그룹 전체 |
+| `users.*` | id 글롭 (`.`은 문자 그대로, `*`만 와일드카드). 일치하는 기능이 없으면 오류 |
+| `group:users` | 그룹 전체 (그룹은 태그 또는 첫 경로 세그먼트라 id 접두와 다를 수 있다) |
 | `method:GET` | 조건 필터 |
 | `confidence>=0.8` | 신뢰도 필터 |
-| `has:example` | 샘플 있는 것만 |
-| `-users.delete` | 제외 (앞에 `-`) |
-| `@selection.json` | 파일에서 읽기 |
+| `has:example`, `has:schema` | 샘플/스키마 있는 것만 |
+| `-users.delete` | 제외 (앞에 `-`). 별도 인자로 줘도 된다 |
+| `@selection.json` | 파일에서 읽기 (항목은 쉼표로 다시 분리된다) |
 
 여러 표현식은 쉼표로 결합하며 왼쪽부터 순서대로 적용한다. 예: `users.*,orders.*,-users.delete,confidence>=0.5`
+
+필터(`group:`, `method:`, `has:`, `confidence`)는 **현재 선택이 비어 있으면 카탈로그 전체에서 포함**하고, 비어 있지 않으면 **현재 선택을 좁힌다**. 그래서 필터 두 개를 연달아 쓰면 교집합이다. 역순 범위(`5-3`)는 오류다.
 
 ### 4.3 대화형 선택 (CLI `--interactive`)
 
@@ -367,7 +373,9 @@ ego-browser는 셸 CLI이므로 CLI 모드에서는 core가 자식 프로세스�
 - 입력: 4.2의 선택 표현식. 결과를 `selection.json`에 저장하고 `mockspec.json`을 만든다.
 - fixture 생성: `spec-example` → `doc-sample` → `schema-generated`(`json-schema-faker`, 고정 seed로 재현 가능) → `empty` + assumptions 기록.
 - contract 생성: feature당 정상 경로 1개(필수 파라미터를 스키마에 맞게 채움, 기대 status는 가장 낮은 2xx, 기대 schema는 해당 응답 스키마). 스펙에 4xx 응답이 명시돼 있으면 "필수 파라미터 누락" 케이스 1개 추가.
-- 응답 스키마가 없고 샘플만 있으면 샘플에서 스키마를 유추(`to-json-schema`)하여 contract에 사용하고 assumptions에 기록한다.
+- 응답 스키마가 없고 샘플만 있으면 샘플에서 스키마를 유추하여 contract에 사용하고 assumptions에 기록한다. (1A 미구현. 스키마 없는 샘플은 1B의 문서 추출에서만 나오므로 1B에서 구현한다.)
+- "필수 값 누락" contract는 스펙이 422를 나열해도 **400을 기대**한다. 생성된 mock의 검증 실패 응답이 400으로 고정되어 있기 때문이다(5.4).
+- 2xx 응답이 하나도 없는 기능에는 200 빈 객체 fixture를 추가하고 assumptions에 기록한다.
 
 ### 5.4 generate
 
@@ -375,7 +383,7 @@ TypeScript + Hono 템플릿. 생성 결과물:
 
 ```
 mock/<system>/
-├── package.json             # hono, @hono/node-server, ajv. scripts: start, test
+├── package.json             # hono, @hono/node-server, ajv, tsx. scripts: start
 ├── tsconfig.json
 ├── src/
 │   ├── server.ts            # 라우트 등록, 포트(env PORT, 기본 4010), 501/404 핸들러
@@ -391,7 +399,8 @@ mock/<system>/
 - 핸들러는 fixture 파일을 런타임에 읽는다. 데이터 변경에 코드 수정이 필요 없다.
 - 요청 검증 실패는 `400`과 ajv 오류 목록을 반환한다.
 - 재생성 시 사용자가 수정한 fixture(해시가 lock과 다름)는 보존한다. `--force`로 덮어쓴다.
-- 템플릿은 `templates/ts-hono/`에 두고 `eta` 템플릿 엔진으로 렌더링한다. 생성 코드는 `prettier`로 정리한다.
+- 템플릿은 `packages/core/templates/ts-hono/`에 두고 `eta` 템플릿 엔진으로 렌더링한다. 생성 코드는 그대로 `tsc --noEmit`을 통과해야 한다(테스트로 고정). prettier 후처리는 두지 않았다.
+- 재생성 시 선택 해제된 기능의 contract·route·수정 안 된 fixture는 삭제한다. 수정된 fixture는 남기고 `orphaned`로 보고한다. 보존 기준은 lock에 기록된 "생성기가 썼을 내용"의 해시다.
 
 ### 5.5 verify
 
@@ -517,3 +526,22 @@ specmock/
 | 파일 기반 상태 | 메모리 / DB | 인터페이스 간 공유, 재개, 디버깅 |
 | 선택 표현식 + selection.json | 대화형 UI만 | 재현 가능하고 스크립트화 가능. 나중에 기능 추가가 쉬움 |
 | 코어 → CLI → MCP 순서 | MCP 우선 | CLI가 디버깅이 빠르고 end-to-end를 먼저 확인할 수 있음. MCP는 같은 코어의 얇은 껍데기 |
+
+## 12. 구현 중 변경 (1A, 2026-11-04 ~ 05)
+
+리뷰 과정에서 설계를 바꾼 지점. 위 본문에는 반영되어 있고, 여기에는 이유만 남긴다.
+
+| 변경 | 이유 |
+|---|---|
+| 스키마를 JSON Schema 파일 대신 zod로 | 타입과 검증 단일화. 필요 시 `z.toJSONSchema()` |
+| mockspec에 `notMocked` 추가, contract에 `query` 추가 | 501 안내와 GET 쿼리 contract에 필요 |
+| 순환 `$ref`를 `{ "x-specmock-circular": true }` 마커로 직렬화 | `circular: "ignore"`는 순환에 닿는 모든 참조를 날려 재귀 스키마가 사라짐 |
+| OpenAPI 감지를 정규식에서 파싱 기반으로 | README에 `openapi:`가 적힌 문서를 오인 |
+| id 규칙 보강 (부분 템플릿 세그먼트, 비정상 operationId 폴백, `/v1/` 그룹 건너뛰기, operationId 우선) | 선택 불가능하거나 안전하지 않은 id 방지 |
+| 표시 순서를 코드포인트 비교로 고정 | `localeCompare`는 로케일에 따라 번호가 달라짐 |
+| `group:<이름>` 필터 추가 | `users.*`는 id 글롭이라 그룹 선택이 아님 (예: `inventory.list`는 그룹 `store`) |
+| Swagger 2.0 formData → body, `type: file` → `string/binary` | ajv가 `file` 타입을 컴파일하지 못함 |
+| json-schema-faker 0.6.x의 `generateSync(schema, { seed })` 사용 | 0.6은 재작성판. `JSONSchemaFaker` 객체 없음 |
+| 경로·쿼리 샘플 값을 스키마 제약에 맞게 생성 | `minimum: 5`인데 `1`을 보내면 정상 요청이 400 |
+| verify: 스폰 실패 즉시 보고, 헬스체크 타임아웃 | 없는 명령이면 호스트 프로세스가 죽거나 영원히 대기 |
+| `select --interactive`, `ingest/analyze/run --json`은 1A 미구현 | 범위 조정. 1B에서 |
