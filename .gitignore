@@ -1,0 +1,29 @@
+# dependencies / build
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.pnpm-store/
+
+# specmock runtime state and generated output
+.specmock/
+mock/
+!examples/**/mock/
+coverage/
+*.log
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# temp
+tmp/
+.cache/
