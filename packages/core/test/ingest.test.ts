@@ -1,6 +1,7 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { detectKind, ingest } from "../src/ingest/index.js";
 import { SourceSchema } from "../src/types.js";
@@ -57,5 +58,14 @@ describe("ingest(openapi)", () => {
     const md = path.join(dir, "doc.md");
     await writeFile(md, "# API\n", "utf8");
     await expect(ingest(ws, "x", [md])).rejects.toThrow(/Phase 1B/);
+  });
+});
+
+describe("examples/petstore", () => {
+  it("keeps examples/petstore/petstore.yaml identical to the test fixture (README 출력 예시의 근거)", async () => {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const example = await readFile(path.resolve(here, "../../../examples/petstore/petstore.yaml"), "utf8");
+    const fixture = await readFile(PETSTORE, "utf8");
+    expect(example).toBe(fixture);
   });
 });

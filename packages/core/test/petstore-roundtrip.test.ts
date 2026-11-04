@@ -24,7 +24,7 @@ afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
 
 function makeAjv(): Ajv {
   const ajv = new Ajv({ allErrors: true, strict: false });
-  addFormats(ajv);
+  addFormats.default(ajv);
   for (const f of ["int32", "int64", "float", "double", "byte", "binary", "password"]) ajv.addFormat(f, true);
   return ajv;
 }
