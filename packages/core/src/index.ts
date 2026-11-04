@@ -13,6 +13,6 @@ export { select, type SelectOptions, type SelectResult } from "./select/index.js
 export { generate, defaultMockDir, type GenerateOptions } from "./generate/index.js";
 export { readLock, type Lock } from "./generate/lock.js";
 export type { GenerateReport } from "./generate/tsHono.js";
-export { verify, loadContracts, type VerifyResult, type ContractResult } from "./verify/index.js";
-export { startMock, ensureInstalled, type RunningMock } from "./verify/server.js";
+export { verify, loadContracts, type VerifyOptions, type VerifyResult, type ContractResult } from "./verify/index.js";
+export { startMock, ensureInstalled, type RunningMock, type StartMockOptions } from "./verify/server.js";
 export { renderCoverage } from "./verify/coverage.js";

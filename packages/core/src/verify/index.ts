@@ -47,6 +47,17 @@ async function runContract(base: string, ajv: Ajv, c: Contract): Promise<Contrac
   for (const [k, v] of Object.entries(c.request.query)) url.searchParams.set(k, v);
   const errors: string[] = [];
   let actualStatus: number | null = null;
+
+  // 스키마 컴파일 실패는 요청 실패와 구분해서 보고한다.
+  let validate: ReturnType<Ajv["compile"]> | null = null;
+  if (c.expect.schema) {
+    try {
+      validate = ajv.compile(c.expect.schema);
+    } catch (e) {
+      errors.push(`schema: ${(e as Error).message}`);
+    }
+  }
+
   try {
     const res = await fetch(url, {
       method: c.request.method,
@@ -55,13 +66,12 @@ async function runContract(base: string, ajv: Ajv, c: Contract): Promise<Contrac
     });
     actualStatus = res.status;
     if (res.status !== c.expect.status) errors.push(`status: expected ${c.expect.status}, got ${res.status}`);
-    if (c.expect.schema && res.status === c.expect.status) {
+    if (validate && res.status === c.expect.status) {
       const text = await res.text();
       let body: unknown;
       try { body = JSON.parse(text); } catch { errors.push(`body is not JSON: ${text.slice(0, 200)}`); }
-      if (body !== undefined) {
-        const validate = ajv.compile(c.expect.schema);
-        if (!validate(body)) errors.push(...(validate.errors ?? []).map((e) => `${e.instancePath || "/"} ${e.message ?? ""}`.trim()));
+      if (body !== undefined && !validate(body)) {
+        errors.push(...(validate.errors ?? []).map((e) => `${e.instancePath || "/"} ${e.message ?? ""}`.trim()));
       }
     }
   } catch (e) {
@@ -70,11 +80,16 @@ async function runContract(base: string, ajv: Ajv, c: Contract): Promise<Contrac
   return { featureId: c.featureId, name: c.name, passed: errors.length === 0, expectedStatus: c.expect.status, actualStatus, errors };
 }
 
-export async function verify(mockDir: string): Promise<VerifyResult> {
+export interface VerifyOptions {
+  /** 오래 걸리는 단계(npm install 등)를 알려주는 콜백. */
+  onLog?: (message: string) => void;
+}
+
+export async function verify(mockDir: string, opts: VerifyOptions = {}): Promise<VerifyResult> {
   const lock = await readLock(mockDir);
   if (!lock) throw new Error(`${mockDir}에 specmock.lock.json이 없습니다. 먼저 specmock generate를 실행하세요.`);
   const contracts = await loadContracts(mockDir);
-  const server = await startMock(mockDir, lock);
+  const server = await startMock(mockDir, lock, { onLog: opts.onLog });
   const ajv = makeAjv();
   const results: ContractResult[] = [];
   try {

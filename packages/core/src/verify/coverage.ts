@@ -3,6 +3,9 @@ import type { VerifyResult } from "./index.js";
 
 const SOURCES: Fixture["source"][] = ["spec-example", "doc-sample", "schema-generated", "empty"];
 
+/** Markdown 표 셀 안에서 줄바꿈과 `|`가 표를 깨뜨리지 않게 한다. */
+const cell = (s: string) => s.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
+
 export function renderCoverage(spec: MockSpec, result: VerifyResult | null): string {
   const total = spec.features.length + spec.notMocked.length;
   const primary = spec.features.map((f) => f.fixtures.filter((x) => x.status >= 200 && x.status < 300).sort((a, b) => a.status - b.status)[0] ?? f.fixtures[0]);
@@ -50,7 +53,9 @@ export function renderCoverage(spec: MockSpec, result: VerifyResult | null): str
       lines.push("");
       lines.push("| feature | case | expected | actual | errors |");
       lines.push("|---|---|---|---|---|");
-      for (const r of failed) lines.push(`| ${r.featureId} | ${r.name} | ${r.expectedStatus} | ${r.actualStatus ?? "-"} | ${r.errors.join("; ")} |`);
+      for (const r of failed) {
+        lines.push(`| ${cell(r.featureId)} | ${cell(r.name)} | ${r.expectedStatus} | ${r.actualStatus ?? "-"} | ${cell(r.errors.join("; "))} |`);
+      }
     }
   }
   lines.push("");

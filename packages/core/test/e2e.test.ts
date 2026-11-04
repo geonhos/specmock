@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -84,5 +84,26 @@ describe("e2e: ingest → analyze → select → generate → verify", () => {
     expect(result.failed).toBe(1);
     expect(result.results[0].errors.join("\n")).toMatch(/name|integer/);
     expect(await readFile(path.join(out, "specmock.lock.json"), "utf8")).toContain("getPet");
+  });
+
+  it("verify still passes after deselecting features and regenerating (orphan cleanup)", async () => {
+    await select(ws, "petstore", ["all"]);
+    await generate(ws, "petstore", { outDir: out });
+    await select(ws, "petstore", ["getPet"]);
+    await generate(ws, "petstore", { outDir: out });
+    await linkNodeModules();
+    const result = await verify(out);
+    expect(result.total).toBe(1);
+    expect(result.failed).toBe(0);
+    expect((await readdir(path.join(out, "contracts"))).sort()).toEqual(["getPet.json"]);
+  });
+
+  it("fails fast with a clear message when the start command cannot be spawned", async () => {
+    await select(ws, "petstore", ["getPet"]);
+    await generate(ws, "petstore", { outDir: out });
+    await linkNodeModules();
+    const lock = (await readLock(out))!;
+    await expect(startMock(out, { ...lock, start: { command: "definitely-not-a-command-xyz", args: [] } }, { timeoutMs: 5000 }))
+      .rejects.toThrow(/시작할 수 없습니다.*ENOENT/);
   });
 });
