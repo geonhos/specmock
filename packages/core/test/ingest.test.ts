@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { detectKind, ingest } from "../src/ingest/index.js";
 import { SourceSchema } from "../src/types.js";
 import { Workspace } from "../src/workspace.js";
-import { PETSTORE } from "./helpers.js";
+import { CIRCULAR, PETSTORE } from "./helpers.js";
 
 let dir: string;
 beforeEach(async () => { dir = await mkdtemp(path.join(os.tmpdir(), "specmock-ingest-")); });
@@ -15,6 +15,12 @@ describe("detectKind", () => {
   it("detects openapi by content", () => {
     expect(detectKind("spec.yaml", "openapi: 3.0.0\npaths: {}")).toBe("openapi");
     expect(detectKind("spec.json", '{"swagger":"2.0"}')).toBe("openapi");
+  });
+  it("does not misdetect prose that mentions openapi", () => {
+    expect(detectKind("README.md", "Our spec uses openapi: 3.1 conventions")).toBe("markdown");
+    expect(detectKind("ci.yaml", "jobs:\n  swagger:\n    run: x")).toBe("text");
+    expect(detectKind("spec.json", '{"openapi":"3.0.0","paths":{}}')).toBe("openapi");
+    expect(detectKind("https://x.test/openapi?x=1#frag", "openapi: 3.0.0\npaths: {}")).toBe("openapi");
   });
   it("falls back to markdown/text by extension", () => {
     expect(detectKind("README.md", "# hi")).toBe("markdown");
@@ -33,6 +39,17 @@ describe("ingest(openapi)", () => {
     const doc = JSON.parse(source.inputs[0].content);
     // $ref가 해석되어 있어야 한다
     expect(doc.paths["/pets/{petId}"].get.responses["200"].content["application/json"].schema.properties.name.type).toBe("string");
+  });
+
+  it("expands recursive schemas and breaks only true cycles", async () => {
+    const ws = new Workspace(dir);
+    await ingest(ws, "circular", [CIRCULAR]);
+    const source = await ws.read("circular", "source.json", SourceSchema);
+    const doc = JSON.parse(source.inputs[0].content);
+    const schema = doc.paths["/tree"].get.responses["200"].content["application/json"].schema;
+    expect(schema.properties.root.properties.id).toEqual({ type: "integer" });
+    expect(schema.properties.root.properties.children.items).toEqual({ "x-specmock-circular": true });
+    expect(source.inputs[0].content).not.toContain('"$ref"');
   });
 
   it("rejects non-openapi inputs in this phase", async () => {
