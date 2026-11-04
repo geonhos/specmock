@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -22,6 +22,18 @@ describe("Workspace", () => {
   it("throws a friendly error when a file is missing", async () => {
     const ws = new Workspace(dir);
     await expect(ws.read("demo", "catalog.json", SelectionSchema)).rejects.toThrow(/catalog\.json.*specmock analyze/);
+  });
+
+  it("rejects invalid data before creating any file or directory", async () => {
+    const ws = new Workspace(dir);
+    await expect(ws.write("demo", "selection.json", SelectionSchema, { system: "demo" } as never)).rejects.toThrow(/형식 오류|invalid|expected/i);
+    expect(await ws.exists("demo", "selection.json")).toBe(false);
+    await expect(access(path.join(dir, "demo"))).rejects.toThrow();
+  });
+
+  it("rejects unsafe system names", () => {
+    const ws = new Workspace(dir);
+    expect(() => ws.dir("../evil")).toThrow(/시스템 이름/);
   });
 });
 
