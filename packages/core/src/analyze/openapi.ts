@@ -34,6 +34,9 @@ function collectExamples(media: OpenAPIV3.MediaTypeObject | undefined, schema: J
     }
   }
   if (out.length === 0 && schema && schema.example !== undefined) out.push({ source: "spec-example", body: schema.example });
+  if (out.length === 0 && Array.isArray(schema?.examples) && schema.examples.length > 0) {
+    out.push({ source: "spec-example", body: schema.examples[0] });
+  }
   return out;
 }
 
@@ -57,15 +60,35 @@ function resolveAuth(doc: AnyDoc, op: AnyOperation): Feature["auth"] {
   return "unknown";
 }
 
+function v2ParamSchema(p: OpenAPIV2.GeneralParameterObject): JsonSchema {
+  const keys = ["type", "format", "enum", "items", "minimum", "maximum", "pattern", "default", "minLength", "maxLength"] as const;
+  const out: Record<string, unknown> = {};
+  for (const k of keys) if ((p as unknown as Record<string, unknown>)[k] !== undefined) out[k] = (p as unknown as Record<string, unknown>)[k];
+  return out as JsonSchema;
+}
+
 function buildRequest(doc: AnyDoc, pathParams: AnyParam[], op: AnyOperation): Feature["request"] {
   const request: Feature["request"] = { params: {}, query: {}, headers: {}, body: null };
-  const merged: AnyParam[] = [...pathParams, ...((op.parameters as AnyParam[] | undefined) ?? [])];
+  const opParams = (op.parameters as AnyParam[] | undefined) ?? [];
+  // operation-level params override path-level ones with the same name + location
+  const merged: AnyParam[] = [
+    ...pathParams.filter((pp) => !opParams.some((op2) => op2.name === pp.name && op2.in === pp.in)),
+    ...opParams,
+  ];
   for (const p of merged) {
-    const entry = { schema: stripSchema("schema" in p ? p.schema : { type: (p as OpenAPIV2.GeneralParameterObject).type }), required: Boolean(p.required) };
+    const entry = { schema: stripSchema("schema" in p ? p.schema : v2ParamSchema(p as OpenAPIV2.GeneralParameterObject)), required: Boolean(p.required) };
     if (p.in === "path") request.params[p.name] = { ...entry, required: true };
     else if (p.in === "query") request.query[p.name] = entry;
     else if (p.in === "header") request.headers[p.name] = entry;
     else if (p.in === "body") request.body = stripSchema((p as OpenAPIV2.InBodyParameterObject).schema);
+  }
+  const formData = merged.filter((p) => p.in === "formData") as OpenAPIV2.GeneralParameterObject[];
+  if (formData.length > 0 && request.body === null) {
+    request.body = {
+      type: "object",
+      properties: Object.fromEntries(formData.map((p) => [p.name, v2ParamSchema(p)])),
+      required: formData.filter((p) => p.required).map((p) => p.name),
+    };
   }
   if (isV3(doc)) {
     const body = (op as OpenAPIV3.OperationObject).requestBody as OpenAPIV3.RequestBodyObject | undefined;
@@ -96,35 +119,43 @@ function buildResponses(doc: AnyDoc, op: AnyOperation): Feature["responses"] {
   return out;
 }
 
-export function analyzeOpenApiDocument(doc: AnyDoc): Feature[] {
-  const registry = new FeatureIdRegistry();
-  const features: Feature[] = [];
+export function analyzeOpenApiDocument(doc: AnyDoc, registry: FeatureIdRegistry = new FeatureIdRegistry()): Feature[] {
   const paths = (doc.paths ?? {}) as Record<string, Record<string, unknown>>;
+  const ops: { pathKey: string; method: HttpMethod; op: AnyOperation; pathParams: AnyParam[] }[] = [];
   for (const [pathKey, item] of Object.entries(paths)) {
     if (!item) continue;
-    const pathParams = ((item.parameters as AnyParam[] | undefined) ?? []);
+    const pathParams = (item.parameters as AnyParam[] | undefined) ?? [];
     for (const method of METHODS) {
       const op = item[method.toLowerCase()] as AnyOperation | undefined;
-      if (!op) continue;
-      const responses = buildResponses(doc, op);
-      const hasExample = Object.values(responses).some((r) => r.examples.length > 0);
-      features.push({
-        id: registry.claim(deriveFeatureId({ method, path: pathKey, operationId: op.operationId })),
-        group: deriveGroup({ path: pathKey, tags: op.tags }),
-        title: op.summary ?? `${method} ${pathKey}`,
-        summary: op.description ?? "",
-        method,
-        path: pathKey,
-        request: buildRequest(doc, pathParams, op),
-        responses,
-        auth: resolveAuth(doc, op),
-        provenance: "openapi",
-        confidence: 1,
-        hasExample,
-        evidence: [],
-        notes: [],
-      });
+      if (op) ops.push({ pathKey, method, op, pathParams });
     }
   }
-  return features;
+  // Explicit operationIds claim their ids first so derived ids cannot steal them.
+  const ids = new Map<number, string>();
+  const hasExplicit = (o: AnyOperation) => typeof o.operationId === "string" && o.operationId.trim().length > 0;
+  for (const explicit of [true, false]) {
+    ops.forEach(({ pathKey, method, op }, i) => {
+      if (hasExplicit(op) !== explicit) return;
+      ids.set(i, registry.claim(deriveFeatureId({ method, path: pathKey, operationId: op.operationId })));
+    });
+  }
+  return ops.map(({ pathKey, method, op, pathParams }, i) => {
+    const responses = buildResponses(doc, op);
+    return {
+      id: ids.get(i) as string,
+      group: deriveGroup({ path: pathKey, tags: op.tags }),
+      title: op.summary ?? `${method} ${pathKey}`,
+      summary: op.description ?? "",
+      method,
+      path: pathKey,
+      request: buildRequest(doc, pathParams, op),
+      responses,
+      auth: resolveAuth(doc, op),
+      provenance: "openapi" as const,
+      confidence: 1,
+      hasExample: Object.values(responses).some((r) => r.examples.length > 0),
+      evidence: [],
+      notes: op.deprecated ? ["deprecated"] : [],
+    };
+  });
 }
