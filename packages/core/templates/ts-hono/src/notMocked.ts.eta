@@ -1,7 +1,7 @@
 // specmock이 생성한 파일. 선택되지 않은 기능과 알 수 없는 경로를 구분해 응답한다.
 import type { Context } from "hono";
 
-const NOT_MOCKED = <%~ JSON.stringify(it.notMocked, null, 2) %> as const;
+const NOT_MOCKED: ReadonlyArray<{ id: string; method: string; path: string }> = <%~ JSON.stringify(it.notMocked, null, 2) %>;
 
 function toRegex(path: string): RegExp {
   return new RegExp("^" + path.replace(/[.*+?^$()|[\]\\]/g, "\\$&").replace(/\{[^}]+\}/g, "[^/]+") + "/?$");

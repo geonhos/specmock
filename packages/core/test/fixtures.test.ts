@@ -40,6 +40,19 @@ describe("buildFixtures", () => {
     expect(r.fixtures.map((x) => x.status)).toEqual([201, 404]);
   });
 
+  it("adds an empty 200 when the feature defines only 4xx responses", () => {
+    const r = buildFixtures(f({ "400": { schema: null, examples: [] } }));
+    expect(r.fixtures.map((x) => x.status)).toEqual([200, 400]);
+    expect(r.fixtures.find((x) => x.status === 200)).toEqual({ status: 200, body: {}, source: "empty" });
+    expect(r.assumptions).toContain("x.get: 2xx 응답 정의 없음. 200 빈 객체를 반환한다.");
+  });
+
+  it("adds an empty 200 when the feature defines no responses at all", () => {
+    const r = buildFixtures(f({}));
+    expect(r.fixtures).toEqual([{ status: 200, body: {}, source: "empty" }]);
+    expect(r.assumptions).toEqual(["x.get: 2xx 응답 정의 없음. 200 빈 객체를 반환한다."]);
+  });
+
   it("replaces circular markers with null instead of random values", () => {
     const schema = { type: "object", required: ["children"], properties: { children: { type: "array", minItems: 1, items: { "x-specmock-circular": true } } } };
     const { fixtures } = buildFixtures(f({ "200": { schema, examples: [] } }));

@@ -52,9 +52,11 @@ export function buildFixtures(feature: Feature): { fixtures: Fixture[]; assumpti
     assumptions.push(`${feature.id}: ${status} 응답 스키마 없음. 빈 객체를 반환한다.`);
   }
 
-  if (fixtures.length === 0) {
+  // 2xx fixture가 하나도 없으면(응답 정의가 없거나 4xx만 있는 경우) 라우트가 읽을 성공 응답이 없으므로 200 빈 객체를 보장한다.
+  if (!fixtures.some((x) => x.status >= 200 && x.status < 300)) {
     fixtures.push({ status: 200, body: {}, source: "empty" });
-    assumptions.push(`${feature.id}: 응답 정의 없음. 200 빈 객체를 반환한다.`);
+    fixtures.sort((a, b) => a.status - b.status);
+    assumptions.push(`${feature.id}: 2xx 응답 정의 없음. 200 빈 객체를 반환한다.`);
   }
   return { fixtures, assumptions };
 }

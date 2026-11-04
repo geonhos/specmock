@@ -12,7 +12,7 @@ export function register(app: Hono) {
     const body = <%= f.hasBody ? "await c.req.json().catch(() => undefined)" : "undefined" %>;
     const errors = validate(schema_<%= f.safe %>, { params: c.req.param(), query: c.req.query(), body });
     if (errors) return c.json({ error: "validation_failed", details: errors }, 400);
-<% if (f.status === 204) { %>    return c.body(null, 204);
+<% if (f.status === 204 || f.status === 205) { %>    return c.body(null, <%= f.status %>);
 <% } else { %>    return c.json(await loadFixture("<%= f.id %>", <%= f.status %>), <%= f.status %>);
 <% } %>  });
 <% }) %>}
