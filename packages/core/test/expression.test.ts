@@ -54,6 +54,16 @@ describe("resolveSelection", () => {
     await writeFile(file, JSON.stringify({ selected: ["users.get", "accounts.list"] }), "utf8");
     expect(await resolveSelection(catalog, [`@${file}`])).toEqual(["accounts.list", "users.get"]);
   });
+  it("comma-splits @file entries written by select (raw expressions)", async () => {
+    const file = path.join(dir, "selection.json");
+    await writeFile(file, JSON.stringify({ selected: ["users.*,accounts.list", "-users.delete"] }), "utf8");
+    expect(await resolveSelection(catalog, [`@${file}`])).toEqual(["accounts.list", "users.list", "users.get"]);
+  });
+  it("rejects reverse ranges and globs that match nothing", async () => {
+    await expect(resolveSelection(catalog, ["3-1"])).rejects.toThrow(/시작이 끝보다/);
+    await expect(resolveSelection(catalog, ["nope.*"])).rejects.toThrow(/일치하는 기능이 없는 글롭/);
+    expect(await resolveSelection(catalog, ["all,-nope.*"])).toHaveLength(4);
+  });
   it("errors on unknown id or bad syntax", async () => {
     await expect(resolveSelection(catalog, ["nope.get"])).rejects.toThrow(/알 수 없는 기능 id: nope\.get/);
     await expect(resolveSelection(catalog, ["99"])).rejects.toThrow(/번호 99/);
