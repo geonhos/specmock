@@ -1,16 +1,18 @@
 import { select } from "@specmock/core";
 import type { Command } from "commander";
-import { fail, printJsonOr, workspaceFrom } from "../context.js";
+import { EXPR_HELP, fail, printJsonOr, SYSTEM_ARG_HELP, workspaceFrom } from "../context.js";
 
 export function registerSelect(program: Command): void {
   program
     .command("select")
     .description("필요한 기능을 골라 selection.json과 mockspec.json을 만든다")
-    .argument("<system>")
-    .argument("<exprs...>", "선택 표현식: all | 1,3-5 | users.* | users.get | method:GET | has:example | confidence>=0.8 | -제외 | @selection.json")
+    .argument("<system>", SYSTEM_ARG_HELP)
+    .argument("<exprs...>", `선택 표현식: ${EXPR_HELP}`)
     .option("--add", "기존 선택에 추가", false)
     .option("--remove", "기존 선택에서 제거", false)
     .option("--json", "JSON으로 출력", false)
+    // `-listPets`처럼 '-'로 시작하는 제외 항목을 별도 인자로 받기 위해 알 수 없는 옵션을 표현식으로 흘려보낸다.
+    .allowUnknownOption()
     .action(async (system: string, exprs: string[], opts: { add: boolean; remove: boolean; json: boolean }, cmd: Command) => {
       try {
         const ws = workspaceFrom(cmd);

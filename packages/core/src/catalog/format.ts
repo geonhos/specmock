@@ -13,11 +13,21 @@ function pad(s: string, n: number): string {
   return s.length >= n ? s : s + " ".repeat(n - s.length);
 }
 
-export function formatCatalog(catalog: Catalog): string {
-  const ordered = orderFeatures(catalog);
+export interface FormatCatalogOptions {
+  /** 지정하면 이 그룹의 행만 보여준다. 번호는 전체 카탈로그 기준으로 유지된다 (select의 번호와 일치). */
+  group?: string;
+}
+
+export function formatCatalog(catalog: Catalog, opts: FormatCatalogOptions = {}): string {
+  // 번호는 항상 전체 카탈로그에서 매긴다. 그룹 필터는 표시 행만 거른다.
+  const ordered = orderFeatures(catalog).filter((o) => opts.group === undefined || o.feature.group === opts.group);
   const count = (p: Feature["provenance"]) => catalog.features.filter((f) => f.provenance === p).length;
   const lines: string[] = [];
-  lines.push(`${catalog.system} — ${catalog.features.length}개 기능 (openapi ${count("openapi")} · 문서추출 ${count("doc-extracted")} · 추론 ${count("inferred")})`);
+  if (opts.group !== undefined) {
+    lines.push(`${catalog.system} — 그룹 ${opts.group}: ${ordered.length}개 기능 (전체 ${catalog.features.length}개)`);
+  } else {
+    lines.push(`${catalog.system} — ${catalog.features.length}개 기능 (openapi ${count("openapi")} · 문서추출 ${count("doc-extracted")} · 추론 ${count("inferred")})`);
+  }
   lines.push("");
 
   const idW = Math.max(2, ...ordered.map((o) => o.feature.id.length));

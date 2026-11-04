@@ -51,6 +51,21 @@ describe("formatCatalog", () => {
     expect(text).toContain("범례");
   });
 
+  it("keeps global numbering when filtered by group", () => {
+    const text = formatCatalog(catalog, { group: "users" });
+    expect(text).toContain("demo — 그룹 users: 3개 기능 (전체 4개)");
+    expect(text).toMatch(/2\s+users\.list\s+GET\s+\/users/);
+    expect(text).toMatch(/4\s+users\.delete/);
+    expect(text).not.toContain("accounts");
+    expect(text).toMatch(/── users \(3\)/);
+  });
+
+  it("renders an empty group filter without throwing", () => {
+    const text = formatCatalog(catalog, { group: "nope" });
+    expect(text).toContain("그룹 nope: 0개 기능 (전체 4개)");
+    expect(text).toContain("(기능 없음)");
+  });
+
   it("renders an empty catalog without throwing", () => {
     const text = formatCatalog({ ...catalog, features: [] });
     expect(text).toContain("0개 기능");

@@ -42,6 +42,29 @@ describe("specmock CLI", () => {
     expect(lock.system).toBe("petstore");
   });
 
+  it("list --group keeps the global numbering used by select", async () => {
+    await specmock("ingest", "petstore", PETSTORE);
+    await specmock("analyze", "petstore");
+    const { stdout } = await specmock("list", "petstore", "--group", "store");
+    expect(stdout).toContain("petstore — 그룹 store: 1개 기능 (전체 5개)");
+    expect(stdout).toMatch(/5\s+inventory\.list/);
+    expect(stdout).not.toContain("listPets");
+
+    const { stdout: json } = await specmock("list", "petstore", "--group", "store", "--json");
+    const parsed = JSON.parse(json);
+    expect(parsed.group).toBe("store");
+    expect(parsed.order).toEqual([{ index: 5, id: "inventory.list" }]);
+    expect(parsed.features).toHaveLength(5);
+  });
+
+  it("select accepts a -id exclusion as its own argument", async () => {
+    await specmock("ingest", "petstore", PETSTORE);
+    await specmock("analyze", "petstore");
+    const { stdout } = await specmock("select", "petstore", "all", "-listPets");
+    expect(stdout).toContain("선택 4개");
+    expect(stdout).not.toContain("listPets");
+  });
+
   it("show prints a single feature", async () => {
     await specmock("ingest", "petstore", PETSTORE);
     await specmock("analyze", "petstore");
