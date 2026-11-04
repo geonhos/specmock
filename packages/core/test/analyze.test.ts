@@ -75,7 +75,7 @@ describe("analyzeOpenApiDocument (edge cases)", () => {
   const byId = Object.fromEntries(features.map((f) => [f.id, f]));
 
   it("synthesizes a body from formData, keeps v2 param keys, notes deprecated, maps basic auth", () => {
-    expect(byId.upload.request.body).toEqual({ type: "object", properties: { file: { type: "file" }, note: { type: "string", maxLength: 10 } }, required: ["file"] });
+    expect(byId.upload.request.body).toEqual({ type: "object", properties: { file: { type: "string", format: "binary" }, note: { type: "string", maxLength: 10 } }, required: ["file"] });
     expect(byId.upload.notes).toEqual(["deprecated"]);
     expect(byId.upload.auth).toBe("basic");
     expect(byId.upload.responses).toEqual({});

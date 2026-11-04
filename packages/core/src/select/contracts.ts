@@ -1,22 +1,22 @@
 import type { Contract, Feature, Fixture, JsonSchema } from "../types.js";
 import { generateFromSchema } from "./fixtures.js";
 
-/** 스키마 하나에 대한 대표 값. 경로·쿼리 파라미터용. */
+/** 스키마 하나에 대한 대표 값. 경로·쿼리 파라미터용. 제약(범위·길이·패턴·포맷)을 지킨다. */
 export function sampleScalar(schema: JsonSchema | null): string {
   if (!schema) return "sample";
-  if (schema.example !== undefined) return String(schema.example);
+  if (schema.example !== undefined && (typeof schema.example !== "object" || schema.example === null)) return String(schema.example);
   if (Array.isArray(schema.enum) && schema.enum.length > 0) return String(schema.enum[0]);
-  if (schema.default !== undefined) return String(schema.default);
+  if (schema.default !== undefined && typeof schema.default !== "object") return String(schema.default);
+  if (schema.type === "boolean") return "true";
+  const numericConstraint = ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"].some((k) => schema[k] !== undefined);
+  if ((schema.type === "integer" || schema.type === "number") && !numericConstraint) return "1";
+  const generated = generateFromSchema(schema);
+  if (generated !== null && generated !== undefined && typeof generated !== "object") return String(generated);
   switch (schema.type) {
     case "integer":
     case "number": return "1";
     case "boolean": return "true";
-    default:
-      if (schema.format === "uuid") return "00000000-0000-4000-8000-000000000000";
-      if (schema.format === "date") return "2026-01-01";
-      if (schema.format === "date-time") return "2026-01-01T00:00:00Z";
-      if (schema.format === "email") return "user@example.com";
-      return "sample";
+    default: return "sample";
   }
 }
 
@@ -53,7 +53,7 @@ export function buildContracts(feature: Feature, fixtures: Fixture[]): Contract[
       featureId: feature.id,
       name: "필수 값 누락",
       request: { method: feature.method, path: fillPath(feature), headers: {}, query: {}, body: null },
-      expect: { status: errorStatus, schema: null },
+      expect: { status: 400, schema: null },
     });
   }
   return contracts;

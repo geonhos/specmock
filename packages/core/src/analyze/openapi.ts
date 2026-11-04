@@ -64,6 +64,10 @@ function v2ParamSchema(p: OpenAPIV2.GeneralParameterObject): JsonSchema {
   const keys = ["type", "format", "enum", "items", "minimum", "maximum", "pattern", "default", "minLength", "maxLength"] as const;
   const out: Record<string, unknown> = {};
   for (const k of keys) if ((p as unknown as Record<string, unknown>)[k] !== undefined) out[k] = (p as unknown as Record<string, unknown>)[k];
+  if (out.type === "file") {
+    out.type = "string";
+    out.format = "binary";
+  }
   return out as JsonSchema;
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildContracts } from "../src/select/contracts.js";
+import { buildContracts, sampleScalar } from "../src/select/contracts.js";
 import type { Feature, Fixture } from "../src/types.js";
 
 const base: Feature = {
@@ -48,5 +48,19 @@ describe("buildContracts", () => {
   it("uses the lowest 2xx status", () => {
     const multi: Feature = { ...base, responses: { "202": base.responses["201"], "200": base.responses["201"] } };
     expect(buildContracts(multi, [{ status: 200, body: {}, source: "empty" }])[0].expect.status).toBe(200);
+  });
+
+  it("honors scalar constraints and formats when filling params", () => {
+    expect(Number(sampleScalar({ type: "integer", minimum: 5, maximum: 7 }))).toBeGreaterThanOrEqual(5);
+    expect(sampleScalar({ type: "string", minLength: 10 }).length).toBeGreaterThanOrEqual(10);
+    expect(sampleScalar({ type: "string", format: "uuid" })).toMatch(/^[0-9a-f-]{36}$/);
+    expect(sampleScalar({ type: "string", enum: ["b", "a"] })).toBe("b");
+    expect(sampleScalar({ type: "integer", example: 42 })).toBe("42");
+  });
+
+  it("expects 400 for the missing-required case even when the spec lists 422", () => {
+    const f: Feature = { ...base, responses: { "201": base.responses["201"], "422": base.responses["400"] } };
+    const contracts = buildContracts(f, [{ status: 201, body: {}, source: "empty" }, { status: 422, body: {}, source: "empty" }]);
+    expect(contracts[1].expect).toEqual({ status: 400, schema: null });
   });
 });

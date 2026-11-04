@@ -3,8 +3,20 @@ import type { Feature, Fixture, JsonSchema } from "../types.js";
 
 export const FIXTURE_SEED = 42;
 
+/** 순환 참조 표식({ "x-specmock-circular": true })을 null 타입으로 바꾼 사본을 만든다. */
+function normalizeSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeSchema);
+  if (value !== null && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    const keys = Object.keys(obj);
+    if (keys.length === 1 && keys[0] === "x-specmock-circular" && obj["x-specmock-circular"] === true) return { type: "null" };
+    return Object.fromEntries(keys.map((k) => [k, normalizeSchema(obj[k])]));
+  }
+  return value;
+}
+
 export function generateFromSchema(schema: JsonSchema, seed = FIXTURE_SEED): unknown {
-  return generateSync(schema as Parameters<typeof generateSync>[0], {
+  return generateSync(normalizeSchema(schema) as Parameters<typeof generateSync>[0], {
     seed,
     alwaysFakeOptionals: true,
     useExamplesValue: true,

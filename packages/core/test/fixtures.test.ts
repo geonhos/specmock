@@ -39,4 +39,12 @@ describe("buildFixtures", () => {
     const r = buildFixtures(f({ "201": { schema: null, examples: [] }, "404": { schema: null, examples: [] }, "500": { schema: null, examples: [] } }));
     expect(r.fixtures.map((x) => x.status)).toEqual([201, 404]);
   });
+
+  it("replaces circular markers with null instead of random values", () => {
+    const schema = { type: "object", required: ["children"], properties: { children: { type: "array", minItems: 1, items: { "x-specmock-circular": true } } } };
+    const { fixtures } = buildFixtures(f({ "200": { schema, examples: [] } }));
+    const body = fixtures[0].body as { children: unknown[] };
+    expect(body.children.length).toBeGreaterThan(0);
+    expect(body.children.every((c) => c === null)).toBe(true);
+  });
 });
