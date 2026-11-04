@@ -20,7 +20,33 @@ describe("deriveFeatureId", () => {
   });
 });
 
+describe("deriveFeatureId hardening", () => {
+  it("treats segments containing a template as parameters and sanitizes resources", () => {
+    expect(deriveFeatureId({ method: "GET", path: "/users/{id}.json" })).toBe("users.get");
+    expect(deriveFeatureId({ method: "GET", path: "/users/{id}/posts.{format}" })).toBe("posts.list");
+    expect(deriveFeatureId({ method: "GET", path: "/user profile" })).toBe("user_profile.list");
+    expect(deriveFeatureId({ method: "GET", path: "/users/{id:[0-9]+}" })).toBe("users.get");
+    expect(deriveFeatureId({ method: "GET", path: "/users/" })).toBe("users.list");
+    expect(deriveFeatureId({ method: "GET", path: "/users/{id}/posts/{postId}" })).toBe("posts.get");
+    expect(deriveFeatureId({ method: "PUT", path: "/users/{id}" })).toBe("users.update");
+  });
+  it("falls back to resource.action for degenerate operationIds", () => {
+    expect(deriveFeatureId({ method: "GET", path: "/users/{id}", operationId: "사용자 조회" })).toBe("users.get");
+    expect(deriveFeatureId({ method: "GET", path: "/users", operationId: "*" })).toBe("users.list");
+    expect(deriveFeatureId({ method: "GET", path: "/users", operationId: "  " })).toBe("users.list");
+    expect(deriveFeatureId({ method: "GET", path: "/users", operationId: "-legacyList" })).toBe("legacyList");
+    expect(deriveFeatureId({ method: "GET", path: "/users", operationId: "get  user" })).toBe("get_user");
+  });
+});
+
 describe("deriveGroup", () => {
+  it("skips leading version/api prefixes and blank tags", () => {
+    expect(deriveGroup({ path: "/v1/users/{id}", tags: [] })).toBe("users");
+    expect(deriveGroup({ path: "/api/v2/orders", tags: [] })).toBe("orders");
+    expect(deriveGroup({ path: "/v1", tags: [] })).toBe("v1");
+    expect(deriveGroup({ path: "/users", tags: ["  ", "People"] })).toBe("People");
+    expect(deriveGroup({ path: "/users" })).toBe("users");
+  });
   it("prefers the first tag, then first static segment, then root", () => {
     expect(deriveGroup({ path: "/users/{id}", tags: ["People"] })).toBe("People");
     expect(deriveGroup({ path: "/users/{id}", tags: [] })).toBe("users");
