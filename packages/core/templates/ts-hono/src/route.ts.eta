@@ -1,0 +1,18 @@
+// specmock이 생성한 파일. 그룹 "<%= it.group %>"의 라우트. 응답 데이터는 fixtures/ 를 수정하세요.
+import type { Hono } from "hono";
+import { loadFixture } from "../fixtures.js";
+import { validate } from "../validate.js";
+<% it.features.forEach((f) => { %>
+const schema_<%= f.safe %> = <%~ JSON.stringify(f.validation) %>;<% }) %>
+
+export function register(app: Hono) {
+<% it.features.forEach((f) => { %>
+  // <%= f.id %>: <%= f.title %>
+  app.on("<%= f.method %>", "<%= f.honoPath %>", async (c) => {
+    const body = <%= f.hasBody ? "await c.req.json().catch(() => undefined)" : "undefined" %>;
+    const errors = validate(schema_<%= f.safe %>, { params: c.req.param(), query: c.req.query(), body });
+    if (errors) return c.json({ error: "validation_failed", details: errors }, 400);
+<% if (f.status === 204) { %>    return c.body(null, 204);
+<% } else { %>    return c.json(await loadFixture("<%= f.id %>", <%= f.status %>), <%= f.status %>);
+<% } %>  });
+<% }) %>}

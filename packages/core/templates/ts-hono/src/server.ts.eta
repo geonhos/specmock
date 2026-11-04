@@ -1,0 +1,17 @@
+// specmock이 생성한 파일. 재생성 시 덮어쓴다. 응답 데이터는 fixtures/ 를 수정하세요.
+import { serve } from "@hono/node-server";
+import { Hono } from "hono";
+import { notMocked } from "./notMocked.js";
+<% it.groups.forEach((g) => { %>import { register as register_<%= g.safe %> } from "./routes/<%= g.safe %>.js";
+<% }) %>
+const app = new Hono();
+
+app.get("/__specmock/health", (c) => c.json({ ok: true, system: "<%= it.system %>", features: <%= it.featureCount %> }));
+<% it.groups.forEach((g) => { %>register_<%= g.safe %>(app);
+<% }) %>
+app.notFound((c) => notMocked(c));
+
+const port = Number(process.env.PORT ?? 4010);
+serve({ fetch: app.fetch, port }, () => {
+  console.log(`[specmock] <%= it.system %> mock listening on http://localhost:${port}`);
+});

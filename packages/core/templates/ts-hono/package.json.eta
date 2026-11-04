@@ -1,0 +1,17 @@
+{
+  "name": "<%= it.system %>-mock",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "specmock이 생성한 <%= it.system %> mock 서버",
+  "scripts": {
+    "start": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.6",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "hono": "^4.13.16",
+    "tsx": "^4.23.15"
+  }
+}
