@@ -22,16 +22,21 @@ export function formatCatalog(catalog: Catalog): string {
 
   const idW = Math.max(2, ...ordered.map((o) => o.feature.id.length));
   const pathW = Math.max(4, ...ordered.map((o) => o.feature.path.length));
-  lines.push(`  ${pad("#", 3)} ${pad("id", idW)}  ${pad("method", 7)} ${pad("path", pathW)}  출처  신뢰  샘플`);
+  const header = `  ${pad("#", 3)} ${pad("id", idW)}  ${pad("method", 7)} ${pad("path", pathW)}  출처  신뢰  샘플`;
+  const width = header.length;
+  if (ordered.length === 0) lines.push("  (기능 없음)");
+  else lines.push(header);
 
   let currentGroup: string | null = null;
   for (const { index, feature } of ordered) {
     if (feature.group !== currentGroup) {
       currentGroup = feature.group;
       const n = catalog.features.filter((f) => f.group === currentGroup).length;
-      lines.push(`── ${currentGroup} (${n}) ` + "─".repeat(Math.max(0, 60 - currentGroup.length)));
+      const prefix = `── ${currentGroup} (${n}) `;
+      lines.push(prefix + "─".repeat(Math.max(0, width - prefix.length)));
     }
-    const warn = feature.notes.length > 0 ? `  ⚠ ${feature.notes[0]}` : "";
+    const more = feature.notes.length > 1 ? ` 외 ${feature.notes.length - 1}건` : "";
+    const warn = feature.notes.length > 0 ? `  ⚠ ${feature.notes[0]}${more}` : "";
     lines.push(
       `  ${pad(String(index), 3)} ${pad(feature.id, idW)}  ${pad(feature.method, 7)} ${pad(feature.path, pathW)}  ` +
         `${pad(PROVENANCE_LABEL[feature.provenance], 5)} ${feature.confidence.toFixed(1)}   ${sampleBadge(feature)}${warn}`,
