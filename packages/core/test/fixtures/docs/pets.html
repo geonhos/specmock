@@ -1,0 +1,39 @@
+<!doctype html>
+<html><head><title>Pets API Reference</title></head>
+<body>
+<nav><a href="/">Home</a><a href="/docs">Docs</a></nav>
+<main>
+  <h1>Pets API</h1>
+  <p>Base URL: <code>https://api.example.com/v1</code>. All requests need <code>Authorization: Bearer &lt;token&gt;</code>.</p>
+  <h2>List pets</h2>
+  <p><code>GET /pets</code> returns an array of pets. Query <code>limit</code> (integer, max 100).</p>
+  <div role="tablist">
+    <button role="tab" aria-selected="true" aria-controls="tab-curl">curl</button>
+    <button role="tab" aria-selected="false" aria-controls="tab-node">Node</button>
+  </div>
+  <div id="tab-curl" role="tabpanel"><pre>curl https://api.example.com/v1/pets</pre></div>
+  <div id="tab-node" role="tabpanel" hidden><pre>await fetch("https://api.example.com/v1/pets")</pre></div>
+  <pre><code class="language-json">[{"id": 1, "name": "Rex", "tag": "dog"}]</code></pre>
+  <h2>Get a pet</h2>
+  <p><code>GET /pets/{petId}</code> returns one pet.</p>
+  <label>Response example <select id="resp"><option value="200">200</option><option value="404">404</option></select></label>
+  <pre id="resp-200"><code>{"id": 1, "name": "Rex", "tag": "dog"}</code></pre>
+  <pre id="resp-404" hidden><code>{"code": 404, "message": "not found"}</code></pre>
+  <details><summary>Create a pet</summary>
+    <p><code>POST /pets</code> with body <code>{"name": string, "tag"?: string}</code>. Returns <code>201</code> and the created pet.</p>
+  </details>
+  <table><thead><tr><th>Field</th><th>Type</th></tr></thead><tbody><tr><td>name</td><td>string</td></tr><tr><td>tag</td><td>string</td></tr></tbody></table>
+  <h2>Delete a pet</h2>
+  <p><code>DELETE /pets/{petId}</code> returns <code>204</code>.</p>
+</main>
+<footer>© Example</footer>
+<script>
+document.getElementById("resp").addEventListener("change", (e) => {
+  document.getElementById("resp-200").hidden = e.target.value !== "200";
+  document.getElementById("resp-404").hidden = e.target.value !== "404";
+});
+for (const t of document.querySelectorAll("[role=tab]")) t.addEventListener("click", () => {
+  for (const x of document.querySelectorAll("[role=tab]")) { x.setAttribute("aria-selected", String(x === t)); document.getElementById(x.getAttribute("aria-controls")).hidden = x !== t; }
+});
+</script>
+</body></html>

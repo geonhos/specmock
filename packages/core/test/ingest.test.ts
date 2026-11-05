@@ -53,11 +53,14 @@ describe("ingest(openapi)", () => {
     expect(source.inputs[0].content).not.toContain('"$ref"');
   });
 
-  it("rejects non-openapi inputs in this phase", async () => {
+  it("accepts non-openapi inputs as documents (Phase 1B)", async () => {
     const ws = new Workspace(dir);
     const md = path.join(dir, "doc.md");
     await writeFile(md, "# API\n", "utf8");
-    await expect(ingest(ws, "x", [md])).rejects.toThrow(/Phase 1B/);
+    await ingest(ws, "x", [md]);
+    const source = await ws.read("x", "source.json", SourceSchema);
+    expect(source.inputs[0].kind).toBe("markdown");
+    expect(source.inputs[0].title).toBe("API");
   });
 });
 
