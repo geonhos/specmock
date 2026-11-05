@@ -1,0 +1,229 @@
+{
+  "endpoints": [
+    {
+      "method": "GET",
+      "path": "/pets",
+      "title": "List pets",
+      "summary": "Returns an array of pets. Supports a limit query parameter.",
+      "group": "Pets",
+      "auth": "bearer",
+      "pathParams": [],
+      "queryParams": [
+        {
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "maximum": 100
+          },
+          "description": "Maximum number of pets to return (max 100)."
+        }
+      ],
+      "headers": [],
+      "requestBody": null,
+      "responses": [
+        {
+          "status": 200,
+          "schema": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "tag": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "example": [
+            {
+              "id": 1,
+              "name": "Rex",
+              "tag": "dog"
+            }
+          ],
+          "description": "Array of pets"
+        },
+        {
+          "status": 401,
+          "schema": null,
+          "description": "Missing or invalid token"
+        }
+      ],
+      "evidence": [
+        "`GET /pets` returns an array of pets. Query `limit` (integer, max 100)."
+      ],
+      "confidence": 0.9,
+      "inferred": {
+        "method": false,
+        "path": false
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/pets/{petId}",
+      "title": "Get a pet",
+      "summary": "Returns a single pet by ID.",
+      "group": "Pets",
+      "auth": "bearer",
+      "pathParams": [
+        {
+          "name": "petId",
+          "required": true,
+          "schema": null,
+          "description": ""
+        }
+      ],
+      "queryParams": [],
+      "headers": [],
+      "requestBody": null,
+      "responses": [
+        {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "tag": {
+                "type": "string"
+              }
+            }
+          },
+          "example": {
+            "id": 1,
+            "name": "Rex",
+            "tag": "dog"
+          },
+          "description": "The pet"
+        },
+        {
+          "status": 404,
+          "schema": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "integer"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          },
+          "example": {
+            "code": 404,
+            "message": "not found"
+          },
+          "description": "Pet not found"
+        },
+        {
+          "status": 401,
+          "schema": null,
+          "description": "Missing or invalid token"
+        }
+      ],
+      "evidence": [
+        "`GET /pets/{petId}` returns one pet. Responds `404` with `{\"code\": 404, \"message\": \"not found\"}` when missing."
+      ],
+      "confidence": 0.95,
+      "inferred": {
+        "method": false,
+        "path": false
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/pets",
+      "title": "Create a pet",
+      "summary": "Creates a new pet and returns the created pet.",
+      "group": "Pets",
+      "auth": "bearer",
+      "pathParams": [],
+      "queryParams": [],
+      "headers": [],
+      "requestBody": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "responses": [
+        {
+          "status": 201,
+          "schema": null,
+          "description": "The created pet"
+        },
+        {
+          "status": 401,
+          "schema": null,
+          "description": "Missing or invalid token"
+        }
+      ],
+      "evidence": [
+        "`POST /pets` with body `{\"name\": string, \"tag\"?: string}`. Returns `201` and the created pet."
+      ],
+      "confidence": 0.75,
+      "inferred": {
+        "method": false,
+        "path": false
+      }
+    },
+    {
+      "method": "DELETE",
+      "path": "/pets/{petId}",
+      "title": "Delete a pet",
+      "summary": "Deletes a pet by ID.",
+      "group": "Pets",
+      "auth": "bearer",
+      "pathParams": [
+        {
+          "name": "petId",
+          "required": true,
+          "schema": null,
+          "description": ""
+        }
+      ],
+      "queryParams": [],
+      "headers": [],
+      "requestBody": null,
+      "responses": [
+        {
+          "status": 204,
+          "schema": null,
+          "description": "Pet deleted"
+        },
+        {
+          "status": 401,
+          "schema": null,
+          "description": "Missing or invalid token"
+        }
+      ],
+      "evidence": [
+        "`DELETE /pets/{petId}` returns `204`."
+      ],
+      "confidence": 0.75,
+      "inferred": {
+        "method": false,
+        "path": false
+      }
+    }
+  ]
+}

@@ -10,10 +10,12 @@
     "test": "pnpm build:core && vitest run",
     "test:watch": "vitest",
     "typecheck": "pnpm build:core && pnpm -r typecheck",
-    "specmock": "pnpm -s build:core && tsx packages/cli/src/cli.ts"
+    "specmock": "pnpm -s build:core && tsx packages/cli/src/cli.ts",
+    "llm:check": "pnpm -s build:core && tsx scripts/live-llm-check.ts"
   },
   "devDependencies": {
     "@hono/node-server": "^2.1.6",
+    "@specmock/core": "workspace:*",
     "@types/node": "^26.6.6",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",

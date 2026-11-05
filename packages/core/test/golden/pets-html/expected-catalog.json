@@ -1,0 +1,303 @@
+{
+  "system": "pets-html",
+  "features": [
+    {
+      "id": "pets.delete",
+      "group": "pets",
+      "title": "Delete a pet",
+      "summary": "",
+      "method": "DELETE",
+      "path": "/pets/{petId}",
+      "request": {
+        "params": {
+          "petId": {
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        },
+        "query": {},
+        "headers": {},
+        "body": null
+      },
+      "responses": {
+        "204": {
+          "schema": null,
+          "examples": []
+        }
+      },
+      "auth": "bearer",
+      "provenance": "doc-extracted",
+      "confidence": 0.27,
+      "hasExample": false,
+      "evidence": [
+        {
+          "chunk": 0,
+          "quote": "this sentence does not exist in the document"
+        }
+      ],
+      "notes": [
+        "근거 불일치: 인용 1건 중 1건을 원문에서 찾지 못함"
+      ]
+    },
+    {
+      "id": "pets.list",
+      "group": "pets",
+      "title": "List pets",
+      "summary": "returns an array of pets",
+      "method": "GET",
+      "path": "/pets",
+      "request": {
+        "params": {},
+        "query": {
+          "limit": {
+            "schema": {
+              "type": "integer",
+              "maximum": 100
+            },
+            "required": false
+          }
+        },
+        "headers": {},
+        "body": null
+      },
+      "responses": {
+        "200": {
+          "schema": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "tag": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "examples": [
+            {
+              "source": "doc-sample",
+              "body": [
+                {
+                  "id": 1,
+                  "name": "Rex",
+                  "tag": "dog"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "auth": "bearer",
+      "provenance": "doc-extracted",
+      "confidence": 1,
+      "hasExample": true,
+      "evidence": [
+        {
+          "chunk": 0,
+          "quote": "`GET /pets` returns an array of pets."
+        }
+      ],
+      "notes": [
+        "200 응답 스키마는 샘플에서 유추"
+      ]
+    },
+    {
+      "id": "pets.get",
+      "group": "pets",
+      "title": "Get a pet",
+      "summary": "",
+      "method": "GET",
+      "path": "/pets/{petId}",
+      "request": {
+        "params": {
+          "petId": {
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        },
+        "query": {},
+        "headers": {},
+        "body": null
+      },
+      "responses": {
+        "200": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "tag": {
+                "type": "string"
+              }
+            }
+          },
+          "examples": [
+            {
+              "source": "doc-sample",
+              "body": {
+                "id": 1,
+                "name": "Rex",
+                "tag": "dog"
+              }
+            }
+          ]
+        },
+        "404": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "integer"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          },
+          "examples": [
+            {
+              "source": "doc-sample",
+              "body": {
+                "code": 404,
+                "message": "not found"
+              }
+            }
+          ]
+        }
+      },
+      "auth": "bearer",
+      "provenance": "doc-extracted",
+      "confidence": 1,
+      "hasExample": true,
+      "evidence": [
+        {
+          "chunk": 0,
+          "quote": "`GET /pets/{petId}` returns one pet."
+        },
+        {
+          "chunk": 0,
+          "quote": "Responds `404` with `{\"code\": 404, \"message\": \"not found\"}` when missing."
+        }
+      ],
+      "notes": [
+        "200 응답 스키마는 샘플에서 유추",
+        "근거 일부 불일치: 인용 2건 중 1건을 원문에서 찾지 못함"
+      ]
+    },
+    {
+      "id": "pets.create",
+      "group": "pets",
+      "title": "Create a pet",
+      "summary": "",
+      "method": "POST",
+      "path": "/pets",
+      "request": {
+        "params": {},
+        "query": {},
+        "headers": {},
+        "body": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "tag": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ]
+        }
+      },
+      "responses": {
+        "201": {
+          "schema": null,
+          "examples": []
+        }
+      },
+      "auth": "bearer",
+      "provenance": "doc-extracted",
+      "confidence": 0.85,
+      "hasExample": false,
+      "evidence": [
+        {
+          "chunk": 0,
+          "quote": "`POST /pets` with body `{\"name\": string, \"tag\"?: string}`. Returns `201` and the created pet."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "id": "pets.update",
+      "group": "pets",
+      "title": "Update a pet",
+      "summary": "guessed",
+      "method": "PUT",
+      "path": "/pets/{petId}",
+      "request": {
+        "params": {
+          "petId": {
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        },
+        "query": {},
+        "headers": {},
+        "body": null
+      },
+      "responses": {
+        "200": {
+          "schema": null,
+          "examples": []
+        }
+      },
+      "auth": "unknown",
+      "provenance": "inferred",
+      "confidence": 0.5,
+      "hasExample": false,
+      "evidence": [
+        {
+          "chunk": 0,
+          "quote": "`GET /pets/{petId}` returns one pet."
+        }
+      ],
+      "notes": [
+        "method 추론됨"
+      ]
+    }
+  ],
+  "rejected": [
+    {
+      "raw": {
+        "method": "GET",
+        "path": "pets/bad",
+        "title": "broken path",
+        "summary": "",
+        "group": "",
+        "auth": "unknown",
+        "responses": [],
+        "evidence": [],
+        "confidence": 0.4
+      },
+      "reason": "path 형식 불일치: 'pets/bad'",
+      "chunk": 0
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+openapi: 3.0.3
+info: { title: Orders, version: "1.0" }
+security: [{ bearerAuth: [] }]
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+    apiKey: { type: apiKey, in: header, name: X-API-Key }
+  schemas:
+    Order:
+      type: object
+      required: [id, total]
+      properties:
+        id: { type: string, format: uuid }
+        total: { type: number, minimum: 0 }
+        items: { type: array, items: { $ref: "#/components/schemas/Item" } }
+    Item:
+      type: object
+      properties: { sku: { type: string }, qty: { type: integer, minimum: 1 } }
+paths:
+  /orders:
+    get:
+      operationId: listOrders
+      tags: [orders]
+      parameters: [{ name: status, in: query, schema: { type: string, enum: [open, paid] } }]
+      responses:
+        "200": { description: ok, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Order" } } } } }
+    post:
+      operationId: createOrder
+      tags: [orders]
+      security: [{ apiKey: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
+      responses:
+        "201": { description: created, content: { application/json: { schema: { $ref: "#/components/schemas/Order" }, example: { id: "6f1c", total: 10.5, items: [] } } } }
+        "401": { description: unauthorized }
+  /public/health:
+    get:
+      operationId: health
+      security: []
+      responses: { "200": { description: ok, content: { application/json: { schema: { type: object, properties: { ok: { type: boolean } } } } } } }

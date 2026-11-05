@@ -1,0 +1,211 @@
+{
+  "system": "with-auth",
+  "features": [
+    {
+      "id": "listOrders",
+      "group": "orders",
+      "title": "GET /orders",
+      "summary": "",
+      "method": "GET",
+      "path": "/orders",
+      "request": {
+        "params": {},
+        "query": {
+          "status": {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "paid"
+              ]
+            },
+            "required": false
+          }
+        },
+        "headers": {},
+        "body": null
+      },
+      "responses": {
+        "200": {
+          "schema": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "total"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "total": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sku": {
+                        "type": "string"
+                      },
+                      "qty": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "examples": []
+        }
+      },
+      "auth": "bearer",
+      "provenance": "openapi",
+      "confidence": 1,
+      "hasExample": false,
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "createOrder",
+      "group": "orders",
+      "title": "POST /orders",
+      "summary": "",
+      "method": "POST",
+      "path": "/orders",
+      "request": {
+        "params": {},
+        "query": {},
+        "headers": {},
+        "body": {
+          "type": "object",
+          "required": [
+            "id",
+            "total"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "total": {
+              "type": "number",
+              "minimum": 0
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "sku": {
+                    "type": "string"
+                  },
+                  "qty": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "schema": {
+            "type": "object",
+            "required": [
+              "id",
+              "total"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "total": {
+                "type": "number",
+                "minimum": 0
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sku": {
+                      "type": "string"
+                    },
+                    "qty": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "examples": [
+            {
+              "source": "spec-example",
+              "body": {
+                "id": "6f1c",
+                "total": 10.5,
+                "items": []
+              }
+            }
+          ]
+        },
+        "401": {
+          "schema": null,
+          "examples": []
+        }
+      },
+      "auth": "apiKey",
+      "provenance": "openapi",
+      "confidence": 1,
+      "hasExample": true,
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "health",
+      "group": "public",
+      "title": "GET /public/health",
+      "summary": "",
+      "method": "GET",
+      "path": "/public/health",
+      "request": {
+        "params": {},
+        "query": {},
+        "headers": {},
+        "body": null
+      },
+      "responses": {
+        "200": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean"
+              }
+            }
+          },
+          "examples": []
+        }
+      },
+      "auth": "none",
+      "provenance": "openapi",
+      "confidence": 1,
+      "hasExample": false,
+      "evidence": [],
+      "notes": []
+    }
+  ],
+  "rejected": []
+}

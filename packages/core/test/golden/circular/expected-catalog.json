@@ -1,0 +1,56 @@
+{
+  "system": "circular",
+  "features": [
+    {
+      "id": "getTree",
+      "group": "tree",
+      "title": "GET /tree",
+      "summary": "",
+      "method": "GET",
+      "path": "/tree",
+      "request": {
+        "params": {},
+        "query": {},
+        "headers": {},
+        "body": null
+      },
+      "responses": {
+        "200": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "root": {
+                "type": "object",
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "integer"
+                  },
+                  "children": {
+                    "type": "array",
+                    "items": {
+                      "x-specmock-circular": true
+                    }
+                  }
+                }
+              },
+              "count": {
+                "type": "integer"
+              }
+            }
+          },
+          "examples": []
+        }
+      },
+      "auth": "none",
+      "provenance": "openapi",
+      "confidence": 1,
+      "hasExample": false,
+      "evidence": [],
+      "notes": []
+    }
+  ],
+  "rejected": []
+}
