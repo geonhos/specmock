@@ -134,6 +134,7 @@ describe("generate_mock output directory guard", () => {
     expect(msg).toContain("specmock이 만든 디렉터리가 아닙니다");
     expect(msg).toContain("force: true");
     expect(msg).not.toContain("--force");
+    expect(msg).toContain("사용자에게 경로와 덮어쓸 내용을 확인받으세요");
     expect(await s.ok("list_features", { system: "petstore" })).toHaveProperty("total");
   });
 });

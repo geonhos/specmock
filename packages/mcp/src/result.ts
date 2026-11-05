@@ -7,11 +7,14 @@ const TOOL_FOR: Record<string, string> = {
 
 /** core/서비스 오류 문구의 CLI 안내(`specmock analyze x`, `--dir 로`)를 도구 안내로 바꾼다. */
 export function rewriteHints(message: string): string {
+  const overwrite = message.includes("specmock이 만든 디렉터리가 아닙니다")
+    ? " `force: true`로 다시 하기 전에 사용자에게 경로와 덮어쓸 내용을 확인받으세요."
+    : "";
   return message
     .replace(/`?specmock (ingest|analyze|select|generate|verify)(?: (?:<[^>\s]+>|[A-Za-z0-9_-]+))?`?/g, (_, cmd: string) => `\`${TOOL_FOR[cmd]}\``)
     .replace(/--dir 로/g, "dir 인자로")
     .replace(/--force/g, "force: true")
-    .replace(/<(?:표현식|exprs)>/g, "exprs");
+    .replace(/<(?:표현식|exprs)>/g, "exprs") + overwrite;
 }
 
 type Text = { type: "text"; text: string };

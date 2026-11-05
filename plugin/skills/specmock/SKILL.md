@@ -11,6 +11,8 @@ description: Use when the user wants a mock server for an external API from a sp
 
 specmock 플러그인을 로드하면 specmock MCP 서버의 도구 10개가 함께 켜진다. 이 도구들이 보이면 **셸 명령 대신 도구를 쓴다**. 권한 확인 창이 없고 결과가 구조화되어 돌아온다. 보이지 않으면 아래 0~5의 CLI 흐름을 쓴다.
 
+도구가 안 보이면 `packages/mcp/dist/server.js`가 없는 경우(저장소에서 `pnpm build`를 안 함)가 흔하다. 사용자에게 `pnpm build` 후 Claude Code에서 `/mcp`로 specmock 서버가 연결됐는지 확인하게 하고, 그래도 없으면 CLI 흐름으로 간다. 실제 도구 이름은 `mcp__plugin_specmock_specmock__<이름>` 형태다.
+
 | 도구 | 하는 일 |
 |---|---|
 | `ingest_spec` | 파일/URL을 읽어 source.json으로 (`origins`, `harvest`, `refresh`) |
@@ -31,6 +33,7 @@ specmock 플러그인을 로드하면 specmock MCP 서버의 도구 10개가 함
    - 응답의 `remaining`(아직 제출하지 않은 청크 번호)으로 진행을 추적한다. 비면 모두 끝난 것이다.
    - `ok: false, reason: "invalid"`면 `errors`의 경로를 보고 고쳐 같은 청크를 다시 제출한다.
    - `reason: "stale-chunk"`면 문서가 다시 분석된 것이므로 `analyze_spec`부터 다시 한다.
+   - `reason: "unknown-chunk"`면 청크 번호가 현재 목록에 없는 것이므로 `analyze_spec`을 다시 불러 청크 목록을 갱신한다.
    - 모든 청크가 끝나면 `merge_extractions`. `missingChunks`가 남으면 사용자에게 알린다.
    - 청크가 20개를 넘으면 수를 먼저 알리고 진행할지 묻는다.
 3. `list_features`의 `table`을 그대로 보여 주고 선택을 받는다(아래 3절의 설명과 규칙이 같다).

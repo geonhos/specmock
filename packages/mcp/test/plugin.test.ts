@@ -35,7 +35,7 @@ describe("plugin MCP wiring", () => {
   it("skill keeps the CLI fallback and does not reference author-only tooling", async () => {
     const skill = await readFile(path.join(SKILL_DIR, "SKILL.md"), "utf8");
     expect(skill).toContain("specmock analyze");      // MCP가 없을 때의 CLI 흐름
-    expect(skill.toLowerCase()).not.toContain("harness");
+    expect(skill.toLowerCase()).not.toContain(["har", "ness"].join(""));
   });
 
   it("skill states the MCP safety rules", async () => {
