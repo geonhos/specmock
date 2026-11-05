@@ -16,21 +16,33 @@ import { EXTRACTION_PROMPT } from "./prompt.js";
 export const CHUNKS_DIR = "chunks";
 export const EXTRACTED_DIR = "extracted";
 
+const pad3 = (n: number): string => String(n).padStart(3, "0");
+
 export function chunkFileName(index: number): string {
-  return `${String(index).padStart(3, "0")}.md`;
+  return `${pad3(index)}.md`;
 }
 export function extractedFileName(index: number): string {
-  return `${String(index).padStart(3, "0")}.json`;
+  return `${pad3(index)}.json`;
 }
 
-/** 본문 뒤에 수확 결과를 섹션으로 이어 붙인다. 청크 분할이 헤딩을 기준으로 하므로 "## [수확] ..." 헤딩을 쓴다. */
+/** 헤딩 줄에 들어갈 제목·라벨은 한 줄이어야 한다(줄바꿈이 있으면 헤딩이 깨진다). */
+const oneLine = (s: string): string => s.replace(/\s+/g, " ").trim();
+
+/**
+ * 본문 뒤에 수확 결과를 섹션으로 이어 붙인다. 청크 분할이 헤딩을 기준으로 하므로 "## [수확] ..." 헤딩을 쓴다.
+ * 내용이 비어 있는 수확 항목은 건너뛴다.
+ */
 export function documentText(input: SourceInput): string {
   const parts = [input.content.trimEnd()];
   for (const p of input.harvested?.pages ?? []) {
-    parts.push(`## [수확] 페이지: ${p.title || p.url}\n\n<!-- ${p.url} -->\n\n${p.content.trim()}`);
+    const content = p.content.trim();
+    if (!content) continue;
+    parts.push(`## [수확] 페이지: ${oneLine(p.title) || p.url}\n\n<!-- ${p.url} -->\n\n${content}`);
   }
   for (const it of input.harvested?.interactions ?? []) {
-    parts.push(`## [수확] ${it.type}: ${it.label}\n\n${it.content.trim()}`);
+    const content = it.content.trim();
+    if (!content) continue;
+    parts.push(`## [수확] ${it.type}: ${oneLine(it.label)}\n\n${content}`);
   }
   return parts.join("\n\n") + "\n";
 }
@@ -53,21 +65,24 @@ export async function prepare(ws: Workspace, system: string, chunkOpts: ChunkOpt
     .filter((i) => i.kind === "openapi")
     .reduce((n, i) => n + analyzeOpenApiDocument(JSON.parse(i.content)).length, 0);
 
-  const chunksDir = ws.file(system, CHUNKS_DIR);
-  await rm(chunksDir, { recursive: true, force: true });
-  await mkdir(chunksDir, { recursive: true });
-
+  // 먼저 메모리에서 청크를 모두 만든다. 분할 옵션이 잘못돼 던지더라도 기존 chunks/ 는 건드리지 않는다.
   const chunks: ChunkInfo[] = [];
+  const texts: string[] = [];
   for (const { input, inputIndex } of docInputs) {
     for (const c of splitIntoChunks(documentText(input), chunkOpts)) {
       const index = chunks.length;
       const file = path.posix.join(CHUNKS_DIR, chunkFileName(index));
-      await ws.writeText(system, file, c.text.endsWith("\n") ? c.text : c.text + "\n");
       // 헤딩 없는 텍스트/PDF나 첫 헤딩 앞의 긴 구간은 heading이 ""다. 요청서에는 문서 제목이나 출처를 대신 적는다.
       const heading = c.heading || input.title || input.origin;
       chunks.push({ index, file, inputIndex, heading, chars: c.text.length });
+      texts.push(c.text.endsWith("\n") ? c.text : c.text + "\n");
     }
   }
+
+  const chunksDir = ws.file(system, CHUNKS_DIR);
+  await rm(chunksDir, { recursive: true, force: true });
+  await mkdir(chunksDir, { recursive: true });
+  for (let i = 0; i < chunks.length; i++) await ws.writeText(system, chunks[i].file, texts[i]);
 
   const request: AnalyzeRequest = {
     system,
@@ -92,7 +107,7 @@ export async function pruneExtracted(ws: Workspace, system: string, chunkCount: 
   }
   const removed: string[] = [];
   for (const n of names.sort()) {
-    const m = n.match(/^(\d{3})\.json$/);
+    const m = n.match(/^(\d{3,})\.json$/);
     if (m && Number(m[1]) >= chunkCount) {
       await rm(path.join(dir, n), { force: true });
       removed.push(n);

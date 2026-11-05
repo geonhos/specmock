@@ -4,9 +4,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ingest } from "../src/ingest/index.js";
-import { prepare, pruneExtracted } from "../src/analyze/prepare.js";
-import { EXTRACTION_PROMPT } from "../src/analyze/prompt.js";
-import { AnalyzeRequestSchema, SourceSchema } from "../src/types.js";
+import { documentText, prepare, pruneExtracted } from "../src/analyze/prepare.js";
+import { EXTRACTION_PROMPT, buildChunkPrompt } from "../src/analyze/prompt.js";
+import { AnalyzeRequestSchema, SourceSchema, type SourceInput } from "../src/types.js";
 import { Workspace } from "../src/workspace.js";
 import { PETSTORE } from "./helpers.js";
 
@@ -92,6 +92,50 @@ describe("prepare", () => {
   it("throws when there is nothing to extract", async () => {
     await ingest(ws, "only", [PETSTORE]);
     await expect(prepare(ws, "only")).rejects.toThrow(/LLM 추출이 필요한 입력이 없습니다/);
+  });
+});
+
+describe("documentText", () => {
+  const base: SourceInput = {
+    kind: "markdown", origin: "doc.md", fetchedAt: "2026-01-01T00:00:00.000Z", contentHash: "x", content: "# Doc\n\nbody\n\n",
+  };
+
+  it("skips blank harvested content and collapses multi-line titles and labels", () => {
+    const text = documentText({
+      ...base,
+      harvested: {
+        pages: [
+          { url: "https://x.test/a", title: "  Page\n  A  ", content: "## A\n\ncontent a" },
+          { url: "https://x.test/empty", title: "Empty", content: "   \n\n" },
+          { url: "https://x.test/untitled", title: "", content: "untitled content" },
+        ],
+        interactions: [
+          { type: "tab", label: "Response\n\texample  = 200", content: '{"ok": true}' },
+          { type: "select", label: "Blank", content: "" },
+        ],
+        notes: [],
+      },
+    });
+    expect(text).toBe(
+      "# Doc\n\nbody\n\n" +
+        "## [수확] 페이지: Page A\n\n<!-- https://x.test/a -->\n\n## A\n\ncontent a\n\n" +
+        "## [수확] 페이지: https://x.test/untitled\n\n<!-- https://x.test/untitled -->\n\nuntitled content\n\n" +
+        '## [수확] tab: Response example = 200\n\n{"ok": true}\n',
+    );
+    expect(text).not.toContain("Empty");
+    expect(text).not.toContain("Blank");
+  });
+
+  it("returns the content alone when nothing was harvested", () => {
+    expect(documentText(base)).toBe("# Doc\n\nbody\n");
+  });
+});
+
+describe("buildChunkPrompt", () => {
+  it("prefixes the extraction prompt and fences the chunk", () => {
+    const p = buildChunkPrompt("## List pets\n\n`GET /pets`");
+    expect(p.startsWith(EXTRACTION_PROMPT)).toBe(true);
+    expect(p).toContain("\n<<<\n## List pets\n\n`GET /pets`\n>>>\n");
   });
 });
 
