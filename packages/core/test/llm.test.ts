@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,25 @@ describe("ClaudeCodeAdapter", () => {
     expect(args).toContain("--json-schema"); expect(JSON.parse(args[args.indexOf("--json-schema") + 1])).toEqual(schema);
     expect(args).toContain("--model"); expect(args[args.indexOf("--model") + 1]).toBe("sonnet");
     expect(args).toContain("--tools"); expect(args[args.indexOf("--tools") + 1]).toBe("");
+  });
+
+  it("runs the child in an empty temp cwd, not the caller's cwd, and cleans it up", async () => {
+    const cwdLog = path.join(dir, "cwd.txt");
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-cwd"), env: { CWD_LOG: cwdLog } });
+    await adapter.extract({ prompt: "x", schema });
+    const childCwd = (await readFile(cwdLog, "utf8")).trim();
+    expect(childCwd).not.toBe(await realpath(process.cwd()));
+    expect(childCwd.startsWith(await realpath(os.tmpdir()))).toBe(true);
+    expect(path.basename(childCwd)).toMatch(/^specmock-claude-/);
+    await expect(stat(childCwd)).rejects.toThrow();
+  });
+
+  it("uses opts.cwd when given and does not remove it", async () => {
+    const cwdLog = path.join(dir, "cwd.txt");
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-cwd"), cwd: dir, env: { CWD_LOG: cwdLog } });
+    await adapter.extract({ prompt: "x", schema });
+    expect((await readFile(cwdLog, "utf8")).trim()).toBe(await realpath(dir));
+    await expect(stat(dir)).resolves.toBeTruthy();
   });
 
   it("surfaces the CLI error message when claude fails", async () => {
