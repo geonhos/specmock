@@ -1,6 +1,7 @@
 import { CatalogSchema, MockSpecSchema, SelectionSchema, SourceSchema, type Contract, type MockFeature, type MockSpec } from "../types.js";
 import { hashJson } from "../util/hash.js";
 import type { Workspace } from "../workspace.js";
+import { orderFeatures } from "../catalog/order.js";
 import { buildContracts } from "./contracts.js";
 import { resolveSelection } from "./expression.js";
 import { buildFixtures } from "./fixtures.js";
@@ -9,6 +10,8 @@ export interface SelectOptions {
   add?: boolean;
   remove?: boolean;
   language?: MockSpec["language"];
+  /** true면 exprs를 표현식이 아닌 기능 id 그대로 취급한다(id가 all·숫자 등과 겹쳐도 안전). add/remove는 무시. */
+  literalIds?: boolean;
 }
 
 export interface SelectResult {
@@ -40,7 +43,9 @@ export async function select(ws: Workspace, system: string, exprs: string[], opt
     };
   }
   let selected = [...exprs];
-  if (opts.remove) {
+  if (opts.literalIds) {
+    // 표현식 해석 없이 id 존재만 확인한다.
+  } else if (opts.remove) {
     if (!prev) throw new Error(`제거할 기존 선택이 없습니다. 먼저 specmock select ${system} <표현식>을 실행하세요.`);
     const negated = exprs
       .flatMap((e) => e.split(",").map((s) => s.trim()).filter(Boolean))
@@ -50,7 +55,16 @@ export async function select(ws: Workspace, system: string, exprs: string[], opt
     selected = [...prev.selected, ...exprs];
   }
 
-  const resolved = await resolveSelection(catalog, selected);
+  let resolved: string[];
+  if (opts.literalIds) {
+    const known = new Set(currentIds);
+    const unknown = selected.filter((id) => !known.has(id));
+    if (unknown.length) throw new Error(`알 수 없는 기능 id: ${unknown.join(", ")}`);
+    const want = new Set(selected);
+    resolved = orderFeatures(catalog).map((o) => o.feature.id).filter((id) => want.has(id));
+  } else {
+    resolved = await resolveSelection(catalog, selected);
+  }
   if (resolved.length === 0) throw new Error("선택 결과가 비어 있습니다. 표현식을 확인하세요.");
 
   const byId = new Map(catalog.features.map((f) => [f.id, f]));

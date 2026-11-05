@@ -26,11 +26,15 @@ describe("ingest harvest failure note", () => {
   afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
 
   it("masks secrets in the failure note", async () => {
-    await ingest(ws, "s", ["https://x.test/docs"], { harvest: "always" });
+    const logs: string[] = [];
+    await ingest(ws, "s", ["https://x.test/docs"], { harvest: "always", onLog: (m) => logs.push(m) });
     const src = await ws.read("s", "source.json", SourceSchema);
     const note = src.inputs[0]!.harvested!.notes[0]!;
     expect(note).toContain("수확 실패");
     expect(note).not.toContain(key);
     expect(note).toContain("***");
+    expect(logs.length).toBeGreaterThan(0);
+    expect(logs.some((m) => m.includes("수확 실패"))).toBe(true);
+    for (const m of logs) expect(m).not.toContain(key);
   });
 });

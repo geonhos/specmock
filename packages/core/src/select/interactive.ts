@@ -31,3 +31,15 @@ export function buildChoices(catalog: Catalog, previous: string[] | null, opts: 
   }
   return rows;
 }
+
+/**
+ * interactive 선택 결과를 저장할 id 목록으로 합친다.
+ * 화면에 안 보인 그룹(--group 필터)의 이전 선택은 카탈로그에 아직 있으면 유지하고,
+ * 보인 행은 picked만 따른다. 결과는 카탈로그 표시 순서로 정렬해 결정적이다.
+ */
+export function mergeInteractivePick(input: { catalog: Catalog; previous: string[] | null; shownIds: string[]; picked: string[] }): string[] {
+  const shown = new Set(input.shownIds);
+  const keep = new Set<string>(input.picked);
+  for (const id of input.previous ?? []) if (!shown.has(id)) keep.add(id);
+  return orderFeatures(input.catalog).map((o) => o.feature.id).filter((id) => keep.has(id));
+}

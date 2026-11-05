@@ -1,4 +1,4 @@
-import { buildChoices, CatalogSchema, select, SelectionSchema } from "@specmock/core";
+import { buildChoices, CatalogSchema, mergeInteractivePick, select, SelectionSchema } from "@specmock/core";
 import type { Command } from "commander";
 import { EXPR_HELP, fail, printJsonOr, SYSTEM_ARG_HELP, workspaceFrom } from "../context.js";
 
@@ -35,18 +35,19 @@ export function registerSelect(program: Command): void {
           const prev = (await ws.exists(system, "selection.json")) ? (await ws.read(system, "selection.json", SelectionSchema)).resolved : null;
           const rows = buildChoices(catalog, prev, { group: opts.group });
           // 표시되지 않은 그룹의 이전 선택은 보존한다(--group으로 일부만 보여줄 때 나머지가 사라지면 안 된다).
-          const shown = new Set(rows.flatMap((r) => ("value" in r ? [r.value] : [])));
-          const hidden = (prev ?? []).filter((id) => !shown.has(id) && catalog.features.some((f) => f.id === id));
+          const shownIds = rows.flatMap((r) => ("value" in r ? [r.value] : []));
+          const shown = new Set(shownIds);
+          const hasHidden = (prev ?? []).some((id) => !shown.has(id) && catalog.features.some((f) => f.id === id));
           const picked = await checkbox<string>({
             message: `${system}: mock으로 만들 기능을 고르세요 (space 선택 · a 전체 · i 반전 · enter 확정)`,
             choices: rows.map((r) => ("separator" in r ? new Separator(`── ${r.separator} ──`) : r)),
             pageSize: 20,
             loop: false,
-            required: true,
+            required: !hasHidden, // 숨은 그룹 선택이 남아 있으면 보인 그룹을 전부 해제할 수 있다
           });
-          exprs = [...hidden, ...picked]; // id 목록을 표현식으로 넘긴다 (selection.json에 그대로 저장되어 재현 가능)
+          exprs = mergeInteractivePick({ catalog, previous: prev, shownIds, picked }); // id 목록 (selection.json에 그대로 저장되어 재현 가능)
         }
-        const result = await select(ws, system, exprs, { add: opts.add, remove: opts.remove });
+        const result = await select(ws, system, exprs, { add: opts.add, remove: opts.remove, literalIds: opts.interactive });
         printJsonOr(opts.json, result, () => {
           let warn = "";
           if (result.catalogChanged) {

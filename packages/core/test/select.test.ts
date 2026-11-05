@@ -83,4 +83,15 @@ describe("select", () => {
     const spec = await ws.read("petstore", "mockspec.json", MockSpecSchema);
     expect(spec.assumptions[0]).toBe("입력: ego-browser 미설치. 수확 미수행");
   });
+
+  it("literalIds picks ids verbatim even when they look like expressions", async () => {
+    const cat = await ws.read("petstore", "catalog.json", CatalogSchema);
+    const base = cat.features[0]!;
+    const mk = (id: string, p: string) => ({ ...base, id, path: p });
+    await ws.write("petstore", "catalog.json", CatalogSchema, { ...cat, features: [...cat.features, mk("all", "/x-all"), mk("123", "/x-123")] });
+    const r = await select(ws, "petstore", ["all", "123"], { literalIds: true });
+    expect(r.resolved.sort()).toEqual(["123", "all"]);
+    expect(r.selected).toEqual(["all", "123"]);
+    await expect(select(ws, "petstore", ["nope"], { literalIds: true })).rejects.toThrow(/알 수 없는 기능 id/);
+  });
 });

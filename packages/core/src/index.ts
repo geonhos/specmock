@@ -15,7 +15,7 @@ export { inferSchema } from "./analyze/inferSchema.js";
 export { diffCatalogs } from "./analyze/diff.js";
 export { orderFeatures, type OrderedFeature } from "./catalog/order.js";
 export { formatCatalog, formatFeatureRow } from "./catalog/format.js";
-export { buildChoices, type ChoiceRow, type SeparatorRow, type InteractiveRow } from "./select/interactive.js";
+export { buildChoices, mergeInteractivePick, type ChoiceRow, type SeparatorRow, type InteractiveRow } from "./select/interactive.js";
 export { resolveSelection } from "./select/expression.js";
 export { harvest, isEgoBrowserAvailable, type HarvestOptions } from "./harvest/index.js";
 export { buildHarvestScript } from "./harvest/script.js";

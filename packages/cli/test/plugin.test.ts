@@ -54,7 +54,10 @@ describe("Claude Code plugin", () => {
     expect(used.size).toBeGreaterThan(3);
     for (const [cmd, opts] of used) {
       const { stdout } = await run(TSX, [CLI, cmd, "--help"], { env: { ...process.env, NO_COLOR: "1" } });
-      for (const o of opts) expect(stdout, `\`specmock ${cmd} --help\` should list ${o} (used in skill docs)`).toContain(o);
+      for (const o of opts) {
+        const re = new RegExp("(^|\\s|,)" + o.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(\\s|,|=|$)", "m");
+        expect(stdout, `\`specmock ${cmd} --help\` should list ${o} (used in skill docs)`).toMatch(re);
+      }
     }
   }, 60_000);
 });

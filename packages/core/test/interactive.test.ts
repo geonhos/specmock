@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { formatCatalog } from "../src/catalog/format.js";
-import { buildChoices } from "../src/select/interactive.js";
+import { buildChoices, mergeInteractivePick } from "../src/select/interactive.js";
 import type { Catalog, Feature } from "../src/types.js";
 
 const f = (id: string, group: string, extra: Partial<Feature> = {}): Feature => ({
@@ -38,5 +38,24 @@ describe("buildChoices", () => {
     const rows = buildChoices(catalog, null, { group: "beta" });
     expect(rows.map((r) => ("value" in r ? r.value : r.separator))).toEqual(["beta (1)", "b1"]);
     expect((rows[1] as { name: string }).name).toMatch(/^3\s/);
+  });
+});
+
+describe("mergeInteractivePick", () => {
+  const shownAlpha = ["a1", "a2"];
+  it("keeps previous picks of groups that were not shown", () => {
+    expect(mergeInteractivePick({ catalog, previous: ["b1", "a1"], shownIds: shownAlpha, picked: ["a2"] })).toEqual(["a2", "b1"]);
+  });
+  it("drops shown items the user unchecked", () => {
+    expect(mergeInteractivePick({ catalog, previous: ["a1", "a2", "b1"], shownIds: shownAlpha, picked: ["a1"] })).toEqual(["a1", "b1"]);
+  });
+  it("discards ids that vanished from the catalog", () => {
+    expect(mergeInteractivePick({ catalog, previous: ["gone", "b1"], shownIds: shownAlpha, picked: ["a1"] })).toEqual(["a1", "b1"]);
+  });
+  it("handles a null previous selection", () => {
+    expect(mergeInteractivePick({ catalog, previous: null, shownIds: ["a1", "a2", "b1"], picked: ["b1", "a2"] })).toEqual(["a2", "b1"]);
+  });
+  it("orders deterministically in catalog display order without duplicates", () => {
+    expect(mergeInteractivePick({ catalog, previous: ["b1"], shownIds: shownAlpha, picked: ["a2", "a1", "a2"] })).toEqual(["a1", "a2", "b1"]);
   });
 });
