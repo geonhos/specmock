@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect } from "vitest";
@@ -26,6 +27,7 @@ export interface Session {
 }
 
 export async function connect(cwd: string, args: string[] = []): Promise<Session> {
+  if (!existsSync(SERVER)) throw new Error("packages/mcp/dist/server.js가 없습니다. 먼저 `pnpm build:mcp`를 실행하세요.");
   const transport = new StdioClientTransport({ command: process.execPath, args: [SERVER, ...args], cwd, stderr: "pipe" });
   const client = new Client({ name: "specmock-test", version: "0.0.0" });
   await client.connect(transport);
