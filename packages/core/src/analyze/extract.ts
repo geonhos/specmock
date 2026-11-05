@@ -31,12 +31,15 @@ export async function extract(ws: Workspace, system: string, adapter: LlmAdapter
     const rel = path.posix.join(EXTRACTED_DIR, extractedFileName(chunk.index));
     const report = (status: ExtractProgress["status"]) => opts.onProgress?.({ done: ++done, total: result.total, chunk: chunk.index, status });
     const fileExists = await exists(ws.file(system, rel));
-    const stale = fileExists && manifest[key] !== undefined && manifest[key] !== chunk.contentHash;
+    // contentHash가 없는 analyze-request.json도 본문 해시로 비교해야 매번 재추출되지 않는다.
+    let text: string;
+    try { text = await readFile(ws.file(system, chunk.file), "utf8"); }
+    catch (e) { result.failed.push({ chunk: chunk.index, error: (e as Error).message }); report("failed"); continue; }
+    const stale = fileExists && manifest[key] !== undefined && manifest[key] !== (chunk.contentHash ?? hashText(text));
     if (!opts.refresh && fileExists && !stale) { result.skipped += 1; report("skipped"); continue; }
     // 낡은 결과는 재추출이 실패해도 merge에 흘러들지 않도록 먼저 지운다(merge는 "미추출"로 기록한다).
     if (stale) { await rm(ws.file(system, rel), { force: true }); delete manifest[key]; }
     try {
-      const text = await readFile(ws.file(system, chunk.file), "utf8");
       const raw = await adapter.extract({ prompt: buildChunkPrompt(text), schema: request.schema });
       const parsed = ExtractionResultSchema.safeParse(raw);
       if (!parsed.success) throw new Error(`출력이 스키마와 맞지 않습니다: ${parsed.error.issues[0]?.path.join(".")} ${parsed.error.issues[0]?.message}`);

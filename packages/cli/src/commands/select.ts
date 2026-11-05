@@ -1,6 +1,6 @@
-import { select } from "@specmock/core";
+import { CatalogDiffSchema, select } from "@specmock/core";
 import type { Command } from "commander";
-import { EXPR_HELP, fail, printJsonOr, SYSTEM_ARG_HELP, workspaceFrom } from "../context.js";
+import { EXPR_HELP, fail, formatDiff, printJsonOr, SYSTEM_ARG_HELP, workspaceFrom } from "../context.js";
 
 export function registerSelect(program: Command): void {
   program
@@ -17,8 +17,9 @@ export function registerSelect(program: Command): void {
       try {
         const ws = workspaceFrom(cmd);
         const result = await select(ws, system, exprs, { add: opts.add, remove: opts.remove });
+        const diff = result.catalogChanged && (await ws.exists(system, "catalog-diff.json")) ? await ws.read(system, "catalog-diff.json", CatalogDiffSchema) : null;
         printJsonOr(opts.json, result, () => {
-          const warn = result.catalogChanged ? "\n주의: 카탈로그가 이전 선택 이후 바뀌었습니다. specmock list로 확인하세요." : "";
+          const warn = result.catalogChanged ? `\n주의: 카탈로그가 이전 선택 이후 바뀌었습니다.${diff ? " " + formatDiff(diff) + "." : ""} specmock list로 확인하세요.` : "";
           return `선택 ${result.resolved.length}개: ${result.resolved.join(", ")}${warn}\n다음: specmock generate ${system}`;
         });
       } catch (e) {
