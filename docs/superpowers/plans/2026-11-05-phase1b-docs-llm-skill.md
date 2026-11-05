@@ -3300,7 +3300,7 @@ Task 9와 10, 11은 서로 독립이지만 같은 worktree에서 순서대로 �
 | 10 | 플러그인·스킬·참고문서, `plugin.test`에 종료 코드·옵션 drift 검사, `claude plugin validate` 통과, 근거 없는 merge 종료 코드 서술 제거 | 스킬 문서가 CLI와 어긋나지 않게 |
 | 11 | `select --interactive`(그룹 구분선·사전 체크·`--group`), 병합을 core `mergeInteractivePick`으로 분리·테스트(리뷰 Major 수정), `literalIds`, Task 10 잔여(세션 모드 `--refresh`가 `extracted/` 삭제, 실패 로그 마스킹) | `--group` 보존 로직과 로그 마스킹이 무테스트였음. 저장은 id 목록으로 평탄화(의도) |
 | 12 | README(문서 입력 빠른 시작, LLM/수확 고지, 종료 코드 표, 스킬 사용법, 1B 제한 사항), architecture(LLM 3단계 시퀀스, 상태 파일), 설계 §3.1·3.3·4.3·5.1·5.2·5.6·12, 이 기록 | `examples/petstore/README.md` 링크 변경은 불필요해 생략 |
-| 최종 | 33 test files / 243 tests, `pnpm typecheck` 통과. 라이브: `pnpm llm:check` OK 4136ms(sonnet), 예제 녹음 기능 4개(청크 1, 신뢰도 1.0/1.0/0.8/0.8), ego-browser 실측 수확 페이지 1·상호작용 2(Node 탭, select=404, 약 2.3s) | 수동 확인 필요 항목 2개 미실시: 플러그인 세션 실행, `select --interactive` TTY 실행(완료 기준 `[ ]`). 최종 리뷰 반영: README 실제 출력·신뢰도 설명 정정, HTML 제목·origin 마스킹(+1 test) |
+| 최종 | 34 test files / 244 tests, `pnpm typecheck` 통과. 라이브: `pnpm llm:check` OK 4136ms(sonnet), 예제 녹음 기능 4개(청크 1, 신뢰도 1.0/1.0/0.8/0.8), ego-browser 실측 수확 페이지 1·상호작용 2(Node 탭, select=404, 약 2.3s) | 수동 확인 필요 항목 2개 미실시: 플러그인 세션 실행, `select --interactive` TTY 실행(완료 기준 `[ ]`). 최종 리뷰 반영: README 실제 출력·신뢰도 설명 정정, HTML 제목·origin 마스킹(+1 test) |
 
 ### 후속 과제
 
@@ -3315,4 +3315,6 @@ Task 9와 10, 11은 서로 독립이지만 같은 worktree에서 순서대로 �
 - 정적 토글 사이트에서 수확 내용이 본문과 중복될 수 있음(prepare에서 중복 섹션 생략), `show more` 감지가 script/nav를 포함하는 오탐.
 - 로컬 파일 캐시 키 정규화·mtime 검사, PDF title(메타데이터), `application/xhtml+xml` 등 content-type.
 - `hasExample` 기준 통일(openapi.ts vs merge 2xx), OpenAPI feature 추출 3회 중복 헬퍼화, `core/index.ts` 공개 API 정리(2단계 MCP가 쓰는 것만).
+- 비밀값만 다른 두 URL이 마스킹 후 같은 캐시 키가 되어 두 번째가 첫 번째 캐시를 재사용함(`ingest/index.ts` 약 146행, 현재는 `--refresh` 필요).
+- 수확 자식 프로세스 stdout이 마스킹 없이 onLog로 감(`harvest/index.ts` 약 36행).
 - 플러그인 marketplace 배포 안내.
