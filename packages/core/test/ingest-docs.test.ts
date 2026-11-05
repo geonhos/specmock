@@ -142,7 +142,7 @@ describe("ingest over http", () => {
   afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
 
   it("detects html by content-type, converts to markdown and flags a harvest candidate", async () => {
-    await ingest(ws, "pets", [`${base}/docs`]);
+    await ingest(ws, "pets", [`${base}/docs`], { harvest: "never" });
     const src = await ws.read("pets", "source.json", SourceSchema);
     expect(src.inputs[0].kind).toBe("html");
     expect(src.inputs[0].content).toContain("## Get a pet");
@@ -157,12 +157,12 @@ describe("ingest over http", () => {
   });
 
   it("reuses the cached input unless refresh is set", async () => {
-    await ingest(ws, "pets", [`${base}/docs`]);
+    await ingest(ws, "pets", [`${base}/docs`], { harvest: "never" });
     const first = (await ws.read("pets", "source.json", SourceSchema)).inputs[0].fetchedAt;
-    await ingest(ws, "pets", [`${base}/docs`]);
+    await ingest(ws, "pets", [`${base}/docs`], { harvest: "never" });
     expect(hits).toBe(1);
     expect((await ws.read("pets", "source.json", SourceSchema)).inputs[0].fetchedAt).toBe(first);
-    await ingest(ws, "pets", [`${base}/docs`], { refresh: true });
+    await ingest(ws, "pets", [`${base}/docs`], { refresh: true, harvest: "never" });
     expect(hits).toBe(2);
   });
 

@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { harvest, isEgoBrowserAvailable } from "../harvest/index.js";
 import { hashText } from "../util/hash.js";
 import { SourceSchema, type Source, type SourceInput } from "../types.js";
 import type { Workspace } from "../workspace.js";
@@ -120,7 +121,7 @@ export async function ingestOne(origin: string): Promise<SourceInput> {
 export interface IngestOptions {
   /** true면 source.json에 같은 origin이 있어도 다시 읽는다. */
   refresh?: boolean;
-  /** 수확(ego-browser) 정책. 아직 받기만 하고 사용하지 않는다 — 후속 태스크에서 ego-browser 연결 시 동작한다. */
+  /** 수확(ego-browser) 정책. auto: 상호작용 요소가 감지된 웹 페이지만, always: 모든 웹 HTML, never: 안 함. 기본 auto. */
   harvest?: "auto" | "always" | "never";
   /** 입력 하나를 읽을 때마다 호출. CLI 진행 표시용. */
   onLog?: (message: string) => void;
@@ -139,6 +140,7 @@ export async function ingest(ws: Workspace, system: string, origins: string[], o
   const cached = new Map((prev?.inputs ?? []).map((i) => [i.origin, i]));
   const inputs: SourceInput[] = [];
   const fromCache: boolean[] = [];
+  const mode = opts.harvest ?? "auto";
   for (const origin of origins) {
     const hit = cached.get(origin);
     if (hit) {
@@ -147,7 +149,23 @@ export async function ingest(ws: Workspace, system: string, origins: string[], o
       fromCache.push(true);
       continue;
     }
-    inputs.push(await ingestOne(origin));
+    const input = await ingestOne(origin);
+    if (input.kind === "html" && isUrl(origin) && mode !== "never" && (mode === "always" || input.harvestCandidate)) {
+      if (await isEgoBrowserAvailable()) {
+        opts.onLog?.(`${origin}: ego-browser 수확 시작 (${input.harvestCandidate?.reasons.join(", ") ?? "always"})`);
+        try {
+          input.harvested = await harvest(origin, { onLog: opts.onLog });
+          opts.onLog?.(`${origin}: 수확 완료 — 페이지 ${input.harvested.pages.length}, 상호작용 ${input.harvested.interactions.length}`);
+        } catch (e) {
+          input.harvested = { pages: [], interactions: [], notes: [`수확 실패: ${(e as Error).message}. 숨은 콘텐츠 누락 가능`] };
+          opts.onLog?.(`${origin}: 수확 실패, 일반 fetch 결과로 진행 (${(e as Error).message})`);
+        }
+      } else {
+        input.harvested = { pages: [], interactions: [], notes: ["ego-browser 미설치. 수확 미수행, 숨은 콘텐츠 누락 가능"] };
+        opts.onLog?.(`${origin}: ego-browser가 없어 수확을 건너뜀`);
+      }
+    }
+    inputs.push(input);
     fromCache.push(false);
     opts.onLog?.(`${origin}: ${inputs[inputs.length - 1].kind} ${inputs[inputs.length - 1].content.length.toLocaleString()}자`);
   }

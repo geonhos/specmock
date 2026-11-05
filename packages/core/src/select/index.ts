@@ -1,4 +1,4 @@
-import { CatalogSchema, MockSpecSchema, SelectionSchema, type Contract, type MockFeature, type MockSpec } from "../types.js";
+import { CatalogSchema, MockSpecSchema, SelectionSchema, SourceSchema, type Contract, type MockFeature, type MockSpec } from "../types.js";
 import { hashJson } from "../util/hash.js";
 import type { Workspace } from "../workspace.js";
 import { buildContracts } from "./contracts.js";
@@ -63,6 +63,12 @@ export async function select(ws: Workspace, system: string, exprs: string[], opt
     assumptions.push(...built.assumptions);
     features.push({ ...feature, fixtures: built.fixtures });
     contracts.push(...buildContracts(feature, built.fixtures));
+  }
+  // 수확 단계의 메모(수확 실패·미설치·수동 탐색 필요 등)는 coverage에서 보이도록 assumptions 앞에 둔다.
+  if (await ws.exists(system, "source.json")) {
+    const source = await ws.read(system, "source.json", SourceSchema);
+    const notes = source.inputs.flatMap((i) => i.harvested?.notes ?? []).map((n) => `입력: ${n}`);
+    assumptions.unshift(...notes);
   }
   const chosen = new Set(resolved);
   const notMocked = catalog.features.filter((f) => !chosen.has(f.id)).map((f) => ({ id: f.id, method: f.method, path: f.path }));

@@ -16,6 +16,8 @@ export { diffCatalogs } from "./analyze/diff.js";
 export { orderFeatures, type OrderedFeature } from "./catalog/order.js";
 export { formatCatalog } from "./catalog/format.js";
 export { resolveSelection } from "./select/expression.js";
+export { harvest, isEgoBrowserAvailable, type HarvestOptions } from "./harvest/index.js";
+export { buildHarvestScript } from "./harvest/script.js";
 export { select, type SelectOptions, type SelectResult } from "./select/index.js";
 export { generate, defaultMockDir, type GenerateOptions } from "./generate/index.js";
 export { readLock, type Lock } from "./generate/lock.js";
