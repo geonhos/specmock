@@ -63,7 +63,47 @@ describe("submitExtraction", () => {
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.reason).toBe("invalid");
-    expect(r.errors!.map((e) => e.message).join(" ")).toMatch(/respones|extra/);
+    const paths = r.errors!.map((e) => e.path);
+    expect(paths).toContain("endpoints.0.respones");
+    expect(paths).toContain("extra");
+    expect(r.errors!.every((e) => !/: (respones|extra)$/.test(e.message))).toBe(true); // 키가 message에 또 붙지 않는다
+  });
+
+  const submit = (result: unknown) => {
+    const c = req.chunks[0]!;
+    return submitExtraction(ws, "pets", { index: c.index, contentHash: c.contentHash!, result });
+  };
+
+  it("rejects typos in nested objects (responses, params, inferred) but allows free-form values", async () => {
+    const r1 = await submit({ endpoints: [{ ...ENDPOINT, responses: [{ status: 200, exampel: {} }] }] });
+    expect(r1.ok).toBe(false);
+    if (!r1.ok) expect(r1.errors!.map((e) => e.path).join(" ")).toContain("responses.0");
+    const r2 = await submit({ endpoints: [{ ...ENDPOINT, inferred: { methd: true } }] });
+    expect(r2.ok).toBe(false);
+    const r3 = await submit({ endpoints: [{ ...ENDPOINT, queryParams: [{ name: "q", requird: true }] }] });
+    expect(r3.ok).toBe(false);
+    const r4 = await submit({ endpoints: [{ ...ENDPOINT, responses: [{ status: 200, example: { anything: { goes: 1 } }, schema: { type: "object", whatever: 1 } }], requestExample: { zzz: 1 } }] });
+    expect(r4.ok).toBe(true);
+  });
+
+  it("serializes concurrent submissions of different chunks (all ok, full manifest, no .tmp left)", async () => {
+    const big = await prepare(ws, "pets", { maxChars: 60, overlap: 5 });
+    const chunks = big.chunks;
+    expect(chunks.length).toBeGreaterThanOrEqual(10);
+    const results = await Promise.all(chunks.map((c) => submitExtraction(ws, "pets", { index: c.index, contentHash: c.contentHash!, result: { endpoints: [] } })));
+    expect(results.every((r) => r.ok)).toBe(true);
+    const manifest = JSON.parse(await readFile(extracted("manifest.json"), "utf8"));
+    expect(Object.keys(manifest)).toHaveLength(chunks.length);
+    expect((await readdir(path.join(dir, "pets", "extracted"))).filter((n) => n.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("survives submitting the same chunk twice concurrently", async () => {
+    const c = req.chunks[0]!;
+    const one = () => submitExtraction(ws, "pets", { index: c.index, contentHash: c.contentHash!, result: { endpoints: [ENDPOINT] } });
+    const rs = await Promise.all([one(), one()]);
+    expect(rs.every((r) => r.ok)).toBe(true);
+    expect(JSON.parse(await readFile(extracted("manifest.json"), "utf8"))).toEqual({ "000": c.contentHash });
+    expect(JSON.parse(await readFile(extracted("000.json"), "utf8")).endpoints).toHaveLength(1);
   });
 
   it("accepts unknown keys when lenient (extract path)", async () => {
@@ -83,6 +123,7 @@ describe("submitExtraction", () => {
   it("rejects an unknown chunk index", async () => {
     const r = await submitExtraction(ws, "pets", { index: 999, contentHash: "x", result: { endpoints: [] } });
     expect(r).toMatchObject({ ok: false, reason: "unknown-chunk" });
+    expect(await readdir(path.join(dir, "pets", "extracted"))).toEqual([]); // extracted 파일·manifest 없음
   });
 
   it("writes atomically: a failed rename leaves no partial file and no manifest entry", async () => {

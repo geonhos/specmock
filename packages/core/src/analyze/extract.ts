@@ -18,7 +18,7 @@ export interface ExtractResult { total: number; written: number; skipped: number
  * 지금 청크의 contentHash와 다르면 문서가 바뀐 것이므로 다시 추출한다. 매니페스트에 항목이 없는 파일(세션 모드나
  * 손으로 쓴 것)은 그대로 둔다. `refresh`는 매니페스트를 무시하고 전부 다시 추출한다.
  *
- * 청크는 순차로 처리한다. 동시 실행은 후속 과제이며, 그때는 .tmp 이름에 고유 접미사가 필요하다.
+ * 청크는 순차로 처리한다. 쓰기 경로(submitExtraction)는 고유 tmp 이름과 manifest 잠금으로 동시 제출에도 안전하다.
  */
 export async function extract(ws: Workspace, system: string, adapter: LlmAdapter, opts: ExtractOptions = {}): Promise<ExtractResult> {
   const request = await ws.read(system, "analyze-request.json", AnalyzeRequestSchema);

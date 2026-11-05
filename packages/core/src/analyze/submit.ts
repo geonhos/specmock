@@ -1,7 +1,7 @@
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { AnalyzeRequestSchema, ExtractedEndpointSchema, ExtractionResultSchema, type AnalyzeRequest } from "../types.js";
+import { AnalyzeRequestSchema, ExtractedEndpointSchema, ExtractedParamSchema, ExtractedResponseSchema, ExtractionResultSchema, type AnalyzeRequest } from "../types.js";
 import type { Workspace } from "../workspace.js";
 import { EXTRACTED_DIR, extractedFileName, hashText, readManifest, writeFileAtomic, writeManifest, type ExtractManifest } from "./prepare.js";
 
@@ -27,8 +27,32 @@ export interface SubmitExtractionOptions {
   lenient?: boolean;
 }
 
-/** 최상위와 엔드포인트의 알 수 없는 키를 거부한다. 오타(respones 등)를 제출 시점에 돌려주기 위해서다. */
-const StrictExtractionSchema = z.strictObject({ endpoints: z.array(ExtractedEndpointSchema.strict()) });
+/**
+ * 추출 스키마의 모든 중첩 객체에서 알 수 없는 키를 거부한다. 오타(respones, exampel, methd 등)를 제출 시점에 돌려주기 위해서다.
+ * JSON Schema·example 같은 자유 형식 값(사용자 데이터)의 안쪽은 검사하지 않는다.
+ */
+const StrictParam = ExtractedParamSchema.strict();
+const StrictEndpoint = ExtractedEndpointSchema.extend({
+  pathParams: z.array(StrictParam).default([]),
+  queryParams: z.array(StrictParam).default([]),
+  headers: z.array(StrictParam).default([]),
+  responses: z.array(ExtractedResponseSchema.strict()),
+  inferred: z.strictObject({ method: z.boolean().default(false), path: z.boolean().default(false) }).default({ method: false, path: false }),
+}).strict();
+const StrictExtractionSchema = z.strictObject({ endpoints: z.array(StrictEndpoint) });
+
+/**
+ * 워크스페이스+system 단위 프로세스 내 직렬화(Promise 체인). manifest 읽기-수정-쓰기 경합을 막는다.
+ * 범위: 한 프로세스 안. 서로 다른 프로세스 간 동시 쓰기는 보호하지 않는다.
+ */
+const manifestLocks = new Map<string, Promise<unknown>>();
+async function withManifestLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = manifestLocks.get(key) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  const tail = run.catch(() => undefined);
+  manifestLocks.set(key, tail);
+  try { return await run; } finally { if (manifestLocks.get(key) === tail) manifestLocks.delete(key); }
+}
 
 /**
  * 청크 하나의 추출 결과를 검증해 extracted/NNN.json에 원자적으로 쓰고 manifest에 청크 해시를 기록한다.
@@ -56,18 +80,23 @@ export async function submitExtraction(
     return {
       ok: false,
       reason: "invalid",
-      errors: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.code === "unrecognized_keys" ? `${i.message}: ${i.keys.join(", ")}` : i.message,
-      })),
+      // unrecognized_keys는 path가 객체 자리라 키가 안 보이므로, path에 키를 붙이고 message는 zod 그대로 둔다.
+      errors: parsed.error.issues.flatMap((i) =>
+        i.code === "unrecognized_keys"
+          ? i.keys.map((k) => ({ path: [...i.path, k].join("."), message: i.message }))
+          : [{ path: i.path.join("."), message: i.message }]),
     };
   }
   const rel = path.posix.join(EXTRACTED_DIR, extractedFileName(chunk.index));
   const file = ws.file(system, rel);
   await mkdir(path.dirname(file), { recursive: true });
   await writeFileAtomic(file, JSON.stringify({ endpoints: parsed.data.endpoints }, null, 2) + "\n");
-  const manifest = opts.manifest ?? (await readManifest(ws, system));
-  manifest[extractedFileName(chunk.index).replace(/\.json$/, "")] = actual;
-  await writeManifest(ws, system, manifest);
+  const key = extractedFileName(chunk.index).replace(/\.json$/, "");
+  await withManifestLock(`${ws.file(system, EXTRACTED_DIR)}`, async () => {
+    // 잠금 안에서 다시 읽어 다른 제출의 항목을 덮어쓰지 않는다. extract()의 메모리 manifest는 같은 잠금 안에서 갱신해 쓴다.
+    const manifest = opts.manifest ?? (await readManifest(ws, system));
+    manifest[key] = actual;
+    await writeManifest(ws, system, manifest);
+  });
   return { ok: true, file };
 }

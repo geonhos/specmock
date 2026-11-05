@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -126,7 +126,7 @@ export async function writeManifest(ws: Workspace, system: string, manifest: Ext
 
 /** 같은 디렉터리의 .tmp에 쓰고 rename한다. 중간에 죽어도 반쯤 쓴 파일은 남지 않는다. */
 export async function writeFileAtomic(file: string, content: string): Promise<void> {
-  const tmp = `${file}.tmp`;
+  const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`; // 동시 쓰기끼리 tmp를 공유하지 않는다
   try {
     await writeFile(tmp, content, "utf8");
     await rename(tmp, file);
