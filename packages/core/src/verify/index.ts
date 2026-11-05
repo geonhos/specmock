@@ -1,9 +1,9 @@
-import { Ajv } from "ajv";
-import addFormats from "ajv-formats";
+import type { Ajv } from "ajv";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { readLock } from "../generate/lock.js";
 import { ContractSchema, type Contract } from "../types.js";
+import { makeAjv } from "../util/ajv.js";
 import { startMock } from "./server.js";
 
 export interface ContractResult {
@@ -21,14 +21,6 @@ export interface VerifyResult {
   passed: number;
   failed: number;
   results: ContractResult[];
-}
-
-function makeAjv(): Ajv {
-  const ajv = new Ajv({ allErrors: true, strict: false });
-  // ajv-formats는 CommonJS 모듈이라 NodeNext에서는 default import가 module.exports 전체를 가리킨다.
-  addFormats.default(ajv);
-  for (const f of ["int32", "int64", "float", "double", "byte", "binary", "password"]) ajv.addFormat(f, true);
-  return ajv;
 }
 
 export async function loadContracts(mockDir: string): Promise<Contract[]> {

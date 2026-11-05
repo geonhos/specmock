@@ -16,7 +16,8 @@ export function registerRun(program: Command): void {
       if (opts.lang !== "ts") fail(`'${opts.lang}' 언어는 아직 지원하지 않습니다. (ts만 가능)`);
       const ws = workspaceFrom(cmd);
       await ingest(ws, system, origins);
-      await analyze(ws, system);
+      const outcome = await analyze(ws, system);
+      if (outcome.mode === "needs-llm") fail("문서 입력은 LLM 추출이 필요합니다. (--llm 옵션은 다음 작업에서 추가됩니다)");
       const catalog = await ws.read(system, "catalog.json", CatalogSchema);
       process.stdout.write(formatCatalog(catalog) + "\n\n");
       const sel = await select(ws, system, [opts.select]);
