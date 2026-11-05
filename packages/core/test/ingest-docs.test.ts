@@ -17,6 +17,7 @@ describe("htmlToMarkdown", () => {
     const html = await readFile(path.join(DOCS, "pets.html"), "utf8");
     const { title, markdown } = htmlToMarkdown(html, "https://x.test/docs");
     expect(title).toBe("Pets API Reference");
+    expect(markdown).toMatch(/^# Pets API Reference$/m);
     expect(markdown).toContain("## List pets");
     expect(markdown).toContain('[{"id": 1, "name": "Rex", "tag": "dog"}]');
     expect(markdown).toMatch(/\| *Field *\| *Type *\|/);

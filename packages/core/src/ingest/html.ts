@@ -38,7 +38,10 @@ export function htmlToMarkdown(html: string, url: string): { title: string; mark
   const contentHtml = article?.content ?? document.querySelector("main, article, body")?.innerHTML ?? html;
   let markdown = turndown().turndown(contentHtml).trim();
   if (markdown.length === 0) markdown = (document.body?.textContent ?? "").trim();
-  return { title: article?.title?.trim() || title, markdown: `<!-- source: ${url} -->\n\n${markdown}\n` };
+  const finalTitle = article?.title?.trim() || title;
+  // Readability는 <h1>을 제목으로 삼키고 본문에서 지운다. Markdown 입력과 같게 H1을 본문에 남겨 청크와 LLM이 문서 제목을 보게 한다.
+  if (finalTitle && !/^# /.test(markdown)) markdown = `# ${finalTitle}\n\n${markdown}`;
+  return { title: finalTitle, markdown: `<!-- source: ${url} -->\n\n${markdown}\n` };
 }
 
 export interface InteractiveReport { reasons: string[] }
