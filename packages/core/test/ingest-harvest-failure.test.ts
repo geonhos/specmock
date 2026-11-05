@@ -10,7 +10,10 @@ vi.mock("../src/harvest/index.js", () => ({
   harvest: async () => { throw new Error(`ego-browser 실패 key=${key}`); },
 }));
 vi.mock("../src/ingest/fetch.js", () => ({
-  fetchOrigin: async () => ({ body: "<html><body><main><h1>Docs</h1><button role=\"tab\" aria-controls=\"p\">A</button><div id=\"p\" hidden>x</div></main></body></html>", contentType: "text/html", bytes: Buffer.from("") }),
+  fetchOrigin: async () => ({
+    bytes: new TextEncoder().encode("<html><body><main><h1>Docs</h1><p>hello</p></main></body></html>"),
+    contentType: "text/html", charset: "utf-8", finalUrl: "https://x.test/docs",
+  }),
 }));
 
 import { ingest } from "../src/ingest/index.js";
