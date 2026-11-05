@@ -5,6 +5,9 @@
  * - 한 섹션이 maxChars를 넘으면 빈 줄 > 줄 끝 > 강제 순으로 자르고, 앞 조각의 꼬리 `overlap`자를 다음 조각 앞에 겹친다.
  * - 펜스 코드 블록(```/~~~) 안의 `#` 줄은 헤딩이 아니며, 피할 수 있으면 펜스 안에서 자르지 않는다.
  * - 입력만으로 결과가 결정된다(시간·난수 없음).
+ *
+ * 알려진 한계: HTML 주석(`<!-- -->`) 안의 헤딩 줄도 헤딩으로 본다. setext 헤딩(밑줄 `===`/`---`)은 인식하지 않는다
+ * (turndown 은 ATX 로 내보낸다). 닫히지 않은 펜스는 문서 끝까지 이어진 것으로 보아 뒤의 헤딩을 삼킨다.
  */
 
 export interface ChunkOptions {
@@ -63,7 +66,13 @@ function fenceRanges(text: string): Array<{ start: number; end: number }> {
 
 // ---------------------------------------------------------------------------
 
-const HEADING_RE = /^#{1,6}\s+(.+?)\s*#*\s*$/;
+// 앞 공백 0~3칸, `#` 1~6개, 본문, 선택적 닫는 `#` 꼬리(공백 뒤에 올 때만 — `# C#` 의 `#` 은 본문이다).
+const HEADING_RE = /^ {0,3}#{1,6}\s+(.+?)(?:\s+#+)?\s*$/;
+
+/** 자연스러운 경계(빈 줄·줄 끝)는 창의 뒤쪽 절반에서만 고른다 — 조각이 너무 짧아지지 않게. */
+const BOUNDARY_MIN_RATIO = 0.5;
+/** 펜스 앞으로 당겨 자를 때도 조각이 max 의 30% 는 돼야 한다 — 아니면 펜스를 가르는 쪽이 낫다. */
+const FENCE_PULLBACK_MIN_RATIO = 0.3;
 
 /** 헤딩 줄 기준으로 섹션을 나눈다. 첫 헤딩 앞의 내용은 heading "" 섹션이 된다. */
 function sections(markdown: string): Section[] {
@@ -94,9 +103,10 @@ function sections(markdown: string): Section[] {
 /**
  * 긴 텍스트를 max 이하 조각으로 자른다.
  * 자르는 지점은 빈 줄 > 줄 끝 > 강제 순이고, 펜스 블록 안에 떨어지면(피할 수 있을 때) 펜스 앞으로 당긴다.
- * 조각 끝의 공백은 잘라 내되 그 위치를 기준으로 다음 조각을 `overlap`자 앞에서 시작하므로
- * `parts[i+1]` 은 항상 `parts[i].slice(-overlap)` 으로 시작한다 — 단, 그 지점이 펜스 블록 안이면
- * 펜스가 끝난 직후(와 그 뒤 공백 다음)에서 시작한다.
+ * 조각 끝의 공백은 잘라 내되 그 위치를 기준으로 다음 조각을 `overlap`자 앞(의 첫 비공백 글자)에서 시작하므로
+ * `parts[i+1]` 은 `parts[i].slice(-overlap).trimStart()` 로 시작한다 — 단, 그 지점이 펜스 블록 안이면
+ * 펜스가 끝난 직후(와 그 뒤 공백 다음)에서 시작하고, 조각이 overlap 보다 짧으면 겹치지 않는다.
+ * 조각은 항상 비공백 글자로 시작하고 끝난다.
  */
 function hardSplit(text: string, max: number, overlap: number): string[] {
   const fences = fenceRanges(text);
@@ -108,17 +118,19 @@ function hardSplit(text: string, max: number, overlap: number): string[] {
     if (end < text.length) {
       const window = text.slice(start, end);
       let cut = window.lastIndexOf("\n\n");
-      if (cut < max * 0.5) cut = window.lastIndexOf("\n");
-      if (cut < max * 0.5) cut = max;
+      if (cut < max * BOUNDARY_MIN_RATIO) cut = window.lastIndexOf("\n");
+      if (cut < max * BOUNDARY_MIN_RATIO) cut = max;
       end = start + cut;
       const fence = fenceAround(end);
-      if (fence && fence.start - start > max * 0.3) end = fence.start;
+      if (fence && fence.start - start > max * FENCE_PULLBACK_MIN_RATIO) end = fence.start;
       const trimmedEnd = start + text.slice(start, end).trimEnd().length;
       if (trimmedEnd > start) end = trimmedEnd;
     }
     parts.push(text.slice(start, end));
     if (end >= text.length) break;
-    let next = Math.max(end - overlap, start + 1);
+    let next = end - overlap;
+    if (next <= start) next = end; // 조각이 overlap 보다 짧으면 겹치지 않는다 (1글자 전진 연쇄 방지)
+    while (next < text.length && /\s/.test(text[next])) next++; // 공백만 남은 창에서 시작하지 않는다
     const fence = fenceAround(next);
     if (fence && fence.end <= end) {
       next = fence.end;

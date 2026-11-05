@@ -26,8 +26,26 @@ describe("splitIntoChunks", () => {
     const chunks = splitIntoChunks(long, { maxChars: 4000, overlap: 200 });
     expect(chunks.length).toBeGreaterThanOrEqual(3);
     const tail = chunks[0].text.slice(-200);
-    expect(chunks[1].text.startsWith(tail)).toBe(true);
+    expect(chunks[1].text.startsWith(tail.trimStart())).toBe(true);
     for (const c of chunks) expect(c.heading).toBe("Big");
+  });
+
+  it("does not crawl one char at a time across a long whitespace run", () => {
+    const doc = `## W\n\n${"a".repeat(100)}${"\n".repeat(400)}${"b".repeat(100)}`;
+    const chunks = splitIntoChunks(doc, { maxChars: 200, overlap: 20 });
+    expect(chunks.length).toBeLessThanOrEqual(3);
+    for (const c of chunks) expect(c.text.trim().length).toBeGreaterThan(0);
+    expect(chunks.filter((c) => c.text.includes("a".repeat(100)))).toHaveLength(1);
+    expect(chunks.at(-1)!.text).toContain("b".repeat(100));
+  });
+
+  it("pulls the cut back before a fence opener when the fence would otherwise be split", () => {
+    const doc = `## A\n\n${"x ".repeat(600)}\n\n\`\`\`json\n${"{\"k\": 1},\n\n".repeat(300)}\`\`\`\n\nafter\n`;
+    const chunks = splitIntoChunks(doc, { maxChars: 3500, overlap: 100 });
+    expect(chunks.length).toBeGreaterThanOrEqual(2);
+    for (const c of chunks) expect(fenceCount(c.text) % 2).toBe(0);
+    expect(chunks[0].text).not.toContain("```json");
+    expect(chunks[1].text).toContain("```json");
   });
 
   it("does not split inside a fenced code block when it can avoid it", () => {
@@ -94,6 +112,39 @@ describe("splitIntoChunks", () => {
     expect(headings).not.toContain("not a heading (tilde fence)");
     expect(headings).toContain("Real");
     expect(headings[0]).toBe("Doc");
+  });
+
+  it("keeps a trailing # that is part of the heading and allows up to 3 leading spaces", () => {
+    const chunks = splitIntoChunks("# C#\n\nbody\n\n   ## Indented ##\n\nmore\n\n    ## code block\n", { maxChars: 40, overlap: 0 });
+    expect(chunks.map((c) => c.heading)).toEqual(["C#", "Indented"]);
+  });
+
+  it("holds size, non-blank and line-coverage properties across option combinations", () => {
+    const docs: Record<string, string> = {
+      sections: md(12),
+      fence: `## A\n\n${"x ".repeat(600)}\n\n\`\`\`json\n${"{\"k\": 1},\n\n".repeat(300)}\`\`\`\n\nafter\n`,
+      pages: Array.from({ length: 10 }, (_, i) => `## [page ${i + 1}]\n\n${`line ${i} of pdf text\n`.repeat(30)}`).join("\n"),
+      blankHeavy: `# B\n\n${Array.from({ length: 40 }, (_, i) => `para ${i}${"\n".repeat(50 + (i % 7) * 40)}`).join("")}tail`,
+      noNewlines: "a".repeat(7000),
+    };
+    for (const [name, doc] of Object.entries(docs)) {
+      const lines = doc.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+      for (const maxChars of [60, 200, 1500, 6000]) {
+        for (const overlap of [0, 50, 5000]) {
+          const label = `${name} max=${maxChars} ov=${overlap}`;
+          const chunks = splitIntoChunks(doc, { maxChars, overlap });
+          expect(chunks.length, label).toBeGreaterThan(0);
+          for (const c of chunks) {
+            expect(c.text.length, label).toBeLessThanOrEqual(maxChars);
+            expect(c.text.trim().length, label).toBeGreaterThan(0);
+          }
+          for (const line of lines) {
+            if (line.length >= maxChars / 2) continue;
+            expect(chunks.some((c) => c.text.includes(line)), `${label}: line "${line.slice(0, 30)}"`).toBe(true);
+          }
+        }
+      }
+    }
   });
 
   it("returns [] for empty input and normalizes CRLF", () => {
