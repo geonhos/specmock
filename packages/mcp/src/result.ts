@@ -46,9 +46,9 @@ export function progressEmitter(ctx: ProgressCtx, log: OnEvent): OnEvent {
 }
 
 /** progressEmitter에 더해, heartbeatMs 주기로 fn이 끝날 때까지 "진행 중" 알림을 보낸다(이벤트가 없는 긴 작업용). */
-export async function withProgress<R>(ctx: ProgressCtx, log: OnEvent, fn: (onEvent: OnEvent) => Promise<R>, heartbeatMs: number): Promise<R> {
+export async function withProgress<R>(ctx: ProgressCtx, log: OnEvent, fn: (onEvent: OnEvent) => Promise<R>, heartbeatMs: number, label: string): Promise<R> {
   const { onEvent, send } = makeProgress(ctx, log);
-  const timer = send ? setInterval(() => send("[verify] 진행 중…"), heartbeatMs) : undefined;
+  const timer = send ? setInterval(() => send(`[${label}] 진행 중…`), heartbeatMs) : undefined;
   try {
     return await fn(onEvent);
   } finally {

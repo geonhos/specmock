@@ -60,7 +60,7 @@ export function registerMockTools(server: McpServer, ws: Workspace, onEvent: OnE
     inputSchema: z.object({
       system: SystemArg,
       outDir: z.string().optional().describe("출력 디렉터리(프로젝트 루트 기준). 기본 ./mock/<system>"),
-      force: z.boolean().optional().describe("사용자가 수정한 fixture도 덮어쓴다"),
+      force: z.boolean().optional().describe("사용자가 수정한 fixture도 덮어쓴다. 또한 specmock이 만들지 않은(specmock.lock.json 없는) 비어 있지 않은 디렉터리도 덮어쓴다(package.json·src 등 교체, routes·contracts 정리). 반드시 사용자에게 경로와 덮어쓸 내용을 알리고 확인받은 뒤에만 true"),
     }),
     outputSchema: z.object({ outDir: z.string(), written: z.array(z.string()), preserved: z.array(z.string()), orphaned: z.array(z.string()) }),
   }, guard(async ({ system, outDir, force }) => {
@@ -78,7 +78,7 @@ export function registerMockTools(server: McpServer, ws: Workspace, onEvent: OnE
       coverageFile: z.string(), coverageSummary: z.string(),
     }),
   }, guard(async ({ system, dir }, ctx) => {
-    const v = await withProgress(ctx, onEvent, (ev) => verifyMock(ws, system, { dir, onEvent: ev }), opts.heartbeatMs ?? 5000);
+    const v = await withProgress(ctx, onEvent, (ev) => verifyMock(ws, system, { dir, onEvent: ev }), opts.heartbeatMs ?? 5000, "verify");
     const failures = v.result.results.filter((r) => !r.passed).map((r) => ({ featureId: r.featureId, name: r.name, expectedStatus: r.expectedStatus, actualStatus: r.actualStatus ?? null, errors: r.errors }));
     const data = { total: v.result.total, passed: v.result.passed, failed: v.result.failed, failures, coverageFile: absPath(ws.dir(system), v.coverageFile), coverageSummary: coverageSummary(v.coverageMarkdown) };
     return ok(`contract: 통과 ${data.passed} / 실패 ${data.failed}. 커버리지: ${data.coverageFile}`, data);

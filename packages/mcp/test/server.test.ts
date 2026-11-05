@@ -65,7 +65,7 @@ describe("stdout purity", () => {
       const lines = out.split("\n").filter((l) => l.trim());
       expect(lines.length).toBeGreaterThanOrEqual(3);
       for (const l of lines) expect(JSON.parse(l)).toMatchObject({ jsonrpc: "2.0" });
-      expect(err).toContain("[ingest]");
+      await expect.poll(() => err, { timeout: 5000 }).toContain("[ingest]");
     } finally { child.kill(); }
   });
 });

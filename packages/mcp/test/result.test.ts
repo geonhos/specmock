@@ -36,7 +36,7 @@ describe("withProgress heartbeat", () => {
   it("sends increasing heartbeat notifications while fn runs, then stops", async () => {
     const sent: number[] = [];
     const ctx = { mcpReq: { _meta: { progressToken: "t" }, notify: async (n: { params?: Record<string, unknown> }) => { sent.push(n.params!.progress as number); } } };
-    await withProgress(ctx, log, async () => { await new Promise((r) => setTimeout(r, 120)); }, 20);
+    await withProgress(ctx, log, async () => { await new Promise((r) => setTimeout(r, 120)); }, 20, "verify");
     expect(sent.length).toBeGreaterThanOrEqual(2);
     expect(sent).toEqual([...sent].sort((a, b) => a - b));
     const after = sent.length;
@@ -46,7 +46,7 @@ describe("withProgress heartbeat", () => {
   it("sends nothing without a progressToken", async () => {
     let calls = 0;
     const ctx = { mcpReq: { notify: async () => { calls += 1; } } };
-    await withProgress(ctx, log, async () => { await new Promise((r) => setTimeout(r, 60)); }, 10);
+    await withProgress(ctx, log, async () => { await new Promise((r) => setTimeout(r, 60)); }, 10, "verify");
     expect(calls).toBe(0);
   });
 });

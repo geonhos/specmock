@@ -18,7 +18,7 @@ export function defaultMockDir(system: string): string {
 async function assertSafeOutDir(outDir: string): Promise<void> {
   const names = await readdir(outDir).catch(() => [] as string[]);
   if (names.length > 0 && !names.includes(LOCK_FILE)) {
-    throw new Error(`${outDir}은(는) specmock이 만든 디렉터리가 아닙니다(${LOCK_FILE} 없음). 덮어쓰려면 --force`);
+    throw new Error(`${outDir}은(는) specmock이 만든 디렉터리가 아닙니다(${LOCK_FILE} 없음). 덮어쓰려면 사용자에게 확인한 뒤 --force`);
   }
 }
 
