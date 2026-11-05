@@ -134,7 +134,7 @@ Claude: (select_features → generate_mock → verify_mock) mock을 만들고 co
 제한 사항:
 
 - 플러그인은 저장소를 clone한 곳에서 `--plugin-dir`로만 동작합니다. 마켓플레이스 설치는 `packages/`를 가져가지 않아 지원하지 않습니다(후속 과제).
-- `ingest_spec`의 웹 수확과 `verify_mock`의 첫 실행(mock의 `npm install`)은 오래 걸릴 수 있습니다. 수확이나 첫 verify(`npm install`)는 몇 분 걸릴 수 있습니다. 서버는 그동안 진행 알림을 보내고, Claude Code(2.1.318 기준)는 진행 알림이 오는 동안 유휴 제한(기본 30분)을 연장합니다. 보통 따로 설정할 필요가 없습니다. 값은 Claude Code 버전에 따라 다를 수 있습니다.
+- `ingest_spec`의 웹 수확과 `verify_mock`의 첫 실행(mock의 `npm install`)은 몇 분 걸릴 수 있습니다. 서버는 그동안 진행 알림을 보내고, Claude Code(2.1.318 기준)는 진행 알림이 오는 동안 유휴 제한(기본 30분)을 연장합니다. 보통 따로 설정할 필요가 없습니다. 값은 Claude Code 버전에 따라 다를 수 있습니다.
 - 커스텀 드롭다운 같은 수동 수확은 여전히 스킬의 파일 절차([수동 수확](plugin/skills/specmock/references/manual-harvest.md))로 합니다. 도구가 아닙니다.
 
 ### Web UI (Phase 2B, 예정)
@@ -223,7 +223,7 @@ LLM은 **비구조 문서(웹·Markdown·PDF·텍스트)의 청크에서 기능�
 ```mermaid
 sequenceDiagram
     participant C as specmock analyze
-    participant F as .specmock/&lt;system&gt;/
+    participant F as .specmock/SYSTEM/
     participant L as LLM 어댑터
     C->>F: 1. prepare — chunks/NNN.md, analyze-request.json
     C->>L: 2. 청크마다 호출 (session: Claude가 직접 / claude-code: claude --print)
