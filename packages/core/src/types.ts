@@ -87,6 +87,8 @@ export const SelectionSchema = z.object({
   catalogHash: z.string(),
   selected: z.array(z.string()),
   resolved: z.array(z.string()),
+  /** 선택 시점의 카탈로그 기능 id. 이후 카탈로그가 바뀌었을 때 선택 시점 기준으로 비교한다. */
+  catalogIds: z.array(z.string()).optional(),
   updatedAt: z.string(),
 });
 export type Selection = z.infer<typeof SelectionSchema>;

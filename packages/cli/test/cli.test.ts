@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { cp, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -150,5 +150,69 @@ describe("Phase 1B CLI", () => {
     const { stdout } = await specmock("run", "petstore", PETSTORE, "--select", "getPet", "--no-verify", "--json");
     const j = JSON.parse(stdout);
     expect(j).toMatchObject({ system: "petstore", selected: ["getPet"], generate: { outDir: expect.any(String) }, verify: null, coverage: null });
+  });
+
+  // test/bin의 가짜 claude 스크립트 중 하나를 `claude`라는 이름으로 PATH 맨 앞에 둔다.
+  const withClaude = async (script: string) => {
+    const bin = path.join(dir, "fakebin");
+    await mkdir(bin, { recursive: true });
+    await symlink(path.join(FAKE_BIN, script), path.join(bin, "claude"));
+    return { cwd: dir, env: { ...process.env, NO_COLOR: "1", PATH: `${bin}:${process.env.PATH}` } };
+  };
+
+  it("select reports the diff against the catalog the selection was made from", async () => {
+    await specmock("ingest", "petstore", PETSTORE);
+    await specmock("analyze", "petstore");
+    await specmock("select", "petstore", "getPet");
+    const yaml = await readFile(PETSTORE, "utf8");
+    const smaller = path.join(dir, "small.yaml");
+    await writeFile(smaller, yaml.replace(/\n  \/store\/inventory:[\s\S]*$/, "\n"));
+    await specmock("ingest", "petstore", smaller, "--refresh");
+    await specmock("analyze", "petstore");
+    // 다시 inventory를 포함한 스펙 → 두 번 analyze해도 선택 시점(5개) 기준으로 비교한다
+    await specmock("ingest", "petstore", PETSTORE, "--refresh");
+    await specmock("analyze", "petstore");
+    await specmock("analyze", "petstore");
+    const noop = await specmock("select", "petstore", "getPet");
+    expect(noop.stdout).not.toContain("주의");
+    await specmock("ingest", "petstore", smaller, "--refresh");
+    await specmock("analyze", "petstore");
+    const { stdout } = await specmock("select", "petstore", "getPet");
+    expect(stdout).toContain("추가 0 · 삭제 1 (inventory.list)");
+    expect(stdout).not.toMatch(/\.\s*\./);
+  });
+
+  it("run on a document with the fake claude emits extract and merge in --json", async () => {
+    const { stdout } = await run(TSX, [CLI, "run", "pets", PETS_MD, "--llm", "claude-code", "--select", "all", "--no-verify", "--json"], await withClaude("claude"));
+    const j = JSON.parse(stdout);
+    expect(j.extract).toMatchObject({ total: 1, written: 1 });
+    expect(j.merge.features).toBe(1);
+    expect(j.catalog.features).toBe(1);
+  });
+
+  it("run with a failing claude exits 1 with the all-failed message", async () => {
+    await expect(run(TSX, [CLI, "run", "pets", PETS_MD, "--llm", "claude-code", "--no-verify"], await withClaude("claude-fail"))).rejects.toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining("LLM 추출이 모두 실패했습니다"),
+    });
+  });
+
+  it("run rejects session mode", async () => {
+    await expect(specmock("run", "pets", PETS_MD, "--llm", "session")).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining("세션 모드를 지원하지 않습니다") });
+  });
+
+  it("analyze with a failing claude exits 2 and prints the retry hint", async () => {
+    await specmock("ingest", "pets", PETS_MD);
+    await expect(run(TSX, [CLI, "analyze", "pets", "--llm", "claude-code"], await withClaude("claude-fail"))).rejects.toMatchObject({
+      code: 2,
+      stdout: expect.stringContaining("다음: 실패/미추출 청크만 다시 추출"),
+    });
+  });
+
+  it("rejects an unknown --llm, --prepare with --merge, and --merge with other options", async () => {
+    await specmock("ingest", "pets", PETS_MD);
+    await expect(specmock("analyze", "pets", "--llm", "gpt")).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining("알 수 없는 LLM 어댑터") });
+    await expect(specmock("analyze", "pets", "--prepare", "--merge")).rejects.toMatchObject({ code: 1 });
+    await expect(specmock("analyze", "pets", "--merge", "--refresh")).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining("--merge 는 다른 옵션과") });
   });
 });

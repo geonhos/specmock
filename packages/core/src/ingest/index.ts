@@ -126,22 +126,31 @@ export interface IngestOptions {
   onLog?: (message: string) => void;
 }
 
-export async function ingest(ws: Workspace, system: string, origins: string[], opts: IngestOptions = {}): Promise<string> {
+export interface IngestResult {
+  file: string;
+  inputs: { origin: string; kind: SourceInput["kind"]; chars: number; cached: boolean }[];
+}
+
+export async function ingest(ws: Workspace, system: string, origins: string[], opts: IngestOptions = {}): Promise<IngestResult> {
   if (origins.length === 0) throw new Error("입력 파일 또는 URL을 하나 이상 지정하세요.");
   const prev: Source | null = !opts.refresh && (await ws.exists(system, "source.json"))
     ? await ws.read(system, "source.json", SourceSchema)
     : null;
   const cached = new Map((prev?.inputs ?? []).map((i) => [i.origin, i]));
   const inputs: SourceInput[] = [];
+  const fromCache: boolean[] = [];
   for (const origin of origins) {
     const hit = cached.get(origin);
     if (hit) {
       opts.onLog?.(`${origin}: 캐시 재사용 (${hit.fetchedAt}). 다시 읽으려면 --refresh`);
       inputs.push(hit);
+      fromCache.push(true);
       continue;
     }
     inputs.push(await ingestOne(origin));
+    fromCache.push(false);
     opts.onLog?.(`${origin}: ${inputs[inputs.length - 1].kind} ${inputs[inputs.length - 1].content.length.toLocaleString()}자`);
   }
-  return await ws.write(system, "source.json", SourceSchema, { system, inputs });
+  const file = await ws.write(system, "source.json", SourceSchema, { system, inputs });
+  return { file, inputs: inputs.map((i, n) => ({ origin: i.origin, kind: i.kind, chars: i.content.length, cached: fromCache[n]! })) };
 }

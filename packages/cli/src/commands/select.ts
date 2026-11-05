@@ -1,6 +1,6 @@
-import { CatalogDiffSchema, select } from "@specmock/core";
+import { select } from "@specmock/core";
 import type { Command } from "commander";
-import { EXPR_HELP, fail, formatDiff, printJsonOr, SYSTEM_ARG_HELP, workspaceFrom } from "../context.js";
+import { EXPR_HELP, fail, printJsonOr, SYSTEM_ARG_HELP, workspaceFrom } from "../context.js";
 
 export function registerSelect(program: Command): void {
   program
@@ -17,9 +17,18 @@ export function registerSelect(program: Command): void {
       try {
         const ws = workspaceFrom(cmd);
         const result = await select(ws, system, exprs, { add: opts.add, remove: opts.remove });
-        const diff = result.catalogChanged && (await ws.exists(system, "catalog-diff.json")) ? await ws.read(system, "catalog-diff.json", CatalogDiffSchema) : null;
         printJsonOr(opts.json, result, () => {
-          const warn = result.catalogChanged ? `\n주의: 카탈로그가 이전 선택 이후 바뀌었습니다.${diff ? " " + formatDiff(diff) + "." : ""} specmock list로 확인하세요.` : "";
+          let warn = "";
+          if (result.catalogChanged) {
+            const d = result.catalogDiff;
+            const ids = (xs: string[]) => (xs.length ? ` (${xs.slice(0, 5).join(", ")}${xs.length > 5 ? ", …" : ""})` : "");
+            warn = "\n주의: 카탈로그가 이전 선택 이후 바뀌었습니다.";
+            if (d) {
+              warn += ` 추가 ${d.added.length}${ids(d.added)} · 삭제 ${d.removed.length}${ids(d.removed)}`;
+              if (d.removedSelected.length) warn += `\n선택했던 기능 중 사라짐: ${d.removedSelected.join(", ")}`;
+            }
+            warn += "\nspecmock list로 확인하세요.";
+          }
           return `선택 ${result.resolved.length}개: ${result.resolved.join(", ")}${warn}\n다음: specmock generate ${system}`;
         });
       } catch (e) {

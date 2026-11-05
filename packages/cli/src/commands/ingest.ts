@@ -14,20 +14,20 @@ export function registerIngest(program: Command): void {
     .action(async (system: string, origins: string[], opts: { refresh: boolean; harvest: string; json: boolean }, cmd: Command) => {
       if (!["auto", "always", "never"].includes(opts.harvest)) fail(`--harvest 값이 올바르지 않습니다: ${opts.harvest} (auto | always | never)`);
       const ws = workspaceFrom(cmd);
-      const logs: string[] = [];
-      const file = await ingest(ws, system, origins, {
+      // 진행 로그는 항상 stderr로 보내 --json의 stdout을 깨끗하게 둔다.
+      const { file, inputs: read } = await ingest(ws, system, origins, {
         refresh: opts.refresh,
         harvest: opts.harvest as "auto" | "always" | "never",
-        onLog: (m) => { logs.push(m); if (!opts.json) process.stderr.write(m + "\n"); },
+        onLog: (m) => process.stderr.write(m + "\n"),
       });
       const src = await ws.read(system, "source.json", SourceSchema);
-      const inputs = src.inputs.map((i) => ({
-        kind: i.kind,
-        origin: i.origin,
-        chars: i.content.length,
-        cached: logs.some((l) => l.startsWith(`${i.origin}: 캐시 재사용`)),
-        harvestCandidate: i.harvestCandidate?.reasons ?? [],
-        harvested: Boolean(i.harvested),
+      const inputs = read.map((r, n) => ({
+        kind: r.kind,
+        origin: r.origin,
+        chars: r.chars,
+        cached: r.cached,
+        harvestCandidate: src.inputs[n]?.harvestCandidate?.reasons ?? [],
+        harvested: Boolean(src.inputs[n]?.harvested),
       }));
       printJsonOr(opts.json, { system, file, inputs }, () => {
         const lines = [`source.json 작성: ${file}`];

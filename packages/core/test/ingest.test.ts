@@ -32,7 +32,7 @@ describe("detectKind", () => {
 describe("ingest(openapi)", () => {
   it("writes source.json with a dereferenced document", async () => {
     const ws = new Workspace(dir);
-    const file = await ingest(ws, "petstore", [PETSTORE]);
+    const { file } = await ingest(ws, "petstore", [PETSTORE]);
     expect(file.endsWith(path.join("petstore", "source.json"))).toBe(true);
     const source = await ws.read("petstore", "source.json", SourceSchema);
     expect(source.inputs).toHaveLength(1);

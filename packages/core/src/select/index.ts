@@ -17,6 +17,8 @@ export interface SelectResult {
   selectionFile: string;
   mockspecFile: string;
   catalogChanged: boolean;
+  /** catalogChanged이고 이전 선택에 catalogIds가 있을 때만. 이전 선택 시점 대비 변화. */
+  catalogDiff?: { added: string[]; removed: string[]; removedSelected: string[] };
 }
 
 export async function select(ws: Workspace, system: string, exprs: string[], opts: SelectOptions = {}): Promise<SelectResult> {
@@ -26,6 +28,17 @@ export async function select(ws: Workspace, system: string, exprs: string[], opt
 
   const prev = (await ws.exists(system, "selection.json")) ? await ws.read(system, "selection.json", SelectionSchema) : null;
   const catalogChanged = prev !== null && prev.catalogHash !== catalogHash;
+  const currentIds = catalog.features.map((f) => f.id);
+  let catalogDiff: SelectResult["catalogDiff"];
+  if (catalogChanged && prev?.catalogIds) {
+    const cur = new Set(currentIds);
+    const old = new Set(prev.catalogIds);
+    catalogDiff = {
+      added: currentIds.filter((id) => !old.has(id)),
+      removed: prev.catalogIds.filter((id) => !cur.has(id)),
+      removedSelected: prev.resolved.filter((id) => !cur.has(id)),
+    };
+  }
   let selected = [...exprs];
   if (opts.remove) {
     if (!prev) throw new Error(`제거할 기존 선택이 없습니다. 먼저 specmock select ${system} <표현식>을 실행하세요.`);
@@ -55,10 +68,10 @@ export async function select(ws: Workspace, system: string, exprs: string[], opt
   const notMocked = catalog.features.filter((f) => !chosen.has(f.id)).map((f) => ({ id: f.id, method: f.method, path: f.path }));
 
   const selectionFile = await ws.write(system, "selection.json", SelectionSchema, {
-    system, catalogHash, selected, resolved, updatedAt: new Date().toISOString(),
+    system, catalogHash, selected, resolved, catalogIds: currentIds, updatedAt: new Date().toISOString(),
   });
   const mockspecFile = await ws.write(system, "mockspec.json", MockSpecSchema, {
     system, baseUrl: "/", language: opts.language ?? "ts", features, notMocked, contracts, assumptions,
   });
-  return { selected, resolved, selectionFile, mockspecFile, catalogChanged };
+  return { selected, resolved, selectionFile, mockspecFile, catalogChanged, ...(catalogDiff ? { catalogDiff } : {}) };
 }
