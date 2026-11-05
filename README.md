@@ -38,7 +38,7 @@ pnpm specmock select docs all
 pnpm specmock generate docs && pnpm specmock verify docs
 ```
 
-LLM 없이 같은 결과를 재현하려면(B 경로) 저장소에 있는 녹음된 추출 결과를 `extracted/`에 넣고 합치면 됩니다.
+녹음된 응답으로 LLM 없이 재현하려면(B 경로; A 경로는 모델 출력에 따라 달라질 수 있음) 저장소에 있는 추출 결과를 `extracted/`에 넣고 합치면 됩니다.
 
 ```bash
 pnpm specmock ingest docs examples/docs-sample/pets-api.md
@@ -129,17 +129,25 @@ petstore — 5개 기능 (openapi 5 · 문서추출 0 · 추론 0)
 범례  출처: spec=OpenAPI, doc=문서에서 추출, inf=추론 · 샘플: ●있음 ○스키마만 —없음
 ```
 
-문서에서 추출한 기능은 이런 행으로 나옵니다(`출처`가 `doc`).
+문서에서 추출한 기능은 `출처`가 `doc`입니다. 아래는 `examples/docs-sample`을 B 경로(녹음된 추출 결과)로 돌린 실제 출력입니다.
 
 ```
-  6   pets.create     POST    /pets             doc   0.8   ●   ⚠ 404 응답 스키마는 샘플에서 유추
+docs — 4개 기능 (openapi 0 · 문서추출 4 · 추론 0)
+
+  #   id           method  path           출처  신뢰  샘플
+── Pets (4) ────────────────────────────────────────
+  1   pets.list    GET     /pets          doc   1.0   ●
+  2   pets.create  POST    /pets          doc   0.8   —
+  3   pets.get     GET     /pets/{petId}  doc   1.0   ●
+  4   pets.delete  DELETE  /pets/{petId}  doc   0.8   —
 ```
 
 `신뢰`(confidence)의 의미:
 
-- `1.0` — OpenAPI 스펙에서 결정적으로 변환.
-- `0.6 ~ 0.9` — 문서에 명시된 내용. 샘플 응답이 있으면 +0.1.
-- `0.5 이하` — 추측이거나, LLM이 댄 근거 인용이 원문에서 안 찾아진 경우(×0.3 보정, `notes`에 "근거 불일치").
+- OpenAPI에서 온 기능은 항상 `1.0`(결정적 변환).
+- 문서 추출은 LLM 자기평가 값에서 시작해, 샘플 응답이 있으면 +0.1(최대 1.0이라 문서 추출도 `1.0`이 될 수 있음).
+- 근거 인용이 원문에서 안 찾아지면 ×0.3(`notes`에 "근거 불일치"), 근거 자체가 없으면 ×0.7.
+- method/path를 추측했으면 최대 `0.5`.
 
 `operationId`가 있으면 그대로 id가 되고, 없으면 경로와 메서드로 만듭니다(`GET /store/inventory` → `inventory.list`). 그룹은 첫 번째 tag, 없으면 경로의 첫 세그먼트입니다(`v1`, `api` 같은 접두사는 건너뜁니다).
 

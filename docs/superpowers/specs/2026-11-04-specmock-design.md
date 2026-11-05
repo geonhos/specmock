@@ -156,9 +156,9 @@ interface LlmAdapter {
       "origin": "파일 경로 또는 URL",
       "fetchedAt": "ISO 8601",
       "contentHash": "sha256",
-      "title": "문서 제목(선택). HTML <title>/H1, PDF 메타데이터",
+      "title": "문서 제목(선택). HTML <title>, Markdown·PDF는 본문 첫 # 헤딩(firstHeading). PDF 메타데이터 제목은 후속 과제",
       "content": "정규화된 텍스트. HTML은 본문만 뽑아 Markdown으로 변환(코드 펜스·표·제목 보존), PDF는 추출 텍스트(페이지마다 헤딩), openapi는 dereference된 JSON 문자열",
-      "harvestCandidate": true,   // 상호작용 요소 감지 결과(5.1). 수확 대상 여부 판단에 쓴다
+      "harvestCandidate": { "reasons": ["..."] },   // 상호작용 요소 감지 결과(5.1). 수확 대상 여부 판단에 쓴다
       "harvested": {              // ego-browser 수확 시에만
         "pages": [{ "url": "", "title": "", "content": "" }],
         "interactions": [{ "type": "tab" | "select" | "details", "label": "", "content": "" }],

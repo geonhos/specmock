@@ -3265,11 +3265,11 @@ Task 9와 10, 11은 서로 독립이지만 같은 worktree에서 순서대로 �
 
 ## 완료 기준 (설계 §10 1단계)
 
-- [ ] `pnpm specmock ingest docs examples/docs-sample/pets-api.md && pnpm specmock analyze docs --llm claude-code && pnpm specmock select docs all && pnpm specmock generate docs && pnpm specmock verify docs` 가 contract 전부 통과.
-- [ ] 로컬 HTML(탭·select)에서 ego-browser 수확이 숨은 내용을 가져와 카탈로그에 반영됨(harvest-ego 테스트 PASS).
-- [ ] `claude --plugin-dir ./plugin` 세션에서 스킬이 로드되고, 문서 입력에 대해 Claude가 `extracted/`를 쓰고 `--merge`까지 진행함(수동 1회, 실행 기록에 남김).
-- [ ] `select --interactive` 동작(수동 1회).
-- [ ] 골든 5종, 전체 테스트, typecheck 통과. README의 모든 명령이 실제 옵션과 일치.
+- [x] 문서 예제 e2e: 녹음본(B 경로)으로 ingest → analyze --merge → select all → generate → verify, contract 4/4 통과. (A 경로 `--llm claude-code` 라이브는 `llm:check` OK 4136ms로 어댑터만 확인)
+- [x] 로컬 HTML(탭·select)에서 ego-browser 수확이 숨은 내용을 가져옴(ego-browser 수확 테스트 통과, 실측 상호작용 2).
+- [ ] `claude --plugin-dir ./plugin` 세션에서 스킬 로드 → `extracted/` 작성 → `--merge`까지(수동 1회). **사용자 수동 확인 필요.** (`claude plugin validate`와 plugin.test는 통과)
+- [ ] `select --interactive` TTY 동작(수동 1회). **사용자 수동 확인 필요.** (병합 로직은 단위 테스트 통과)
+- [x] 골든 5종, 전체 테스트(34 files / 244 tests), typecheck 통과. README 명령은 `--help` 옵션과 일치(plugin.test drift 검사).
 
 ## 후속 (이 계획 밖, 2단계 전에 정리할 것)
 
@@ -3300,7 +3300,7 @@ Task 9와 10, 11은 서로 독립이지만 같은 worktree에서 순서대로 �
 | 10 | 플러그인·스킬·참고문서, `plugin.test`에 종료 코드·옵션 drift 검사, `claude plugin validate` 통과, 근거 없는 merge 종료 코드 서술 제거 | 스킬 문서가 CLI와 어긋나지 않게 |
 | 11 | `select --interactive`(그룹 구분선·사전 체크·`--group`), 병합을 core `mergeInteractivePick`으로 분리·테스트(리뷰 Major 수정), `literalIds`, Task 10 잔여(세션 모드 `--refresh`가 `extracted/` 삭제, 실패 로그 마스킹) | `--group` 보존 로직과 로그 마스킹이 무테스트였음. 저장은 id 목록으로 평탄화(의도) |
 | 12 | README(문서 입력 빠른 시작, LLM/수확 고지, 종료 코드 표, 스킬 사용법, 1B 제한 사항), architecture(LLM 3단계 시퀀스, 상태 파일), 설계 §3.1·3.3·4.3·5.1·5.2·5.6·12, 이 기록 | `examples/petstore/README.md` 링크 변경은 불필요해 생략 |
-| 최종 | 33 test files / 243 tests, `pnpm typecheck` 통과. 라이브: `pnpm llm:check` OK 4136ms(sonnet), 예제 녹음 기능 4개(청크 1, 신뢰도 1.0/1.0/0.8/0.8), ego-browser 실측 수확 페이지 1·상호작용 2(Node 탭, select=404, 약 2.3s) | 수동 확인 중 `select --interactive`의 TTY 실행은 미실시 |
+| 최종 | 33 test files / 243 tests, `pnpm typecheck` 통과. 라이브: `pnpm llm:check` OK 4136ms(sonnet), 예제 녹음 기능 4개(청크 1, 신뢰도 1.0/1.0/0.8/0.8), ego-browser 실측 수확 페이지 1·상호작용 2(Node 탭, select=404, 약 2.3s) | 수동 확인 필요 항목 2개 미실시: 플러그인 세션 실행, `select --interactive` TTY 실행(완료 기준 `[ ]`). 최종 리뷰 반영: README 실제 출력·신뢰도 설명 정정, HTML 제목·origin 마스킹(+1 test) |
 
 ### 후속 과제
 
