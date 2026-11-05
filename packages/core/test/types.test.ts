@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { FeatureSchema, MockSpecSchema } from "../src/types.js";
+import {
+  AnalyzeRequestSchema,
+  ExtractionResultSchema,
+  extractionJsonSchema,
+  FeatureSchema,
+  MockSpecSchema,
+  SourceInputSchema,
+} from "../src/types.js";
 
 const feature = {
   id: "users.get",
@@ -34,5 +41,37 @@ describe("MockSpecSchema", () => {
     expect(() => MockSpecSchema.parse(bad)).toThrow();
     const good = { ...bad, features: [{ ...feature, fixtures: [{ status: 200, body: {}, source: "empty" }] }] };
     expect(MockSpecSchema.parse(good).features[0].fixtures).toHaveLength(1);
+  });
+});
+
+describe("Phase 1B schemas", () => {
+  it("accepts harvested content and a harvest candidate on a source input", () => {
+    const r = SourceInputSchema.safeParse({
+      kind: "html", origin: "https://x.test/docs", fetchedAt: "2026-11-05T00:00:00Z", contentHash: "h", content: "# Docs",
+      harvestCandidate: { reasons: ["select 요소 2개"] },
+      harvested: { pages: [{ url: "https://x.test/docs", title: "Docs", content: "..." }], interactions: [{ type: "tab", label: "Node", content: "..." }] },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("validates an extraction result and rejects a bad method", () => {
+    const ok = ExtractionResultSchema.safeParse({ endpoints: [{ method: "GET", path: "/pets", title: "List", responses: [{ status: 200 }], evidence: ["GET /pets"], confidence: 0.9 }] });
+    expect(ok.success).toBe(true);
+    const bad = ExtractionResultSchema.safeParse({ endpoints: [{ method: "FETCH", path: "/pets", title: "", responses: [], evidence: [], confidence: 0.5 }] });
+    expect(bad.success).toBe(false);
+  });
+
+  it("exports a JSON Schema for the LLM that has no $ref and marks endpoints required", () => {
+    const js = extractionJsonSchema();
+    expect(JSON.stringify(js)).not.toContain("$ref");
+    expect(js.required).toEqual(["endpoints"]);
+  });
+
+  it("validates an analyze request", () => {
+    const r = AnalyzeRequestSchema.safeParse({
+      system: "s", createdAt: "2026-11-05T00:00:00Z", prompt: "p", schema: { type: "object" },
+      chunks: [{ index: 0, file: "chunks/000.md", inputIndex: 0, heading: "Pets", chars: 120 }],
+    });
+    expect(r.success).toBe(true);
   });
 });
