@@ -2,8 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { htmlToMarkdown } from "../ingest/html.js";
-import { hashText } from "../util/hash.js";
+import { normalizeHarvest, type RawResult } from "./normalize.js";
 import type { Harvested } from "../types.js";
 import { buildHarvestScript } from "./script.js";
 
@@ -12,12 +11,13 @@ export interface HarvestOptions { command?: string; maxPages?: number; maxDepth?
 export async function isEgoBrowserAvailable(command = "ego-browser"): Promise<boolean> {
   return new Promise((resolve) => {
     const child = spawn(command, ["--version"], { stdio: "ignore" });
-    child.on("error", () => resolve(false));
-    child.on("close", (code) => resolve(code === 0));
+    const timer = setTimeout(() => { child.kill("SIGKILL"); resolve(false); }, 5_000);
+    child.on("error", () => { clearTimeout(timer); resolve(false); });
+    child.on("close", (code) => { clearTimeout(timer); resolve(code === 0); });
   });
 }
 
-interface RawResult { pages: { url: string; title: string; html: string }[]; interactions: { type: Harvested["interactions"][number]["type"]; label: string; html: string }[]; notes: string[] }
+export { normalizeHarvest, type RawResult } from "./normalize.js";
 
 export async function harvest(url: string, opts: HarvestOptions = {}): Promise<Harvested> {
   const command = opts.command ?? "ego-browser";
@@ -39,12 +39,7 @@ export async function harvest(url: string, opts: HarvestOptions = {}): Promise<H
       child.stdin.end(script);
     });
     const raw = JSON.parse(await readFile(outFile, "utf8")) as RawResult;
-    // HTML → Markdown, 내용 해시로 중복 제거
-    const seen = new Set<string>();
-    const dedupe = (md: string) => { const h = hashText(md.trim()); if (seen.has(h)) return false; seen.add(h); return true; };
-    const pages = raw.pages.map((p) => ({ url: p.url, title: p.title, content: htmlToMarkdown(p.html, p.url).markdown })).filter((p) => dedupe(p.content));
-    const interactions = raw.interactions.map((i) => ({ type: i.type, label: i.label, content: htmlToMarkdown(i.html, url).markdown })).filter((i) => i.content.trim().length > 0 && dedupe(i.content));
-    return { pages, interactions, notes: raw.notes };
+    return normalizeHarvest(raw, url);
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }

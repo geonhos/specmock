@@ -41,11 +41,12 @@ describe.skipIf(!available)("harvest with a real ego-browser", () => {
 
   it("captures tab panels, select options and follows reference links", async () => {
     const h = await harvest(`${base}/docs/pets`, { maxPages: 3, maxDepth: 1, timeoutMs: 120_000 });
-    expect(h.pages.map((p) => p.url)).toEqual(expect.arrayContaining([`${base}/docs/pets`, `${base}/docs`]));
+    expect(h.pages.map((p) => p.url)).toEqual([`${base}/docs`]); // 시작 페이지는 input.content에 있으므로 제외
     const all = h.interactions.map((i) => `${i.type}|${i.label}|${i.content}`).join("\n");
     expect(all).toContain('await fetch("https://api.example.com/v1/pets")');     // 숨은 탭 패널
     expect(all).toContain('"code": 404');                                          // select 404 선택 후 드러난 내용
     expect(h.interactions.some((i) => i.type === "select" && /404/.test(i.label))).toBe(true);
+    expect(h.interactions.some((i) => i.type === "tab" && /curl/.test(i.label))).toBe(false); // 처음부터 보이던 패널은 저장 안 함
   }, 180_000);
 
   it("ingest --harvest always/never attaches harvested content only when asked", async () => {
@@ -56,7 +57,7 @@ describe.skipIf(!available)("harvest with a real ego-browser", () => {
       expect((await ws.read("a", "source.json", SourceSchema)).inputs[0].harvested).toBeUndefined();
       await ingest(ws, "b", [`${base}/docs/pets`], { harvest: "always" });
       const h = (await ws.read("b", "source.json", SourceSchema)).inputs[0].harvested;
-      expect(h?.interactions.length).toBeGreaterThanOrEqual(3);
+      expect(h?.interactions.length).toBeGreaterThanOrEqual(2);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

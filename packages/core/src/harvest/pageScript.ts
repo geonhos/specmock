@@ -44,6 +44,14 @@ export function collectInteractives(document: Document): Interactives {
   return { tabs, selects, listboxes };
 }
 
+/** 탭 패널이 지금 보이는지. 이미 보이던 패널은 본문에 담겨 있으므로 저장하지 않는다. */
+export function panelVisible(document: Document, panelId: string): boolean {
+  const el = document.getElementById(panelId);
+  if (!el) return false;
+  if (typeof el.checkVisibility === "function") return el.checkVisibility();
+  return !el.closest("[hidden]") && !/display\s*:\s*none/i.test(el.getAttribute("style") ?? "");
+}
+
 export function panelHtml(document: Document, panelId: string): string {
   return document.getElementById(panelId)?.outerHTML ?? "";
 }
@@ -51,9 +59,16 @@ export function panelHtml(document: Document, panelId: string): string {
 /** 지금 보이는 블록 요소(pre, p, li, 표, 헤딩 …)의 HTML 목록. 상호작용 전후를 비교해 새로 드러난 내용만 뽑는 데 쓴다. */
 export function visibleBlocks(document: Document): string[] {
   const root = document.querySelector("main, article") ?? document.body;
+  // checkVisibility가 없는 환경(linkedom 등) 폴백: 조상 중 인라인 display:none이 있으면 숨김.
+  const hiddenByStyle = (el: Element): boolean => {
+    for (let e: Element | null = el; e; e = e.parentElement) if (/display\s*:\s*none/i.test(e.getAttribute("style") ?? "")) return true;
+    return false;
+  };
   const out: string[] = [];
   for (const el of Array.from(root?.querySelectorAll("pre, p, li, table, h1, h2, h3, h4, h5, h6, blockquote") ?? [])) {
-    const visible = typeof el.checkVisibility === "function" ? el.checkVisibility() : !el.closest("[hidden]");
+    const visible = typeof el.checkVisibility === "function"
+      ? el.checkVisibility()
+      : !el.closest("[hidden]") && !hiddenByStyle(el);
     // 바깥 블록이 이미 담았다면(예: li 안의 p) 중복이므로 가장 바깥 블록만 취한다.
     if (visible && !el.parentElement?.closest("pre, p, li, table, blockquote")) out.push(el.outerHTML);
   }
@@ -74,7 +89,8 @@ export function referenceLinks(document: Document, currentUrl: string): string[]
     if (u.origin !== base.origin) continue;
     u.hash = "";
     if (u.href === base.href) continue;
-    if (/\/(api|reference|docs?|endpoints?)(\/|$)/i.test(u.pathname)) out.add(u.href);
+    // 베어 /api/ 는 제외: 사용자 쿠키로 앱 API GET(예: /api/logout)을 방문할 수 있다.
+    if (/\/(docs?|reference|api-reference|api-docs|endpoints?)(\/|$)/i.test(u.pathname)) out.add(u.href);
   }
   return Array.from(out).sort();
 }
