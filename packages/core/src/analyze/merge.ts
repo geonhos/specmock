@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import type { Ajv } from "ajv";
 import { z } from "zod";
 import {
   AnalyzeRequestSchema,
@@ -62,40 +63,50 @@ export function adjustConfidence(raw: number, s: ConfidenceSignals): number {
   return Math.round(c * 100) / 100;
 }
 
+/* ---------- 깊이 제한 ---------- */
+
+/** 저장하는 샘플·raw 값의 최대 중첩 깊이. 이보다 깊은 부분은 문자열 표식으로 바꿔 hashJson·JSON.stringify가 스택을 넘지 않게 한다. */
+export const MAX_VALUE_DEPTH = 64;
+export const DEPTH_MARKER = "[specmock: 깊이 초과로 생략]";
+
+export function clampDepth(value: unknown, max = MAX_VALUE_DEPTH, depth = 0): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (depth >= max) return DEPTH_MARKER;
+  if (Array.isArray(value)) return value.map((v) => clampDepth(v, max, depth + 1));
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, clampDepth(v, max, depth + 1)]));
+}
+
 /* ---------- 스키마 정리 ---------- */
 
-const ajv = makeAjv({ allErrors: false, logger: false });
-
-/** LLM이 준 스키마가 ajv로 컴파일되지 않으면 null로 바꾸고 notes에 남긴다. 컴파일되면 그대로. */
-function sanitizeSchema(schema: JsonSchema | null, notes: string[], where: string): JsonSchema | null {
+/**
+ * LLM이 준 스키마가 ajv로 컴파일되지 않으면 null로 바꾸고 notes에 남긴다. 컴파일되면 원본 그대로 돌려준다.
+ * 컴파일은 복사본으로 하고 루트 `$id`·`$schema`는 뗀다. `$id`가 ajv 메타스키마 등과 겹치면 "already exists"로 실패하고,
+ * 모르는 `$schema`는 "no schema with key or ref"로 실패하는데, 둘 다 스키마 본문의 문제가 아니다.
+ */
+function sanitizeSchema(ajv: Ajv, schema: JsonSchema | null, notes: string[], where: string): JsonSchema | null {
   if (!schema) return null;
+  const { $id: _id, $schema: _meta, ...body } = schema;
   try {
-    ajv.compile(schema);
+    ajv.compile(body);
     return schema;
   } catch (e) {
     notes.push(`${where} 스키마 무시: ${(e as Error).message.split("\n")[0]}`);
     return null;
-  } finally {
-    // $id가 있는 스키마를 두 번 컴파일하면 "already exists"로 던지므로 캐시에서 뺀다.
-    try {
-      ajv.removeSchema(schema);
-    } catch {
-      /* 등록된 적 없으면 무시 */
-    }
   }
 }
 
 /* ---------- path 정규화 ---------- */
 
 /**
- * 문서에서 흔한 표기를 OpenAPI식 경로로 맞춘다: 스킴·호스트 제거, 쿼리·프래그먼트 제거, `:id`·`<id>` → `{id}`, 끝 슬래시 제거.
+ * 문서에서 흔한 표기를 OpenAPI식 경로로 맞춘다: 스킴·호스트 제거, 쿼리·프래그먼트 제거, 세그먼트 단위 `:id`·`<id>` → `{id}`, 끝 슬래시 제거.
+ * `/resources:batchGet` 같은 세그먼트 안의 콜론은 건드리지 않는다.
  * 결과는 항상 "/"로 시작한다. 그렇지 않거나 공백이 섞여 있으면 null(호출자가 거부한다).
  */
 export function normalizePath(p: string): string | null {
   let s = p.trim();
   s = s.replace(/^https?:\/\/[^/]+/i, "");
   s = s.replace(/[?#].*$/, "");
-  s = s.replace(/:(\w+)/g, "{$1}").replace(/<(\w+)>/g, "{$1}");
+  s = s.replace(/\/:(\w+)(?=\/|$)/g, "/{$1}").replace(/\/<(\w+)>(?=\/|$)/g, "/{$1}");
   if (!s.startsWith("/")) return null;
   if (/\s/.test(s)) return null;
   if (s.length > 1) s = s.replace(/\/+$/, "");
@@ -117,15 +128,20 @@ interface Bucket {
   items: BucketItem[];
 }
 
+/** 레코드에 own property로 넣는다. 이름이 "__proto__"여도 프로토타입을 바꾸지 않는다. */
+function setOwn<T>(target: Record<string, T>, key: string, value: T): void {
+  Object.defineProperty(target, key, { value, enumerable: true, writable: true, configurable: true });
+}
+
 /** 같은 이름이 이미 있으면 먼저 온(신뢰도 높은) 항목을 지킨다. */
-function mergeParams(target: Feature["request"]["params"], list: ExtractedEndpoint["pathParams"], notes: string[], where: string): void {
+function mergeParams(ajv: Ajv, target: Feature["request"]["params"], list: ExtractedEndpoint["pathParams"], notes: string[], where: string): void {
   for (const p of list) {
-    if (p.name in target) continue;
-    target[p.name] = { schema: sanitizeSchema(p.schema, notes, `${where}.${p.name}`), required: p.required };
+    if (Object.hasOwn(target, p.name)) continue;
+    setOwn(target, p.name, { schema: sanitizeSchema(ajv, p.schema, notes, `${where}.${p.name}`), required: p.required });
   }
 }
 
-function toFeature(bucket: Bucket, registry: FeatureIdRegistry): Feature {
+function toFeature(ajv: Ajv, bucket: Bucket, registry: FeatureIdRegistry): Feature {
   const notes: string[] = [];
   const items = [...bucket.items].sort((a, b) => b.ep.confidence - a.ep.confidence);
   const primary = items[0].ep;
@@ -142,14 +158,15 @@ function toFeature(bucket: Bucket, registry: FeatureIdRegistry): Feature {
   let hasExample = false;
 
   for (const { ep, chunk, evidenceFound: f, evidenceTotal: t } of items) {
-    mergeParams(request.params, ep.pathParams, notes, "pathParams");
-    mergeParams(request.query, ep.queryParams, notes, "queryParams");
-    mergeParams(request.headers, ep.headers, notes, "headers");
-    if (!request.body && ep.requestBody) request.body = sanitizeSchema(ep.requestBody, notes, "requestBody");
+    mergeParams(ajv, request.params, ep.pathParams, notes, "pathParams");
+    mergeParams(ajv, request.query, ep.queryParams, notes, "queryParams");
+    mergeParams(ajv, request.headers, ep.headers, notes, "headers");
+    if (!request.body && ep.requestBody) request.body = sanitizeSchema(ajv, ep.requestBody, notes, "requestBody");
     for (const r of ep.responses) {
       const key = String(r.status);
-      const slot = (responses[key] ??= { schema: null, examples: [] });
-      if (!slot.schema) slot.schema = sanitizeSchema(r.schema, notes, `responses.${key}`);
+      if (!Object.hasOwn(responses, key)) setOwn(responses, key, { schema: null, examples: [] });
+      const slot = responses[key];
+      if (!slot.schema) slot.schema = sanitizeSchema(ajv, r.schema, notes, `responses.${key}`);
       if (r.example !== undefined && r.example !== null) {
         slot.examples.push({ source: "doc-sample", body: r.example });
         if (r.status >= 200 && r.status < 300) hasExample = true;
@@ -168,7 +185,9 @@ function toFeature(bucket: Bucket, registry: FeatureIdRegistry): Feature {
     }
   }
   // 경로 템플릿의 변수인데 pathParams에 없으면 문자열 필수로 채운다.
-  for (const m of bucket.path.matchAll(/\{([^}]+)\}/g)) request.params[m[1]] ??= { schema: { type: "string" }, required: true };
+  for (const m of bucket.path.matchAll(/\{([^}]+)\}/g)) {
+    if (!Object.hasOwn(request.params, m[1])) setOwn(request.params, m[1], { schema: { type: "string" }, required: true });
+  }
 
   const missed = evidenceTotal - evidenceFound;
   if (evidenceTotal === 0) notes.push("근거 인용 없음");
@@ -205,6 +224,18 @@ function toFeature(bucket: Bucket, registry: FeatureIdRegistry): Feature {
 /** extracted/NNN.json의 바깥 모양만 본다. 항목은 하나씩 따로 검증해 하나가 깨져도 나머지를 살린다. */
 const ExtractionEnvelopeSchema = z.object({ endpoints: z.array(z.unknown()) });
 
+/** JSON 파싱 실패 시 rejected.raw에 남길 원문 길이. */
+const RAW_TEXT_PREVIEW = 500;
+
+/** 파싱된 항목에서 저장될 자유 값(샘플·요청 예시)의 깊이를 제한한다. */
+function clampEndpoint(ep: ExtractedEndpoint): ExtractedEndpoint {
+  return {
+    ...ep,
+    requestExample: clampDepth(ep.requestExample),
+    responses: ep.responses.map((r) => ({ ...r, example: clampDepth(r.example) })),
+  };
+}
+
 export interface MergeResult {
   catalogFile: string;
   features: number;
@@ -219,12 +250,14 @@ export interface MergeResult {
 /**
  * `extracted/NNN.json`(LLM 출력)을 검증·정규화·근거 대조·신뢰도 보정해 method+path 기준으로 합치고,
  * OpenAPI 입력에서 결정적으로 뽑은 기능과 함께 catalog.json을 쓴다. 같은 method+path면 OpenAPI가 이긴다.
- * 파일이 없거나 깨진 청크는 멈추지 않고 rejected에 기록한다.
+ * 파일이 없거나 깨진 청크, 변환에 실패한 기능은 멈추지 않고 rejected에 기록한다.
  */
 export async function merge(ws: Workspace, system: string): Promise<MergeResult> {
   const source = await ws.read(system, "source.json", SourceSchema);
   const request = await ws.read(system, "analyze-request.json", AnalyzeRequestSchema);
   await pruneExtracted(ws, system, request.chunks.length);
+  // 호출마다 새 Ajv. 컴파일 실패가 남긴 상태가 다음 스키마나 다음 merge에 번지지 않게 한다.
+  const ajv = makeAjv({ allErrors: false, logger: false });
 
   // 1) OpenAPI 입력은 결정적으로 먼저. id 레지스트리를 공유해 문서 추출 id가 충돌하지 않게 한다.
   const registry = new FeatureIdRegistry();
@@ -232,32 +265,40 @@ export async function merge(ws: Workspace, system: string): Promise<MergeResult>
   for (const input of source.inputs) {
     if (input.kind === "openapi") features.push(...analyzeOpenApiDocument(JSON.parse(input.content), registry));
   }
-  const known = new Set(features.map((f) => `${f.method} ${f.path}`));
+  // 문서 쪽 path와 같은 규칙으로 정규화해 비교한다(`/pets/` vs `/pets`).
+  const known = new Set(features.map((f) => `${f.method} ${normalizePath(f.path) ?? f.path}`));
 
   // 2) extracted/NNN.json 읽기 → 항목별 스키마 검증 → path 정규화 → 근거 대조 → 버킷
   const rejected: Catalog["rejected"] = [];
+  const reject = (raw: unknown, reason: string, chunk: number): void => {
+    rejected.push({ raw: clampDepth(raw), reason, chunk });
+  };
   const buckets = new Map<string, Bucket>();
   const missingChunks: number[] = [];
   const invalidChunks: number[] = [];
   for (const chunk of request.chunks) {
     const rel = path.posix.join(EXTRACTED_DIR, extractedFileName(chunk.index));
+    let text: string;
+    try {
+      text = await readFile(ws.file(system, rel), "utf8");
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+      missingChunks.push(chunk.index);
+      reject(null, `청크 ${chunk.index} 미추출 (${rel} 없음)`, chunk.index);
+      continue;
+    }
     let raw: unknown;
     try {
-      raw = JSON.parse(await readFile(ws.file(system, rel), "utf8"));
+      raw = JSON.parse(text);
     } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === "ENOENT") {
-        missingChunks.push(chunk.index);
-        rejected.push({ raw: null, reason: `청크 ${chunk.index} 미추출 (${rel} 없음)`, chunk: chunk.index });
-      } else {
-        invalidChunks.push(chunk.index);
-        rejected.push({ raw: null, reason: `청크 ${chunk.index} JSON 파싱 실패: ${(e as Error).message}`, chunk: chunk.index });
-      }
+      invalidChunks.push(chunk.index);
+      reject(text.slice(0, RAW_TEXT_PREVIEW), `청크 ${chunk.index} JSON 파싱 실패: ${(e as Error).message}`, chunk.index);
       continue;
     }
     const envelope = ExtractionEnvelopeSchema.safeParse(raw);
     if (!envelope.success) {
       invalidChunks.push(chunk.index);
-      rejected.push({ raw, reason: `청크 ${chunk.index} 스키마 불일치: endpoints 배열이 없음`, chunk: chunk.index });
+      reject(raw, `청크 ${chunk.index} 스키마 불일치: endpoints 배열이 없음`, chunk.index);
       continue;
     }
     const chunkText = await readFile(ws.file(system, chunk.file), "utf8");
@@ -266,13 +307,13 @@ export async function merge(ws: Workspace, system: string): Promise<MergeResult>
       if (!parsed.success) {
         const issue = parsed.error.issues[0];
         const where = issue?.path.join(".") || "(root)";
-        rejected.push({ raw: item, reason: `항목 스키마 불일치: ${where} ${issue?.message ?? ""}`.trimEnd(), chunk: chunk.index });
+        reject(item, `항목 스키마 불일치: ${where} ${issue?.message ?? ""}`.trimEnd(), chunk.index);
         continue;
       }
-      const ep = parsed.data;
+      const ep = clampEndpoint(parsed.data);
       const p = normalizePath(ep.path);
       if (!p) {
-        rejected.push({ raw: item, reason: `path 형식 불일치: '${ep.path}'`, chunk: chunk.index });
+        reject(item, `path 형식 불일치: '${ep.path}'`, chunk.index);
         continue;
       }
       const key = `${ep.method} ${p}`;
@@ -284,8 +325,16 @@ export async function merge(ws: Workspace, system: string): Promise<MergeResult>
     }
   }
 
-  // 3) 버킷 → Feature. 키 순서를 고정해 id 접미사(…2, …3)가 실행마다 같게 한다.
-  for (const key of [...buckets.keys()].sort()) features.push(toFeature(buckets.get(key)!, registry));
+  // 3) 버킷 → Feature. 키 순서를 고정해 id 접미사(…2, …3)가 실행마다 같게 한다. 하나가 실패해도 나머지는 계속.
+  for (const key of [...buckets.keys()].sort()) {
+    const bucket = buckets.get(key)!;
+    try {
+      features.push(toFeature(ajv, bucket, registry));
+    } catch (e) {
+      const chunk = bucket.items[0].chunk;
+      reject(bucket.items.map((i) => i.ep), `기능 변환 실패 (${key}): ${(e as Error).message}`, chunk);
+    }
+  }
 
   const catalog: Catalog = { system, generatedAt: new Date().toISOString(), features, rejected };
   const diff = await writeCatalogWithDiff(ws, system, catalog);

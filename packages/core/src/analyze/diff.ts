@@ -1,7 +1,7 @@
 import type { Catalog, CatalogDiff } from "../types.js";
 import { hashJson } from "../util/hash.js";
 
-/** confidence만 달라진 기능은 "바뀐 기능"으로 세지 않는다. 근거 대조 결과가 실행마다 미세하게 흔들려도 diff가 조용하도록. */
+/** 비교에서 confidence 하나만 뺀다. 신뢰도만 달라진 기능은 "바뀐 기능"으로 세지 않기 위해서다(나머지 필드는 모두 비교한다). */
 function fingerprint(f: Catalog["features"][number]): string {
   return hashJson({ ...f, confidence: undefined });
 }

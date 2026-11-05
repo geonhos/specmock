@@ -45,6 +45,11 @@ describe("normalizePath", () => {
     expect(normalizePath("  /pets  ")).toBe("/pets");
     expect(normalizePath("/")).toBe("/");
   });
+  it("converts :id only at segment boundaries and leaves custom-method colons alone", () => {
+    expect(normalizePath("/users/:id/posts/:postId")).toBe("/users/{id}/posts/{postId}");
+    expect(normalizePath("/v1/resources:batchGet")).toBe("/v1/resources:batchGet");
+    expect(normalizePath("/a/<id>:cancel")).toBe("/a/<id>:cancel");
+  });
   it("returns null for paths without a leading slash or with whitespace", () => {
     expect(normalizePath("pets/bad")).toBeNull();
     expect(normalizePath("/pets/{pet id}")).toBeNull();
@@ -183,6 +188,101 @@ describe("merge", () => {
     const list = catalog.features[0];
     expect(list.notes.some((n) => n.startsWith("responses.200 스키마 무시"))).toBe(true);
     expect(list.responses["200"].schema).toEqual({ type: "array", items: { type: "integer" } }); // 샘플에서 유추로 대체
+  });
+
+  const extractedFile = () => path.join(dir, "pets", "extracted", "000.json");
+  const ep = (over: Record<string, unknown>) => ({
+    method: "GET", path: "/pets", title: "List", responses: [], evidence: ["`GET /pets` returns an array of pets."], confidence: 0.9, ...over,
+  });
+
+  it("does not let a colliding $id poison later schema checks", async () => {
+    const colliding = { $id: "http://json-schema.org/draft-07/schema#", type: "object", properties: { a: { type: "string" } } };
+    const plain = { type: "object", properties: { b: { type: "integer" } } };
+    await writeFile(extractedFile(), JSON.stringify({ endpoints: [
+      ep({ path: "/first", responses: [{ status: 200, schema: colliding }] }),
+      ep({ path: "/second", responses: [{ status: 200, schema: plain }] }),
+    ] }));
+    await merge(ws, "pets");
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    const first = catalog.features.find((f) => f.path === "/first")!;
+    const second = catalog.features.find((f) => f.path === "/second")!;
+    expect(first.responses["200"].schema).toEqual(colliding); // $id는 컴파일 복사본에서만 뗀다
+    expect(first.notes.some((n) => n.includes("스키마 무시"))).toBe(false);
+    expect(second.responses["200"].schema).toEqual(plain);
+    expect(second.notes.some((n) => n.includes("스키마 무시"))).toBe(false);
+    // 두 번째 merge에서도 같은 결과(모듈 전역 상태 없음)
+    await merge(ws, "pets");
+    const again = await ws.read("pets", "catalog.json", CatalogSchema);
+    expect(again.features.find((f) => f.path === "/second")!.responses["200"].schema).toEqual(plain);
+  });
+
+  it("survives a 5000-level nested example and keeps the other features", async () => {
+    let deep: unknown = 1;
+    for (let i = 0; i < 5000; i++) deep = { n: deep };
+    await writeFile(extractedFile(), JSON.stringify({ endpoints: [
+      ep({ path: "/deep", responses: [{ status: 200, schema: null, example: deep }] }),
+      ep({ path: "/shallow", responses: [{ status: 200, schema: null, example: { ok: true } }] }),
+    ] }));
+    const result = await merge(ws, "pets");
+    expect(result.features).toBe(2);
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    const shallow = catalog.features.find((f) => f.path === "/shallow")!;
+    expect(shallow.responses["200"].schema).toEqual({ type: "object", properties: { ok: { type: "boolean" } } });
+    const stored = JSON.stringify(catalog.features.find((f) => f.path === "/deep")!.responses["200"].examples[0].body);
+    expect(stored).toContain("[specmock: 깊이 초과로 생략]");
+    expect((stored.match(/\{"n":/g) ?? []).length).toBeLessThanOrEqual(64);
+  });
+
+  it("keeps params named like Object.prototype members and never lets __proto__ keys touch prototypes", async () => {
+    const text = `{"endpoints":[${JSON.stringify(ep({
+      path: "/odd/{constructor}",
+      pathParams: [{ name: "constructor", required: true, schema: { type: "string" } }],
+      queryParams: [{ name: "__proto__", required: false, schema: { type: "string" } }, { name: "hasOwnProperty", required: true, schema: null }],
+      responses: [{ status: 200, schema: null, example: "EXAMPLE" }],
+    })).replace('"EXAMPLE"', '{"__proto__": {"x": 1}, "toString": 2}')}]}`;
+    await writeFile(extractedFile(), text);
+    const result = await merge(ws, "pets");
+    expect(result.features).toBe(1);
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    const f = catalog.features[0];
+    expect(Object.hasOwn(f.request.params, "constructor")).toBe(true);
+    expect(f.request.params.constructor).toEqual({ schema: { type: "string" }, required: true });
+    expect(Object.hasOwn(f.request.query, "hasOwnProperty")).toBe(true);
+    // zod v4는 record/object를 파싱할 때 "__proto__" 키를 조용히 버린다(ws.write 검증 단계). 디스크의 카탈로그에는 없지만
+    // merge가 그 키로 프로토타입을 바꾸지 않았다는 것이 중요하다.
+    expect(Object.getPrototypeOf(f.request.query)).toBe(Object.prototype);
+    expect(Object.keys(f.request.query)).toEqual(["hasOwnProperty"]);
+    const props = f.responses["200"].schema!.properties as Record<string, unknown>;
+    // 스키마 안의 properties는 zod가 unknown으로 통과시키므로 "__proto__" own property가 그대로 남는다.
+    expect(Object.getPrototypeOf(props)).toBe(Object.prototype);
+    expect(Object.hasOwn(props, "__proto__")).toBe(true);
+    expect(props.toString).toEqual({ type: "integer" });
+  });
+
+  it("stores a preview of the file text when JSON parsing fails", async () => {
+    await writeFile(extractedFile(), "{ not json " + "x".repeat(1000));
+    await merge(ws, "pets");
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    expect(typeof catalog.rejected[0].raw).toBe("string");
+    expect((catalog.rejected[0].raw as string).length).toBe(500);
+    expect(catalog.rejected[0].raw as string).toMatch(/^\{ not json/);
+  });
+
+  it("dedupes doc paths against openapi paths with a trailing slash", async () => {
+    const spec = {
+      openapi: "3.0.0", info: { title: "t", version: "1" },
+      paths: { "/pets/": { get: { operationId: "listPets", responses: { "200": { description: "ok" } } } } },
+    };
+    const specFile = path.join(dir, "slash.json");
+    await writeFile(specFile, JSON.stringify(spec));
+    await ingest(ws, "slash", [specFile, path.join(DOCS, "pets.md")]);
+    await prepare(ws, "slash");
+    await cp(path.join(DOCS, "extracted"), path.join(dir, "slash", "extracted"), { recursive: true });
+    await merge(ws, "slash");
+    const catalog = await ws.read("slash", "catalog.json", CatalogSchema);
+    const lists = catalog.features.filter((f) => f.method === "GET" && f.path.replace(/\/$/, "") === "/pets");
+    expect(lists).toHaveLength(1);
+    expect(lists[0].provenance).toBe("openapi");
   });
 
   it("writes catalog-diff.json against the previous catalog and prunes stale extracted files", async () => {

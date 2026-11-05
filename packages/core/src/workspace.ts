@@ -10,6 +10,7 @@ function assertSystemName(system: string): void {
 
 const PRODUCER: Record<string, string> = {
   "source.json": "specmock ingest",
+  "analyze-request.json": "specmock analyze",
   "catalog.json": "specmock analyze",
   "selection.json": "specmock select",
   "mockspec.json": "specmock select",
