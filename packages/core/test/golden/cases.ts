@@ -19,7 +19,8 @@ export const CASES: GoldenCase[] = [
   { name: "with-auth", inputs: [path.join(FIX, "openapi", "with-auth.yaml")] },
   { name: "circular", inputs: [path.join(FIX, "circular.yaml")] },
   { name: "pets-md", inputs: [path.join(FIX, "docs", "pets.md")], extracted: path.join(FIX, "docs", "extracted") },
-  { name: "pets-html", inputs: [path.join(FIX, "docs", "pets.html")], extracted: path.join(FIX, "docs", "extracted-html") },
+  // HTML도 청크 1개라 pets-md와 같은 녹음을 쓴다.
+  { name: "pets-html", inputs: [path.join(FIX, "docs", "pets.html")], extracted: path.join(FIX, "docs", "extracted") },
 ];
 
 /** generatedAt처럼 실행마다 달라지는 값을 뺀다. */

@@ -90,6 +90,7 @@ export async function prepare(ws: Workspace, system: string, chunkOpts: ChunkOpt
   const chunksDir = ws.file(system, CHUNKS_DIR);
   await rm(chunksDir, { recursive: true, force: true });
   await mkdir(chunksDir, { recursive: true });
+  await mkdir(ws.file(system, EXTRACTED_DIR), { recursive: true });
   for (let i = 0; i < chunks.length; i++) await ws.writeText(system, chunks[i].file, texts[i]);
 
   const request: AnalyzeRequest = {

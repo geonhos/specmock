@@ -58,7 +58,7 @@ export class ClaudeCodeAdapter implements LlmAdapter {
       });
       child.stdin.on("error", () => { /* 자식이 먼저 죽으면 EPIPE. close에서 처리된다. */ });
       child.stdin.end(req.prompt);
-    }).finally(() => { if (ownCwd) return rm(cwd, { recursive: true, force: true }); });
+    }).finally(() => { if (ownCwd) return rm(cwd, { recursive: true, force: true }).catch(() => {}); });
 
     const envelope = tryParse(stdout);
     if (!envelope) throw new Error(`claude 출력을 JSON으로 읽을 수 없습니다: ${stdout.slice(0, 300)}`);

@@ -37,6 +37,7 @@ describe("prepare", () => {
     expect(saved.chunks[0]).toMatchObject({ index: 0, file: "chunks/000.md", inputIndex: 0 });
     const first = await readFile(path.join(dir, "pets", "chunks", "000.md"), "utf8");
     expect(first).toContain("# Pets API");
+    expect(await readdir(path.join(dir, "pets", "extracted"))).toEqual([]);
   });
 
   it("numbers chunks contiguously across inputs and never leaves a heading empty", async () => {

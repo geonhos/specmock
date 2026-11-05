@@ -18,7 +18,6 @@ pnpm specmock generate docs && pnpm specmock verify docs
 ```bash
 pnpm specmock ingest docs examples/docs-sample/pets-api.md
 pnpm specmock analyze docs --prepare
-mkdir -p .specmock/docs/extracted
 cp examples/docs-sample/extracted/*.json .specmock/docs/extracted/
 pnpm specmock analyze docs --merge
 ```
