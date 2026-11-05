@@ -3279,3 +3279,40 @@ Task 9와 10, 11은 서로 독립이지만 같은 worktree에서 순서대로 �
 - 어댑터 동시 호출(현재 순차). 청크 50개 이상 문서에서 체감.
 - `run`의 세션 모드(prepare에서 멈추고 재개하는 2단계 run).
 - `core/index.ts` 공개 API 정리(2단계 MCP가 쓰는 것만 남기기).
+
+---
+
+## 실행 기록 (2026-11-05)
+
+12개 Task를 Task마다 구현 서브에이전트(Sonnet)가 만들고, 스펙 준수 → 코드 품질 2단계 리뷰(Opus)를 거쳐 진행했다. 리뷰 지적은 같은 Task의 후속 커밋으로 반영했다. 계획 본문과 실제 코드가 다른 지점은 다음과 같다.
+
+| Task | 계획과 달라진 점 | 이유 |
+|---|---|---|
+| 1 | turndown 예외 설정(`minimumReleaseAgeExclude`)을 넣었다가 `^7.2.4`로 올려 제거. zod 4.6.7은 `reused: "inline"` 없이도 `$ref` 없음. nullable 필드 후처리 불필요 | 실제 `claude` 2.1.318 + sonnet probe에서 structured_output이 정상. merge는 항목 단위 파싱 |
+| 2 | 1A의 "non-openapi 거부" 테스트를 "문서로 수용"으로 변경. Readability `keepClasses`, bare `<pre>` 펜스, H1 보존, charset 디코딩, 내용 sniff는 마지막 | 코드 펜스 언어와 제목 보존, 한글 문서 인코딩 |
+| 3 | CommonMark 펜스 매칭, 공백 구간 1글자 전진 버그 수정, `HEADING_RE` 보정(`# C#`), 속성 테스트 | 청크 분할이 펜스를 잘못 끊거나 무한히 진행 못 하는 경로 |
+| 4 | heading 폴백은 `input.title \|\| origin`(그룹명으로 쓰지 않음), 프롬프트 규칙 2·4·5·6 명확화, 청크 계산 후 wipe | 모델이 base URL과 요청 스키마/예시를 섞어 쓰던 문제 |
+| 5 | 근거 불일치 노트를 "못 찾은 건수"로, `util/ajv.ts` 공용화(merge마다 새 ajv·루트 `$id`/`$schema` 제거), `inferSchema` 깊이 32·저장 값 64 캡, 프로토타입 키 안전 | ajv 인스턴스 오염과 거대 샘플, `__proto__` 키 |
+| 6 | claude-code 어댑터 `--no-session-persistence --tools ""`, `.tmp`→rename 원자적 쓰기, `ChunkInfo.contentHash` + `extracted/manifest.json` | 중단 시 반쪽 파일과 낡은 추출 재사용 방지 |
+| 7 | `llmFlow.ts`의 `runLlmAnalyze`를 analyze/run이 공유, `run`은 세션 모드 거부·전부 실패 시 exit 1, `SelectionSchema.catalogIds`로 선택 diff 경고 | 두 명령의 추출 흐름 중복 제거, 설계 §4.4 diff |
+| 8 | `claude` 자식 프로세스를 임시 cwd에서 실행(d2258fc), 골든 5종·예제·`llm:check`, `analyze --prepare`가 `extracted/` 생성(README의 `mkdir` 제거), `tsconfig.scripts.json` | 저장소 파일 접근 차단, 예제 B 경로 단순화 |
+| 9 | 수확 스크립트를 문자열 `evaluate`로, 시작 페이지 제외, select는 새로 보인 블록만·탭은 숨은 패널만, `data-specmock-i`, bare `/api/` 링크 제외, `page.url()` 기준, **수확 결과 마스킹 누락(리뷰 Critical) 수정** | `page.evaluate`가 `document`를 못 넘김. 로그인 쿠키로 앱 API를 방문하는 사고 방지 |
+| 10 | 플러그인·스킬·참고문서, `plugin.test`에 종료 코드·옵션 drift 검사, `claude plugin validate` 통과, 근거 없는 merge 종료 코드 서술 제거 | 스킬 문서가 CLI와 어긋나지 않게 |
+| 11 | `select --interactive`(그룹 구분선·사전 체크·`--group`), 병합을 core `mergeInteractivePick`으로 분리·테스트(리뷰 Major 수정), `literalIds`, Task 10 잔여(세션 모드 `--refresh`가 `extracted/` 삭제, 실패 로그 마스킹) | `--group` 보존 로직과 로그 마스킹이 무테스트였음. 저장은 id 목록으로 평탄화(의도) |
+| 12 | README(문서 입력 빠른 시작, LLM/수확 고지, 종료 코드 표, 스킬 사용법, 1B 제한 사항), architecture(LLM 3단계 시퀀스, 상태 파일), 설계 §3.1·3.3·4.3·5.1·5.2·5.6·12, 이 기록 | `examples/petstore/README.md` 링크 변경은 불필요해 생략 |
+| 최종 | 33 test files / 243 tests, `pnpm typecheck` 통과. 라이브: `pnpm llm:check` OK 4136ms(sonnet), 예제 녹음 기능 4개(청크 1, 신뢰도 1.0/1.0/0.8/0.8), ego-browser 실측 수확 페이지 1·상호작용 2(Node 탭, select=404, 약 2.3s) | 수동 확인 중 `select --interactive`의 TTY 실행은 미실시 |
+
+### 후속 과제
+
+- 전부 추출 실패 시 빈 `catalog.json`으로 덮어쓰지 않기(쓰기 생략 검토).
+- 로그아웃·레이트리밋 시 청크마다 같은 실패를 반복하므로 조기 중단.
+- 어댑터 격리 강화(`--strict-mcp-config`, `--setting-sources`는 OAuth 영향 검증 후), 타임아웃 시 손자 프로세스 정리, 동시 호출(현재 순차, 청크 50개 이상에서 체감).
+- `--json` 실패 시 JSON 오류 봉투 없음(MCP 단계 전에 결정).
+- select diff에 `changed`(내용 변경) 감지 추가. interactive가 저장한 id가 `all`·숫자일 때 `--add`/`@file`에서 표현식으로 재해석되는 문제(드묾).
+- `select --interactive`: 그룹 접기·검색, TTY 수동 확인.
+- 커스텀 드롭다운(listbox/combobox) 자동 수확, PDF 표 구조 보존(`getTable()` 검토).
+- `run`의 세션 모드(prepare에서 멈추고 재개하는 2단계 run).
+- 정적 토글 사이트에서 수확 내용이 본문과 중복될 수 있음(prepare에서 중복 섹션 생략), `show more` 감지가 script/nav를 포함하는 오탐.
+- 로컬 파일 캐시 키 정규화·mtime 검사, PDF title(메타데이터), `application/xhtml+xml` 등 content-type.
+- `hasExample` 기준 통일(openapi.ts vs merge 2xx), OpenAPI feature 추출 3회 중복 헬퍼화, `core/index.ts` 공개 API 정리(2단계 MCP가 쓰는 것만).
+- 플러그인 marketplace 배포 안내.

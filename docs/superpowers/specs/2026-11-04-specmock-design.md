@@ -1,7 +1,7 @@
 # specmock 설계 문서
 
 작성일: 2026-11-04
-상태: 승인됨. 1A 구현 완료 (2026-11-05). 구현 중 확인된 사항은 12장 "구현 중 변경" 참고.
+상태: 승인됨. 1B 구현 완료 (2026-11-05). 구현 중 확인된 사항은 12장 "구현 중 변경" 참고.
 대상 범위: 전체 아키텍처 + 1단계 상세. 2·3단계는 인터페이스 경계만 정의.
 
 ---
@@ -156,10 +156,13 @@ interface LlmAdapter {
       "origin": "파일 경로 또는 URL",
       "fetchedAt": "ISO 8601",
       "contentHash": "sha256",
-      "content": "정규화된 텍스트. HTML은 본문만, PDF는 추출 텍스트. openapi는 dereference된 JSON 문자열",
+      "title": "문서 제목(선택). HTML <title>/H1, PDF 메타데이터",
+      "content": "정규화된 텍스트. HTML은 본문만 뽑아 Markdown으로 변환(코드 펜스·표·제목 보존), PDF는 추출 텍스트(페이지마다 헤딩), openapi는 dereference된 JSON 문자열",
+      "harvestCandidate": true,   // 상호작용 요소 감지 결과(5.1). 수확 대상 여부 판단에 쓴다
       "harvested": {              // ego-browser 수확 시에만
         "pages": [{ "url": "", "title": "", "content": "" }],
-        "interactions": [{ "type": "tab" | "select" | "details", "label": "", "content": "" }]
+        "interactions": [{ "type": "tab" | "select" | "details", "label": "", "content": "" }],
+        "notes": ["수확을 건너뛰었거나 실패한 이유 등"]
       }
     }
   ]
@@ -223,6 +226,7 @@ confidence 보정 규칙:
   "catalogHash": "catalog.json의 sha256",
   "selected": [ "users.get", "users.list", "orders.*" ],   // 표현식 그대로 보존
   "resolved": [ "users.get", "users.list", "orders.list", "orders.get" ],  // 해석 결과
+  "catalogIds": [ "users.get", "users.list", "orders.list", "orders.get", "..." ],  // 선택 시점의 카탈로그 전체 id. 이후 달라진 기능 diff의 기준(선택적 필드)
   "updatedAt": "ISO 8601"
 }
 ```
@@ -304,7 +308,7 @@ stripe — 47개 기능 (openapi 40 · 문서추출 7)
 
 ### 4.3 대화형 선택 (CLI `--interactive`)
 
-체크리스트 UI(그룹 접기/펼치기, 공백으로 토글, `a`로 그룹 전체, `/`로 필터)를 띄운다. 확정하면 `selection.json`에 저장된다.
+그룹 구분선이 있는 체크박스 목록(TTY 필요)을 띄운다. 공백으로 토글하고, 이전 선택은 미리 체크되며, `--group <이름>`으로 한 그룹만 보여 줄 수 있다. 확정하면 `selection.json`에 저장되는데, 표현식이 아니라 **id 목록으로 평탄화**된다. 그룹 접기/펼치기와 `/` 검색은 구현하지 않았다(12장).
 
 ### 4.4 나중에 기능 추가하기
 
@@ -341,9 +345,9 @@ specmock generate stripe                       # 추가된 라우트만 새로 �
 | 입력 종류 | 처리 | LLM |
 |---|---|---|
 | OpenAPI 2/3 (json/yaml, 파일 또는 URL) | `@apidevtools/swagger-parser`로 `$ref` 전부 해석하여 보존 | 없음 |
-| 웹 URL | 1) 일반 fetch → 본문 추출(`@mozilla/readability` + `linkedom`). 2) 본문이 빈약하거나 상호작용 요소가 감지되면 ego-browser 수확으로 전환 | 없음 |
+| 웹 URL | 1) 일반 fetch → 본문 추출(`@mozilla/readability` + `linkedom`) 후 Markdown으로 변환(`turndown`. 코드 펜스·표 보존). 2) 본문이 빈약하거나 상호작용 요소가 감지되면 ego-browser 수확으로 전환 | 없음 |
 | Markdown / 텍스트 | 그대로 보존. 헤딩 구조 파악 | 없음 |
-| PDF | `pdf-parse`로 텍스트 추출 | 없음 |
+| PDF | `pdf-parse`로 텍스트 추출. 페이지마다 `## [page N]` 헤딩을 붙여 청크 분할과 근거 위치에 쓴다. 표 구조는 손실 | 없음 |
 
 **상호작용 요소 감지 규칙**: 본문 텍스트가 2,000자 미만이거나, `<select>`, `role="tab"`, `<details>`, `role="combobox"`, "Show more"/"더 보기" 텍스트 중 하나라도 있으면 수확 후보로 표시한다. CLI는 `--harvest auto|always|never`로 제어한다.
 
@@ -352,20 +356,20 @@ specmock generate stripe                       # 추가된 라우트만 새로 �
 1. 페이지 로드. `details`와 `aria-expanded="false"` 요소를 모두 펼친다.
 2. `role=tab` 요소를 순회하며 각 탭 패널 내용을 캡처한다.
 3. 모든 `select`를 찾아 옵션을 하나씩 선택하고, 선택 전후 DOM 차이만 캡처한다.
-4. `role=listbox` / `role=combobox` 커스텀 드롭다운도 같은 방식으로 시도한다.
-5. 같은 도메인의 API Reference 성격 링크(`/api`, `/reference`, `/docs`)를 깊이 2까지 따라간다. 페이지 수 상한 50.
-6. 결과를 내용 해시로 중복 제거하여 `source.json`의 `harvested`에 저장한다.
+4. `role=listbox` / `role=combobox` 커스텀 드롭다운은 **자동 수확하지 않는다**(1B 결정, 12장). 스킬의 수동 수확 절차로 한다.
+5. 같은 출처의 API Reference 성격 링크(`/reference`, `/docs` 류)를 깊이 2까지 따라간다. 페이지 수 상한 50. bare `/api/` 경로는 따라가지 않는다(로그인 쿠키로 앱 API를 호출할 수 있음).
+6. 결과를 내용 해시로 중복 제거하고 비밀값을 마스킹하여 `source.json`의 `harvested`에 저장한다. 시작 페이지는 `pages`에서 제외하고(본문과 중복), 같은 인터랙션 안에서 새로 보인 블록만 저장한다.
 7. 자동 수확이 부족하면(수확 후에도 기능 추출 0건 등) 스킬 문서의 수동 탐색 절차로 넘어간다. Claude가 스냅샷을 보며 직접 클릭하고 결과를 `harvested`에 추가한다.
 
-ego-browser는 셸 CLI이므로 CLI 모드에서는 core가 자식 프로세스로 실행하고, 스킬 모드에서는 Claude가 직접 실행한다. 미설치면 건너뛰고 리포트에 기록한다.
+ego-browser는 셸 CLI이므로 CLI 모드에서는 core가 자식 프로세스로 실행하고, 스킬 모드에서는 Claude가 직접 실행한다. 미설치면 건너뛰고 `harvested.notes`와 stderr에 기록한다. ego-browser는 로그인된 브라우저로 페이지를 열므로 수확 대상 페이지의 내용이 모두 저장 후보가 된다.
 
 ### 5.2 analyze
 
 - **OpenAPI**: 결정적 변환. `paths × methods` 전부를 feature로. id는 `operationId` → 없으면 `리소스.동작` 규칙(`GET /users/{id}` → `users.get`, `GET /users` → `users.list`, `POST` → `create`, `PUT/PATCH` → `update`, `DELETE` → `delete`, 그 외는 path 마지막 세그먼트). 충돌 시 숫자 접미사. `provenance: openapi`, `confidence: 1.0`.
 - **비구조 문서**: 세 단계.
-  - `prepare`: 헤딩 기준 청크 분할(청크당 최대 6,000자, 겹침 200자). `chunks/NNN.md`와 각 청크용 프롬프트, 출력 JSON 스키마를 `analyze-request.json`에 기록한다. 프롬프트는 "이 청크에서 API 엔드포인트를 찾아라. 각 항목에 method, path, 요청/응답 스키마(알 수 있는 만큼), 샘플 응답 JSON(원문에 있으면 그대로), 근거 인용, 0~1 confidence를 적어라. 없으면 빈 배열"을 요구한다.
-  - LLM 추출: 어댑터가 청크별로 호출하여 `extracted/NNN.json`을 쓴다. 스킬 모드에서는 Claude가 직접 쓴다.
-  - `merge`: 각 결과를 스키마 검증 → method/path 형식 검증 → 근거 인용을 원문에서 대조 → confidence 보정 → `method+path` 기준 병합(스키마는 합집합, examples는 누적, confidence는 최댓값) → 샘플 응답 수집 → `catalog.json`. 실패 항목은 `rejected`에 이유와 함께 남긴다.
+  - `prepare`: 헤딩 기준 청크 분할(청크당 최대 6,000자, 겹침 200자). `chunks/NNN.md`를 쓰고, `analyze-request.json`에 `{ system, createdAt, prompt, schema, chunks: [{ index, file, heading, contentHash, … }], openapiFeatures }`를 기록한다. `schema`는 zod에서 만든 얇은 JSON Schema다. 프롬프트는 "이 청크에서 API 엔드포인트를 찾아라. 각 항목에 method, path, 요청/응답 스키마(알 수 있는 만큼), 샘플 응답 JSON(원문에 있으면 그대로), 근거 인용, 0~1 confidence를 적어라. 없으면 빈 배열"을 요구한다.
+  - LLM 추출: 어댑터가 청크별로 호출하여 `extracted/NNN.json`을 원자적으로(.tmp → rename) 쓰고, 추출 당시 본문 해시를 `extracted/manifest.json`에 적는다(본문이 바뀐 청크만 다시 추출). 스킬 모드에서는 Claude가 직접 쓴다.
+  - `merge`: 각 결과를 스키마 검증 → method/path 형식 검증 → 근거 인용을 원문에서 대조 → confidence 보정 → `method+path` 기준 병합(스키마는 합집합, examples는 누적, confidence는 최댓값) → 샘플 응답 수집 → `catalog.json`. 실패 항목은 `rejected`에 이유와 함께 남긴다. `--merge`는 `prepare` 없이 이미 있는 `extracted/*.json`만 합치므로, 일부 청크만 추출된 상태에서도 **부분 진행**이 된다(추출 안 된 청크는 알리고 건너뜀). 카탈로그를 쓸 때 이전 카탈로그와 id 기준으로 비교해 `catalog-diff.json`에 추가/삭제를 남긴다.
 - OpenAPI와 문서를 동시에 입력하면 OpenAPI가 우선이고, 문서에서만 발견된 기능이 `doc-extracted`로 추가된다.
 
 ### 5.3 select
@@ -419,15 +423,18 @@ mock/<system>/
 ### 5.6 CLI (`packages/cli`)
 
 ```
-specmock ingest   <system> <file|url>... [--harvest auto|always|never] [--refresh]
-specmock analyze  <system> [--llm session|claude-code] [--prepare|--merge]
+specmock ingest   <system> <origins...> [--refresh] [--harvest auto|always|never] [--json]
+specmock analyze  <system> [--llm session|claude-code] [--model m] [--prepare] [--merge] [--refresh] [--json]
 specmock list     <system> [--group g] [--json]
-specmock show     <system> <featureId>
-specmock select   <system> <expr>... [--add] [--remove] [--interactive]
-specmock generate <system> [--lang ts] [--out dir] [--force]
-specmock verify   <system|dir> [--report path]
-specmock run      <system> <file|url>... [--select expr] [--lang ts]   # 전 단계 한 번에 (OpenAPI 전용)
+specmock show     <system> <featureId> [--json]
+specmock select   <system> [exprs...] [--add] [--remove] [--interactive] [--group g] [--json]
+specmock generate <system> [--lang ts] [--out dir] [--force] [--json]
+specmock verify   <system> [--dir d] [--report path] [--json]
+specmock run      <system> <origins...> [--select expr] [--lang ts] [--out dir] [--no-verify]
+                  [--llm claude-code] [--model m] [--refresh] [--json]   # 전 단계 한 번에. 세션 모드 불가
 ```
+
+종료 코드: 모든 명령에서 0 성공, 1 오류. 2는 `analyze` = 일부 청크 추출 실패, `run` = contract 실패 또는 일부 추출 실패, `verify` = contract 실패.
 
 - 모든 상태는 `./.specmock/<system>/`에 둔다. `--workspace`로 변경 가능.
 - `--json` 출력을 모든 명령에 지원하여 스킬과 2단계 Web UI가 파싱할 수 있게 한다.
@@ -528,7 +535,7 @@ specmock/
 | 선택 표현식 + selection.json | 대화형 UI만 | 재현 가능하고 스크립트화 가능. 나중에 기능 추가가 쉬움 |
 | 코어 → CLI → MCP 순서 | MCP 우선 | CLI가 디버깅이 빠르고 end-to-end를 먼저 확인할 수 있음. MCP는 같은 코어의 얇은 껍데기 |
 
-## 12. 구현 중 변경 (1A, 2026-11-04 ~ 05)
+## 12. 구현 중 변경 (1A, 1B 2026-11-04 ~ 05)
 
 리뷰 과정에서 설계를 바꾼 지점. 위 본문에는 반영되어 있고, 여기에는 이유만 남긴다.
 
@@ -554,3 +561,20 @@ specmock/
 | §4.4 카탈로그 변경 diff("새 기능 N개 / 사라진 기능 M개") 미구현 | 1A는 `catalogHash` 불일치 경고만 낸다. diff는 1B에서 |
 | §4.5 "응답 스키마 없음" 경고는 표의 샘플 배지(`—`)로만 표시 | 별도 경고 열 없이도 구분된다. 근거 불일치·path 추론 경고는 LLM 추출이 들어오는 1B에서 |
 | §7 골든 테스트(OpenAPI 샘플 3종)는 1B로 이월 | 1A는 Petstore 하나로 단위·통합·e2e를 덮는다. 인증 포함·`$ref` 중첩 샘플은 1B의 LLM 경계 테스트와 함께 추가 |
+| **1B** HTML을 평문이 아니라 Markdown으로 보존 (코드 펜스·표·H1 제목 유지) | 평문으로 펴면 코드 블록 경계와 표가 사라져 청크 분할과 근거 대조가 깨진다. Readability의 `keepClasses`로 언어 펜스 보존 |
+| **1B** 수확 결과를 `source.json`의 별도 필드로 두되 prepare가 섹션으로 병합 | 청크 분할기는 하나의 Markdown만 다루면 된다. 라벨은 한 줄로, 빈 내용은 생략 |
+| **1B** LLM 추출 스키마를 얇게(zod → JSON Schema) 하고 `merge`가 ajv로 컴파일 검사 | 모델이 만든 요청/응답 스키마가 컴파일 안 되면 생성 단계에서 터진다. 항목 단위로 파싱해 나쁜 항목만 `rejected` |
+| **1B** 샘플 응답 → 스키마 유추(`inferSchema`)를 구현, 깊이 32·저장 값 64로 캡 | 문서엔 스키마 없이 예시만 있는 경우가 대부분. 거대한 샘플이 카탈로그를 부풀리지 않게 |
+| **1B** `claude` 자식 프로세스를 빈 임시 cwd에서 실행, `--no-session-persistence`, `--tools ""` | 저장소 파일 접근과 세션 기록을 막고 모델이 청크 외 정보를 쓰지 못하게 함 |
+| **1B** `extracted/manifest.json`(청크 본문 해시)로 낡은 결과 건너뛰기 방지 | 문서가 바뀌었는데 이전 추출을 재사용하면 조용히 틀린 카탈로그가 된다 |
+| **1B** `--refresh` 의미 분리: ingest = 원문 캐시, analyze = 기존 `extracted/` 무시(claude-code) 또는 삭제(session) | 같은 이름이라도 지우는 대상이 다르다. 세션 모드는 Claude가 파일을 쓰므로 CLI가 지워야 한다 |
+| **1B** `catalog-diff.json` 추가, `selection.json`에 `catalogIds` | §4.4 diff를 구현. 선택 시점의 전체 id가 있어야 "선택에 영향 있는 변경"을 알 수 있다. 내용 변경(changed)은 감지하지 않음 |
+| **1B** 일부 청크 추출 실패 시 나머지로 계속 진행하고 `analyze`는 exit 2 | 한 청크 때문에 전체를 버리면 비용이 낭비된다. 재실행 시 실패분만 재시도 |
+| **1B** 종료 코드 정리: analyze 2 = 추출 일부 실패, run 2 = contract 또는 추출 실패, verify 2 = contract | 스킬과 스크립트가 구분해 처리해야 한다. 전부 실패하면 run은 exit 1 |
+| **1B** `run`은 `--llm claude-code`만 허용 | 세션 모드는 사람이 개입하는 2단계(prepare → Claude 추출 → merge)라 한 번에 실행할 수 없다 |
+| **1B** 수확 스크립트를 `ego-browser nodejs`에 문자열로 `evaluate`, 시작 페이지는 `pages`에서 제외, 탭은 숨은 패널만·select는 새로 보인 블록만 | `page.evaluate`가 `document`를 넘기지 못함. 본문 중복 방지 |
+| **1B** 링크 추종에서 bare `/api/` 경로 제외, 수확 결과·실패 로그 마스킹 | ego-browser의 로그인 쿠키로 앱 API를 방문하거나, 수확한 비밀값이 저장·로그에 남는 것을 막기 위해 (리뷰에서 Critical로 지적) |
+| **1B** 커스텀 드롭다운(listbox/combobox) 자동 수확 제외 | 사이트마다 열기 방식이 달라 자동화 오동작 위험이 크다고 보고 범위에서 뺌. 스킬의 수동 수확 절차로 |
+| **1B** `select --interactive` 축소: 그룹 접기·`/` 검색 없음, 저장은 id 목록으로 평탄화 | 1B 범위 축소(그룹 구분선 + 체크박스 + 이전 선택 사전 체크). 병합은 core 함수(`mergeInteractivePick`)로 분리해 테스트 |
+| **1B** Claude Code 플러그인(`plugin/`) + 스킬 문서에 옵션 drift 테스트 | 스킬이 설명하는 CLI 옵션이 실제와 어긋나면 사용자가 잘못된 명령을 받는다. `--help`와 대조 |
+| **1B** 구현 중 발견·수정: CommonMark 펜스 매칭, 공백 구간에서 1글자 전진하던 청크 분할 버그, ajv 루트 `$id`로 인한 카탈로그 오염, 프로토타입 키(`__proto__`) 안전 | 속성 테스트와 Task별 코드 리뷰에서 나온 실제 결함. 각각 회귀 테스트 추가 |
