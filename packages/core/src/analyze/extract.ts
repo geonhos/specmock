@@ -1,10 +1,11 @@
 import { access, mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
-import { AnalyzeRequestSchema, ExtractionResultSchema } from "../types.js";
+import { AnalyzeRequestSchema } from "../types.js";
 import type { LlmAdapter } from "../llm/adapter.js";
 import type { Workspace } from "../workspace.js";
-import { EXTRACTED_DIR, extractedFileName, hashText, pruneExtracted, readManifest, writeFileAtomic, writeManifest } from "./prepare.js";
+import { EXTRACTED_DIR, extractedFileName, hashText, pruneExtracted, readManifest } from "./prepare.js";
 import { buildChunkPrompt } from "./prompt.js";
+import { submitExtraction } from "./submit.js";
 
 export interface ExtractProgress { done: number; total: number; chunk: number; status: "written" | "skipped" | "failed" }
 export interface ExtractOptions { refresh?: boolean; onProgress?: (p: ExtractProgress) => void }
@@ -45,11 +46,15 @@ export async function extract(ws: Workspace, system: string, adapter: LlmAdapter
     try {
       const body = await load();
       const raw = await adapter.extract({ prompt: buildChunkPrompt(body), schema: request.schema });
-      const parsed = ExtractionResultSchema.safeParse(raw);
-      if (!parsed.success) throw new Error(`출력이 스키마와 맞지 않습니다: ${parsed.error.issues[0]?.path.join(".")} ${parsed.error.issues[0]?.message}`);
-      await writeFileAtomic(ws.file(system, rel), JSON.stringify({ endpoints: parsed.data.endpoints }, null, 2) + "\n");
-      manifest[key] = chunk.contentHash ?? hashText(body);
-      await writeManifest(ws, system, manifest);
+      const r = await submitExtraction(
+        ws, system,
+        { index: chunk.index, contentHash: chunk.contentHash ?? hashText(body), result: raw },
+        { request, manifest, lenient: true },
+      );
+      if (!r.ok) {
+        const first = r.errors?.[0];
+        throw new Error(`출력이 스키마와 맞지 않습니다: ${first?.path ?? ""} ${first?.message ?? r.reason}`);
+      }
       result.written += 1; report("written");
     } catch (e) {
       fail(e);

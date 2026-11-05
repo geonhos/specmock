@@ -27,4 +27,5 @@ export { verify, loadContracts, type VerifyOptions, type VerifyResult, type Cont
 export { startMock, ensureInstalled, type RunningMock, type StartMockOptions } from "./verify/server.js";
 export { renderCoverage } from "./verify/coverage.js";
 export { extract, type ExtractOptions, type ExtractProgress, type ExtractResult } from "./analyze/extract.js";
+export { submitExtraction, type SubmitExtractionInput, type SubmitExtractionResult, type SubmitExtractionOptions, type SubmitError } from "./analyze/submit.js";
 export { createAdapter, ADAPTER_NAMES, ClaudeCodeAdapter, SessionAdapter, type AdapterName, type LlmAdapter, type ExtractRequest, type ClaudeCodeOptions } from "./llm/index.js";
