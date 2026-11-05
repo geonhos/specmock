@@ -3,7 +3,7 @@ export const VERSION = "0.1.0";
 export * from "./types.js";
 export { Workspace } from "./workspace.js";
 export { hashJson, hashText } from "./util/hash.js";
-export { ingest, ingestOne, detectKind } from "./ingest/index.js";
+export { ingest, ingestOne, detectKind, type IngestOptions } from "./ingest/index.js";
 export { maskSecrets } from "./ingest/mask.js";
 export { analyze } from "./analyze/index.js";
 export { analyzeOpenApiDocument } from "./analyze/openapi.js";

@@ -12,12 +12,29 @@ function turndown(): TurndownService {
   td.addRule("fencedWithLang", {
     filter: (node) => node.nodeName === "PRE",
     replacement: (_c, node) => {
-      const code = node.firstChild?.nodeName === "CODE" ? (node.firstChild as HTMLElement) : (node as HTMLElement);
-      const lang = (code.getAttribute("class") ?? "").match(/language-([\w-]+)/)?.[1] ?? "";
-      return `\n\n\`\`\`${lang}\n${code.textContent ?? ""}\n\`\`\`\n\n`;
+      const pre = node as HTMLElement;
+      const code = Array.from(pre.children).find((c) => c.nodeName === "CODE") ?? pre;
+      const classes = `${code.getAttribute("class") ?? ""} ${pre.getAttribute("class") ?? ""}`;
+      const lang = classes.match(/language-([\w-]+)/)?.[1] ?? "";
+      const text = (code.textContent ?? "").replace(/\n$/, "");
+      // 코드 안의 백틱 열보다 긴 펜스를 고른다(turndown 기본 동작과 같다).
+      let size = 3;
+      for (const m of text.matchAll(/^`{3,}/gm)) size = Math.max(size, m[0].length + 1);
+      const fence = "`".repeat(size);
+      return `\n\n${fence}${lang}\n${text}\n${fence}\n\n`;
     },
   });
   return td;
+}
+
+/**
+ * linkedom은 빈 문자열이면 documentElement가 null이고(body 접근 시 throw), <html> 없는 조각이면 첫 요소(<p> 등)를
+ * documentElement로 삼고 빈 body를 만들어 Readability가 본문을 못 본다. 둘 다 body로 감싸 다시 파싱한다.
+ */
+function parseDocument(html: string): Document {
+  let { document } = parseHTML(html);
+  if (document.documentElement?.nodeName !== "HTML") ({ document } = parseHTML(`<html><body>${html}</body></html>`));
+  return document as unknown as Document;
 }
 
 /** hidden 요소는 Readability가 버리므로, 변환 전에 hidden/aria-hidden을 벗겨 탭 패널·접힌 응답 예시도 본문에 남긴다. */
@@ -30,15 +47,15 @@ function unhide(document: Document): void {
 }
 
 export function htmlToMarkdown(html: string, url: string): { title: string; markdown: string } {
-  const { document } = parseHTML(html);
+  const document = parseDocument(html);
   unhide(document);
-  const title = document.querySelector("title")?.textContent?.trim() ?? "";
+  const title = document.querySelector("title")?.textContent ?? "";
   // keepClasses: Readability가 class를 지우면 위 언어 힌트가 사라지므로 남긴다.
-  const article = new Readability(document as unknown as Document, { charThreshold: 200, keepClasses: true }).parse();
+  const article = new Readability(document, { charThreshold: 200, keepClasses: true }).parse();
   const contentHtml = article?.content ?? document.querySelector("main, article, body")?.innerHTML ?? html;
   let markdown = turndown().turndown(contentHtml).trim();
   if (markdown.length === 0) markdown = (document.body?.textContent ?? "").trim();
-  const finalTitle = article?.title?.trim() || title;
+  const finalTitle = (article?.title?.trim() || title).replace(/\s+/g, " ").trim();
   // Readability는 <h1>을 제목으로 삼키고 본문에서 지운다. Markdown 입력과 같게 H1을 본문에 남겨 청크와 LLM이 문서 제목을 보게 한다.
   if (finalTitle && !/^# /.test(markdown)) markdown = `# ${finalTitle}\n\n${markdown}`;
   return { title: finalTitle, markdown: `<!-- source: ${url} -->\n\n${markdown}\n` };
@@ -48,7 +65,7 @@ export interface InteractiveReport { reasons: string[] }
 
 /** 설계 5.1의 감지 규칙. bodyChars는 변환된 본문 길이. */
 export function detectInteractive(html: string, bodyChars: number): InteractiveReport {
-  const { document } = parseHTML(html);
+  const document = parseDocument(html);
   const reasons: string[] = [];
   if (bodyChars < MIN_BODY_CHARS) reasons.push("본문 2,000자 미만");
   const count = (sel: string) => document.querySelectorAll(sel).length;

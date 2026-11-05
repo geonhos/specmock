@@ -11,13 +11,19 @@ import { pdfToText } from "./pdf.js";
 
 export type InputKind = SourceInput["kind"];
 
-const TEXT_DECODER = new TextDecoder("utf-8");
-
 function extOf(origin: string): string {
   return path.extname(origin.split(/[?#]/)[0]).toLowerCase();
 }
 
-/** 확장자·content-type·내용으로 종류를 정한다. content-type은 URL일 때만 온다. */
+function isUrl(origin: string): boolean {
+  return /^https?:\/\//.test(origin);
+}
+
+/**
+ * 확장자·content-type·내용으로 종류를 정한다. content-type은 URL일 때만 온다.
+ * 확장자나 content-type이 종류를 말해 주면 그것을 따르고, 내용 스니핑(openapi 키, `<html`)은 둘 다 없을 때만 쓴다.
+ * 그래야 `openapi: 3.0.0` 예시를 품은 README.md가 OpenAPI로 오인되지 않는다.
+ */
 export function detectKind(origin: string, text: string, contentType = ""): InputKind {
   const ext = extOf(origin);
   if (contentType === "application/pdf" || ext === ".pdf") return "pdf";
@@ -29,29 +35,62 @@ export function detectKind(origin: string, text: string, contentType = ""): Inpu
       // 파싱 실패는 아래 규칙으로 넘긴다.
     }
   }
-  if (/^\s*["']?(openapi|swagger)["']?\s*:\s*["']?\d/m.test(text.slice(0, 2000))) return "openapi";
   if (contentType === "text/markdown" || ext === ".md" || ext === ".markdown") return "markdown";
-  if (contentType === "text/html" || ext === ".html" || ext === ".htm" || /^\s*<(!doctype|html)/i.test(text.slice(0, 500))) return "html";
-  if (/^https?:\/\//.test(origin) && contentType === "") return "html";
+  if (contentType === "text/html" || ext === ".html" || ext === ".htm") return "html";
+  // 여기부터는 확장자·content-type이 없거나 모호한 경우(.txt, text/plain, 확장자 없는 URL 등)의 내용 스니핑.
+  if (/^\s*["']?(openapi|swagger)["']?\s*:\s*["']?\d/m.test(text.slice(0, 2000))) return "openapi";
+  const head = text.replace(/^﻿/, "").trimStart().slice(0, 500);
+  if (/^<(!doctype|html)/i.test(head)) return "html";
+  if (isUrl(origin) && contentType === "" && head.startsWith("<")) return "html";
   return "text";
 }
 
-async function readOrigin(origin: string): Promise<{ bytes: Uint8Array; contentType: string }> {
-  if (/^https?:\/\//.test(origin)) {
+interface RawOrigin { bytes: Uint8Array; contentType: string; charset: string }
+
+async function readOrigin(origin: string): Promise<RawOrigin> {
+  if (isUrl(origin)) {
     const f = await fetchOrigin(origin);
-    return { bytes: f.bytes, contentType: f.contentType };
+    return { bytes: f.bytes, contentType: f.contentType, charset: f.charset };
   }
-  return { bytes: new Uint8Array(await readFile(origin)), contentType: "" };
+  return { bytes: new Uint8Array(await readFile(origin)), contentType: "", charset: "" };
 }
 
+/** 헤더에 charset이 없을 때 앞 1,024바이트에서 <meta charset> / <meta http-equiv content="...charset=..."> 를 찾는다. */
+function sniffMetaCharset(bytes: Uint8Array): string {
+  const head = new TextDecoder("latin1").decode(bytes.subarray(0, 1024));
+  return head.match(/<meta[^>]*charset\s*=\s*["']?\s*([\w.:-]+)/i)?.[1]?.toLowerCase() ?? "";
+}
+
+/** charset 라벨을 TextDecoder가 모르면 utf-8로 떨어진다. */
+function decodeText(bytes: Uint8Array, charset: string): string {
+  if (charset) {
+    try {
+      return new TextDecoder(charset).decode(bytes);
+    } catch {
+      // 알 수 없는 라벨 → utf-8
+    }
+  }
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
+/** 첫 번째 `# 제목` 줄. 펜스 코드 블록 안의 `#`(셸 주석 등)은 건너뛴다. */
 function firstHeading(markdown: string): string | undefined {
-  return markdown.match(/^#\s+(.+)$/m)?.[1]?.trim();
+  let inFence = false;
+  for (const line of markdown.split("\n")) {
+    if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    const m = line.match(/^#\s+(.+)$/);
+    if (m) return m[1].trim();
+  }
+  return undefined;
 }
 
 export async function ingestOne(origin: string): Promise<SourceInput> {
-  const { bytes, contentType } = await readOrigin(origin);
+  const { bytes, contentType, charset } = await readOrigin(origin);
   const fetchedAt = new Date().toISOString();
-  const text = contentType === "application/pdf" || extOf(origin) === ".pdf" ? "" : TEXT_DECODER.decode(bytes);
+  const isPdf = contentType === "application/pdf" || extOf(origin) === ".pdf";
+  const mayBeHtml = contentType === "" || contentType === "text/html";
+  const text = isPdf ? "" : decodeText(bytes, charset || (mayBeHtml ? sniffMetaCharset(bytes) : ""));
   const kind = detectKind(origin, text, contentType);
   const base = { kind, origin, fetchedAt } as const;
 
