@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -8,6 +8,8 @@ import { describe, expect, it } from "vitest";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN = path.resolve(here, "..", "..", "..", "plugin");
 const run = promisify(execFile);
+const CLI = path.resolve(here, "..", "src", "cli.ts");
+const TSX = path.resolve(here, "..", "..", "..", "node_modules", ".bin", "tsx");
 
 describe("Claude Code plugin", () => {
   it("has a valid manifest", async () => {
@@ -33,7 +35,26 @@ describe("Claude Code plugin", () => {
 
   it("passes `claude plugin validate` when the claude CLI is installed", async () => {
     try { await run("claude", ["--version"]); } catch { return; } // CLI 없으면 건너뜀
-    const { stdout, stderr } = await run("claude", ["plugin", "validate", PLUGIN]);
-    expect(stdout + stderr).not.toMatch(/error/i);
+    await run("claude", ["plugin", "validate", PLUGIN]); // 실패하면 non-zero 종료로 reject된다
+  }, 60_000);
+
+  it("every `specmock <cmd> ... --<opt>` in the skill docs exists in that command's --help", async () => {
+    const dir = path.join(PLUGIN, "skills", "specmock");
+    const docs = [path.join(dir, "SKILL.md"), ...(await readdir(path.join(dir, "references"))).map((f) => path.join(dir, "references", f))];
+    const used = new Map<string, Set<string>>();
+    for (const f of docs) {
+      for (const line of (await readFile(f, "utf8")).split("\n")) {
+        for (const m of line.matchAll(/specmock (ingest|analyze|list|select|generate|verify|run)\b([^`\n]*)/g)) {
+          const opts = [...m[2]!.matchAll(/(?<![\w-])--([a-z][a-z-]*)/g)].map((x) => `--${x[1]}`);
+          if (!used.has(m[1]!)) used.set(m[1]!, new Set());
+          opts.forEach((o) => used.get(m[1]!)!.add(o));
+        }
+      }
+    }
+    expect(used.size).toBeGreaterThan(3);
+    for (const [cmd, opts] of used) {
+      const { stdout } = await run(TSX, [CLI, cmd, "--help"], { env: { ...process.env, NO_COLOR: "1" } });
+      for (const o of opts) expect(stdout, `\`specmock ${cmd} --help\` should list ${o} (used in skill docs)`).toContain(o);
+    }
   }, 60_000);
 });

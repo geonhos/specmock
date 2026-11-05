@@ -1,9 +1,23 @@
-import { analyze, CatalogSchema, formatCatalog, merge, prepare, type CatalogDiff } from "@specmock/core";
+import { readdir, rm } from "node:fs/promises";
+import path from "node:path";
+import { analyze, CatalogSchema, EXTRACTED_DIR, formatCatalog, merge, prepare, type CatalogDiff } from "@specmock/core";
 import type { Command } from "commander";
 import { runLlmAnalyze } from "../llmFlow.js";
 import { EXPR_HELP, fail, formatDiff, formatMerge, formatPrepared, printJsonOr, SYSTEM_ARG_HELP, workspaceFrom } from "../context.js";
 
 interface Opts { llm?: string; model?: string; prepare: boolean; merge: boolean; refresh: boolean; json: boolean }
+
+/** extracted/ 의 NNN.json 과 manifest.json 을 모두 지우고 지운 NNN.json 개수를 돌려준다. */
+async function clearExtracted(dir: string): Promise<number> {
+  let names: string[];
+  try { names = await readdir(dir); } catch { return 0; }
+  let n = 0;
+  for (const name of names) {
+    if (/^\d{3,}\.json$/.test(name)) { await rm(path.join(dir, name), { force: true }); n++; }
+    else if (name === "manifest.json") await rm(path.join(dir, name), { force: true });
+  }
+  return n;
+}
 
 export function registerAnalyze(program: Command): void {
   program
@@ -14,7 +28,7 @@ export function registerAnalyze(program: Command): void {
     .option("--model <model>", "claude-code 어댑터의 모델 (예: sonnet, opus)")
     .option("--prepare", "청크와 analyze-request.json만 만들고 멈춘다", false)
     .option("--merge", "prepare 없이 extracted/*.json을 합쳐 카탈로그만 만든다", false)
-    .option("--refresh", "이미 있는 extracted/*.json을 무시하고 다시 추출한다", false)
+    .option("--refresh", "다시 추출한다. claude-code: 이미 있는 extracted/*.json을 무시. session/--prepare: prepare 전에 extracted/ 의 기존 결과(NNN.json, manifest.json)를 모두 지움", false)
     .option("--json", "JSON으로 출력", false)
     .action(async (system: string, opts: Opts, cmd: Command) => {
       const ws = workspaceFrom(cmd);
@@ -45,6 +59,10 @@ export function registerAnalyze(program: Command): void {
       if (outcome.mode === "openapi") return printCatalog(outcome.diff);
 
       if (llm === "session" || opts.prepare) {
+        if (opts.refresh) {
+          const removed = await clearExtracted(ws.file(system, EXTRACTED_DIR));
+          process.stderr.write(`기존 추출 결과 ${removed}개를 지웠습니다\n`);
+        }
         const req = await prepare(ws, system);
         if (req.chunks.length === 0) process.stderr.write("경고: 추출할 청크가 없습니다 (문서 내용이 비어 있음)\n");
         // 세션 어댑터는 extract를 호출하지 않는다(Claude Code 세션이 직접 extracted/를 쓴다). 안내만 출력하고 끝낸다.

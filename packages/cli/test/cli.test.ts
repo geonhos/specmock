@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -214,5 +214,17 @@ describe("Phase 1B CLI", () => {
     await expect(specmock("analyze", "pets", "--llm", "gpt")).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining("알 수 없는 LLM 어댑터") });
     await expect(specmock("analyze", "pets", "--prepare", "--merge")).rejects.toMatchObject({ code: 1 });
     await expect(specmock("analyze", "pets", "--merge", "--refresh")).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining("--merge 는 다른 옵션과") });
+  });
+
+  it("session-mode analyze --refresh clears extracted/ before prepare", async () => {
+    await specmock("ingest", "pets", PETS_MD);
+    await specmock("analyze", "pets");
+    const ex = path.join(dir, ".specmock", "pets", "extracted");
+    await mkdir(ex, { recursive: true });
+    await writeFile(path.join(ex, "000.json"), '{"endpoints":[]}');
+    await writeFile(path.join(ex, "manifest.json"), "{}");
+    const { stderr } = await specmock("analyze", "pets", "--refresh");
+    expect(stderr).toContain("기존 추출 결과 1개를 지웠습니다");
+    expect(await readdir(ex)).toEqual([]);
   });
 });

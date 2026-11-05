@@ -22,7 +22,7 @@ specmock ingest <system> <파일|URL>... [--harvest auto|always|never] [--refres
 
 - 웹 문서에서 탭·셀렉트박스·접힘 영역 같은 상호작용 요소가 감지되면(기본 `auto`) ego-browser로 **자동 수확**한다. ego-browser에 로그인된 상태로 페이지를 열고, 결과는 비밀값을 마스킹한 뒤 저장한다. 같은 문서 안의 참조 링크도 따라가지만 bare `/api/` 경로 링크는 따라가지 않는다.
 - 커스텀 드롭다운(listbox/combobox)은 자동 수확하지 않는다. 필요하면 [수동 수확](references/manual-harvest.md).
-- 출력에 "ego-browser 미설치"나 "수확 실패"가 보이면 사용자에게 알리고, 필요하면 [수동 수확](references/manual-harvest.md)으로 보충한다.
+- 출력(stderr)에 "ego-browser가 없어 수확을 건너뜀"이나 "수확 실패"가 보이면(같은 내용이 `source.json`의 `harvested.notes`에도 기록된다) 사용자에게 알리고, 필요하면 [수동 수확](references/manual-harvest.md)으로 보충한다.
 - 같은 URL을 다시 읽을 때는 캐시가 쓰인다. 문서가 바뀌었다고 하면 `--refresh`.
 
 ## 2. analyze — 기능 카탈로그
@@ -39,7 +39,7 @@ specmock analyze <system>
 2. 청크 파일을 **하나씩** 읽고, `prompt`의 규칙대로 `schema`에 맞는 JSON을 `.specmock/<system>/extracted/NNN.json`에 `{"endpoints": [...]}` 형태로 쓴다. 근거 인용은 원문 그대로 복사한다. 엔드포인트가 없으면 `{"endpoints": []}`. `extracted/manifest.json`은 CLI가 관리하므로 건드리지 않는다.
 3. 모든 청크가 끝나면 `specmock analyze <system> --merge`.
 
-청크가 20개를 넘으면 사용자에게 수를 알리고, 로컬 CLI 자동 추출(`specmock analyze <system> --llm claude-code [--model sonnet|opus]`)을 쓸지 묻는다. **구독으로 청크당 `claude` 호출이 1회씩 나간다**는 점을 함께 알린다. 이미 있는 추출을 버리고 다시 하려면 `--refresh`.
+청크가 20개를 넘으면 사용자에게 수를 알리고, 로컬 CLI 자동 추출(`specmock analyze <system> --llm claude-code [--model sonnet|opus]`)을 쓸지 묻는다. **구독으로 청크당 `claude` 호출이 1회씩 나간다**는 점을 함께 알린다. 이미 있는 추출을 버리고 다시 하려면 `--refresh`(세션 모드에서는 prepare 전에 `extracted/`의 기존 결과를 모두 지운다).
 
 **`analyze` 종료 코드 2** = 일부 청크 추출 실패(주로 `--llm claude-code` 자동 추출 중). merge는 진행되어 카탈로그는 만들어졌다. 사용자에게 "N개 청크 추출 실패, 해당 청크의 기능은 목록에 빠졌다"고 알리고, 같은 명령을 다시 실행하면 실패/미추출 청크만 다시 추출한다고 안내한다(재시도할지 묻는다). 1은 오류이므로 메시지를 전달하고 멈춘다.
 
@@ -64,7 +64,7 @@ specmock verify <system>            # mock 기동 → contract test → coverage
 
 verify 결과(`contract: 통과 N / 실패 M`)와 `coverage.md` 상단 요약(fixture 출처 비율, 가정 목록)을 보여준다.
 
-**`verify` 종료 코드 2** = contract 실패(`run`도 같다). 실패한 contract의 오류를 옮겨 적고, 보통 원인(문서 샘플이 스키마와 불일치 등)과 함께 사용자에게 알린다. mock 자체는 생성되어 있다. 고치는 방법은 `mock/<system>/fixtures/<id>/<status>.json` 편집이다. 종료 코드 1은 오류(예: mock 기동 실패)이므로 메시지를 전달한다.
+**`verify` 종료 코드 2** = contract 실패. `run`의 종료 코드 2는 contract 실패 **또는** 일부 청크 추출 실패. 실패한 contract의 오류를 옮겨 적고, 보통 원인(문서 샘플이 스키마와 불일치 등)과 함께 사용자에게 알린다. mock 자체는 생성되어 있다. 고치는 방법은 `mock/<system>/fixtures/<id>/<status>.json` 편집이다. 종료 코드 1은 오류(예: mock 기동 실패)이므로 메시지를 전달한다.
 
 한 번에 돌리고 싶다는 요청이면 `specmock run <system> <origins...> [--select <expr>] [--llm claude-code]`가 ingest → verify까지 이어서 실행한다. 문서 입력에는 `--llm claude-code`가 필요하고(세션 모드는 `run`에서 지원하지 않는다) 구독 호출이 나가므로, 기능 선택을 보여주는 단계별 진행을 우선 권한다.
 
@@ -72,7 +72,7 @@ verify 결과(`contract: 통과 N / 실패 M`)와 `coverage.md` 상단 요약(fi
 
 - 실행법: `cd mock/<system> && npm install && npm start` (기본 포트 4010).
 - 나중에 기능 추가: `specmock select <system> --add <id> && specmock generate <system>`. 선택하지 않은 경로를 호출하면 mock이 501과 함께 이 명령을 알려준다.
-- 스펙이 바뀌면 `ingest --refresh` → `analyze`. 출력의 "이전 카탈로그 대비" 줄을 사용자에게 보여준다.
+- 스펙이 바뀌면 `ingest --refresh` → `analyze <system> --refresh`(세션 모드면 기존 추출 결과를 지우고 시작) → 다시 추출 → `--merge`. 출력의 "이전 카탈로그 대비" 줄을 사용자에게 보여준다.
 
 ## 하지 말 것
 

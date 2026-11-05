@@ -9,7 +9,7 @@ Claude Code 안에서 "이 스펙으로 mock 만들어줘"라고 하면 `specmoc
 claude --plugin-dir ./plugin
 ```
 
-CLI는 PATH에 `specmock`이 있거나(`pnpm --filter @specmock/cli build && npm link packages/cli`) 저장소 루트에서 `pnpm specmock`으로 실행돼야 한다.
+CLI는 PATH에 `specmock`이 있거나(`pnpm build && npm link packages/cli`) 저장소 루트에서 `pnpm specmock`으로 실행돼야 한다.
 
 ## 구성
 

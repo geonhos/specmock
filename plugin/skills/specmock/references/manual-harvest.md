@@ -18,4 +18,4 @@
    `harvested.interactions.push({ "type": "tab" | "select" | "details" | "listbox", "label": "<무엇을 눌렀는지>", "content": "<Markdown 또는 텍스트>" })`
    (`harvested`가 없으면 `{ "pages": [], "interactions": [], "notes": [] }`로 만든다.)
 2. **비밀값(API 키, 토큰, 비밀번호, 세션 쿠키 등)이 보이면 넣기 전에 지운다.** 자동 수확은 마스킹을 거치지만 수동으로 넣는 내용은 마스킹되지 않는다.
-3. `specmock analyze <system>`을 다시 실행하면 prepare가 수확 내용을 "## [수확] …" 섹션으로 청크에 포함한다.
+3. 세션 모드로 이미 추출한 적이 있다면 `specmock analyze <system> --refresh`로 기존 `extracted/` 결과를 지우고 시작한다(안 지우면 옛 추출이 남는다). 처음이면 `specmock analyze <system>`. prepare가 수확 내용을 "## [수확] …" 섹션으로 청크에 포함한다.

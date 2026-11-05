@@ -158,7 +158,7 @@ export async function ingest(ws: Workspace, system: string, origins: string[], o
           opts.onLog?.(`${origin}: 수확 완료 — 페이지 ${input.harvested.pages.length}, 상호작용 ${input.harvested.interactions.length}`);
         } catch (e) {
           input.harvested = { pages: [], interactions: [], notes: [maskSecrets(`수확 실패: ${(e as Error).message}. 숨은 콘텐츠 누락 가능`)] };
-          opts.onLog?.(`${origin}: 수확 실패, 일반 fetch 결과로 진행 (${(e as Error).message})`);
+          opts.onLog?.(maskSecrets(`${origin}: 수확 실패, 일반 fetch 결과로 진행 (${(e as Error).message})`));
         }
       } else {
         input.harvested = { pages: [], interactions: [], notes: ["ego-browser 미설치. 수확 미수행, 숨은 콘텐츠 누락 가능"] };
