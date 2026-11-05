@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -102,6 +102,17 @@ describe("chunks", () => {
     expect(s[0]).not.toHaveProperty("content");
   });
 
+  it("summarizeChunks reports done=false when the manifest hash differs from the chunk (stale)", async () => {
+    await ingestSpec(ws, "pets", [PETS_MD]);
+    const request = await prepare(ws, "pets");
+    const c0 = request.chunks[0]!;
+    await submitExtraction(ws, "pets", { index: c0.index, contentHash: c0.contentHash!, result: { endpoints: [] } });
+    expect((await summarizeChunks(ws, "pets", request))[0]!.done).toBe(true);
+    await writeFile(ws.file("pets", "extracted/manifest.json"), JSON.stringify({ "000": "0".repeat(64) }));
+    const s = await summarizeChunks(ws, "pets", request);
+    expect(s[0]).toMatchObject({ index: 0, done: false, contentHash: c0.contentHash });
+  });
+
   it("getChunk returns the body; unknown index throws", async () => {
     await ingestSpec(ws, "pets", [PETS_MD]);
     await analyzeSpec(ws, "pets");
@@ -139,6 +150,24 @@ describe("verify", () => {
     expect(await resolveMockDir(ws, "petstore")).toBe(out);
   });
 
+  it("resolveMockDir: explicit dir beats generate.json; with neither, falls back to ./mock/<system>", async () => {
+    await ingestSpec(ws, "petstore", [PETSTORE]); await analyzeSpec(ws, "petstore");
+    await select(ws, "petstore", ["all"]);
+    const recorded = path.join(dir, "recorded"); const explicit = path.join(dir, "explicit");
+    await generate(ws, "petstore", { outDir: recorded });
+    await mkdir(explicit);
+    expect(await resolveMockDir(ws, "petstore", explicit)).toBe(explicit);
+    expect(await resolveMockDir(ws, "petstore")).toBe(recorded);
+    // generate.json이 없고 인자도 없으면 cwd 기준 mock/<system>
+    const cwd = process.cwd();
+    const root = await mkdtemp(path.join(os.tmpdir(), "specmock-svc-cwd-"));
+    try {
+      await mkdir(path.join(root, "mock", "nogen"), { recursive: true });
+      process.chdir(root);
+      expect(await resolveMockDir(ws, "nogen")).toBe(path.join(await realpath(root), "mock", "nogen"));
+    } finally { process.chdir(cwd); await rm(root, { recursive: true, force: true }); }
+  });
+
   it("verifyMock writes coverage.md and returns the result", async () => {
     await ingestSpec(ws, "petstore", [PETSTORE]); await analyzeSpec(ws, "petstore");
     await select(ws, "petstore", ["getPet"]);
@@ -161,6 +190,20 @@ describe("runPipeline", () => {
   it("throws when every chunk failed", async () => {
     const adapter: LlmAdapter = { name: "claude-code", async extract() { throw new Error("boom"); } };
     await expect(runPipeline(ws, "pets", [PETS_MD], { llm: "claude-code", adapter, verify: false })).rejects.toThrow(/LLM 추출이 모두 실패했습니다: boom/);
+  });
+
+  it("partial extraction failure: continues and sets extractFailed", async () => {
+    const big = path.join(dir, "big.md");
+    const filler = (n: number) => `${"가나다라마바사 ".repeat(Math.ceil(n / 8))}\n`;
+    await writeFile(big, `# Pets\n\nGET /pets/{petId} returns a pet.\n\n${filler(5000)}\n# Other\n\n${filler(5000)}`);
+    let calls = 0;
+    const adapter: LlmAdapter = { name: "claude-code", async extract() { if (calls++ === 0) return { endpoints: [GET_PET] }; throw new Error("boom"); } };
+    const r = await runPipeline(ws, "big", [big], { llm: "claude-code", adapter, verify: false, outDir: path.join(dir, "m") });
+    expect(calls).toBeGreaterThan(1);
+    expect(r.extractFailed).toBe(true);
+    expect(r.extract?.failed.length).toBeGreaterThan(0);
+    expect(r.catalog.features).toHaveLength(1);
+    expect(r.generate.outDir).toBe(path.join(dir, "m"));
   });
 
   it("calls onStage in order for openapi input", async () => {
