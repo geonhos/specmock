@@ -157,7 +157,7 @@ export async function ingest(ws: Workspace, system: string, origins: string[], o
           input.harvested = await harvest(origin, { onLog: opts.onLog });
           opts.onLog?.(`${origin}: 수확 완료 — 페이지 ${input.harvested.pages.length}, 상호작용 ${input.harvested.interactions.length}`);
         } catch (e) {
-          input.harvested = { pages: [], interactions: [], notes: [`수확 실패: ${(e as Error).message}. 숨은 콘텐츠 누락 가능`] };
+          input.harvested = { pages: [], interactions: [], notes: [maskSecrets(`수확 실패: ${(e as Error).message}. 숨은 콘텐츠 누락 가능`)] };
           opts.onLog?.(`${origin}: 수확 실패, 일반 fetch 결과로 진행 (${(e as Error).message})`);
         }
       } else {

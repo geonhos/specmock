@@ -14,7 +14,7 @@ export function normalizeHarvest(raw: RawResult, baseUrl: string): Harvested {
   const seen = new Set<string>();
   const dedupe = (md: string) => { const h = hashText(md.trim()); if (seen.has(h)) return false; seen.add(h); return true; };
   const pages = raw.pages
-    .map((p) => ({ url: p.url, title: maskSecrets(p.title), content: maskSecrets(htmlToMarkdown(p.html, p.url).markdown) }))
+    .map((p) => ({ url: maskSecrets(p.url), title: maskSecrets(p.title), content: maskSecrets(htmlToMarkdown(p.html, p.url).markdown) }))
     .filter((p) => dedupe(p.content));
   const interactions = raw.interactions
     .map((i) => ({ type: i.type, label: maskSecrets(i.label), content: maskSecrets(htmlToMarkdown(i.html, baseUrl).markdown) }))
