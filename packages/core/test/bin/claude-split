@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# "한"(ED 95 9C)의 바이트 경계에서 출력을 두 번에 나눠 쓴다. 디코딩이 읽기 단위로 이뤄지면 깨진다.
+cat > /dev/null
+printf '{"type":"result","is_error":false,"result":"ok","structured_output":{"endpoints":[],"note":"\xed\x95'
+sleep 0.2
+printf '\x9c\xea\xb8\x80 \xed\x95\x9c\xea\xb8\x80"}}\n'

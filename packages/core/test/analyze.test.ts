@@ -6,9 +6,12 @@ import { FeatureIdRegistry } from "../src/analyze/featureId.js";
 import { analyze } from "../src/analyze/index.js";
 import { analyzeOpenApiDocument } from "../src/analyze/openapi.js";
 import { ingest } from "../src/ingest/index.js";
-import { CatalogSchema } from "../src/types.js";
+import { CatalogDiffSchema, CatalogSchema } from "../src/types.js";
 import { Workspace } from "../src/workspace.js";
 import { PETSTORE } from "./helpers.js";
+import { fileURLToPath } from "node:url";
+
+const PETS_MD = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "docs", "pets.md");
 
 let dir: string;
 let ws: Workspace;
@@ -51,6 +54,24 @@ describe("analyze(openapi)", () => {
       expect(f.provenance).toBe("openapi");
       expect(f.confidence).toBe(1);
     }
+  });
+
+  it("returns the catalog path and a diff, and records changes against the previous catalog", async () => {
+    const first = await analyze(ws, "petstore");
+    expect(first.mode).toBe("openapi");
+    expect(first.catalogFile).toBe(path.join(dir, "petstore", "catalog.json"));
+    expect(first.diff).toEqual({ previousAt: null, added: ["createPet", "deletePet", "getPet", "inventory.list", "listPets"], removed: [], changed: [] });
+    const second = await analyze(ws, "petstore");
+    expect(second.diff).toMatchObject({ added: [], removed: [], changed: [] });
+    expect(second.diff?.previousAt).not.toBeNull();
+    const saved = await ws.read("petstore", "catalog-diff.json", CatalogDiffSchema);
+    expect(saved).toEqual(second.diff);
+  });
+
+  it("asks for LLM extraction when any input is a document and writes nothing", async () => {
+    await ingest(ws, "docs", [PETSTORE, PETS_MD]);
+    expect(await analyze(ws, "docs")).toEqual({ mode: "needs-llm" });
+    expect(await ws.exists("docs", "catalog.json")).toBe(false);
   });
 });
 

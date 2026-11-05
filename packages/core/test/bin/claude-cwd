@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# 자신의 cwd를 $CWD_LOG에 기록하고 정상 봉투를 낸다.
+set -euo pipefail
+cat >/dev/null
+pwd -P > "$CWD_LOG"
+printf '{"type":"result","subtype":"success","is_error":false,"result":"ok","structured_output":{"endpoints":[]}}\n'

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+cat > /dev/null
+printf '{"type":"result","subtype":"error_during_execution","is_error":true,"result":"Not logged in. Please run /login"}\n'
+exit 1

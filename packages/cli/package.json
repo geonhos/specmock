@@ -10,6 +10,7 @@
     "test": "vitest run --root ../.. packages/cli --passWithNoTests"
   },
   "dependencies": {
+    "@inquirer/checkbox": "^5.2.8",
     "@specmock/core": "workspace:*",
     "commander": "^15.0.0"
   }

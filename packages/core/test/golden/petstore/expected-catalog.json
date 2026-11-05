@@ -1,0 +1,278 @@
+{
+  "system": "petstore",
+  "features": [
+    {
+      "id": "listPets",
+      "group": "pets",
+      "title": "List all pets",
+      "summary": "",
+      "method": "GET",
+      "path": "/pets",
+      "request": {
+        "params": {},
+        "query": {
+          "limit": {
+            "schema": {
+              "type": "integer",
+              "maximum": 100
+            },
+            "required": false
+          }
+        },
+        "headers": {},
+        "body": null
+      },
+      "responses": {
+        "200": {
+          "schema": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "name"
+              ],
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "tag": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "examples": []
+        }
+      },
+      "auth": "apiKey",
+      "provenance": "openapi",
+      "confidence": 1,
+      "hasExample": false,
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "createPet",
+      "group": "pets",
+      "title": "Create a pet",
+      "summary": "",
+      "method": "POST",
+      "path": "/pets",
+      "request": {
+        "params": {},
+        "query": {},
+        "headers": {},
+        "body": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "tag": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "schema": {
+            "type": "object",
+            "required": [
+              "id",
+              "name"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "name": {
+                "type": "string"
+              },
+              "tag": {
+                "type": "string"
+              }
+            }
+          },
+          "examples": []
+        },
+        "400": {
+          "schema": {
+            "type": "object",
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "integer"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          },
+          "examples": []
+        }
+      },
+      "auth": "apiKey",
+      "provenance": "openapi",
+      "confidence": 1,
+      "hasExample": false,
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "getPet",
+      "group": "pets",
+      "title": "Info for a specific pet",
+      "summary": "",
+      "method": "GET",
+      "path": "/pets/{petId}",
+      "request": {
+        "params": {
+          "petId": {
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        },
+        "query": {},
+        "headers": {},
+        "body": null
+      },
+      "responses": {
+        "200": {
+          "schema": {
+            "type": "object",
+            "required": [
+              "id",
+              "name"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "name": {
+                "type": "string"
+              },
+              "tag": {
+                "type": "string"
+              }
+            }
+          },
+          "examples": [
+            {
+              "source": "spec-example",
+              "body": {
+                "id": 1,
+                "name": "Rex",
+                "tag": "dog"
+              }
+            }
+          ]
+        },
+        "404": {
+          "schema": {
+            "type": "object",
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "integer"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          },
+          "examples": []
+        }
+      },
+      "auth": "apiKey",
+      "provenance": "openapi",
+      "confidence": 1,
+      "hasExample": true,
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "deletePet",
+      "group": "pets",
+      "title": "Delete a pet",
+      "summary": "",
+      "method": "DELETE",
+      "path": "/pets/{petId}",
+      "request": {
+        "params": {
+          "petId": {
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        },
+        "query": {},
+        "headers": {},
+        "body": null
+      },
+      "responses": {
+        "204": {
+          "schema": null,
+          "examples": []
+        }
+      },
+      "auth": "apiKey",
+      "provenance": "openapi",
+      "confidence": 1,
+      "hasExample": false,
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "inventory.list",
+      "group": "store",
+      "title": "Inventory by status",
+      "summary": "",
+      "method": "GET",
+      "path": "/store/inventory",
+      "request": {
+        "params": {},
+        "query": {},
+        "headers": {},
+        "body": null
+      },
+      "responses": {
+        "200": {
+          "schema": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "examples": []
+        }
+      },
+      "auth": "none",
+      "provenance": "openapi",
+      "confidence": 1,
+      "hasExample": false,
+      "evidence": [],
+      "notes": []
+    }
+  ],
+  "rejected": []
+}

@@ -13,6 +13,16 @@ function pad(s: string, n: number): string {
   return s.length >= n ? s : s + " ".repeat(n - s.length);
 }
 
+/** 표의 한 행(앞 들여쓰기 제외). list 표와 select --interactive 선택지가 같은 번호·정렬을 쓰도록 공유한다. */
+export function formatFeatureRow(index: number, feature: Feature, idW: number, pathW: number): string {
+  const more = feature.notes.length > 1 ? ` 외 ${feature.notes.length - 1}건` : "";
+  const warn = feature.notes.length > 0 ? `  ⚠ ${feature.notes[0]}${more}` : "";
+  return (
+    `${pad(String(index), 3)} ${pad(feature.id, idW)}  ${pad(feature.method, 7)} ${pad(feature.path, pathW)}  ` +
+    `${pad(PROVENANCE_LABEL[feature.provenance], 5)} ${feature.confidence.toFixed(1)}   ${sampleBadge(feature)}${warn}`
+  );
+}
+
 export interface FormatCatalogOptions {
   /** 지정하면 이 그룹의 행만 보여준다. 번호는 전체 카탈로그 기준으로 유지된다 (select의 번호와 일치). */
   group?: string;
@@ -45,12 +55,7 @@ export function formatCatalog(catalog: Catalog, opts: FormatCatalogOptions = {})
       const prefix = `── ${currentGroup} (${n}) `;
       lines.push(prefix + "─".repeat(Math.max(0, width - prefix.length)));
     }
-    const more = feature.notes.length > 1 ? ` 외 ${feature.notes.length - 1}건` : "";
-    const warn = feature.notes.length > 0 ? `  ⚠ ${feature.notes[0]}${more}` : "";
-    lines.push(
-      `  ${pad(String(index), 3)} ${pad(feature.id, idW)}  ${pad(feature.method, 7)} ${pad(feature.path, pathW)}  ` +
-        `${pad(PROVENANCE_LABEL[feature.provenance], 5)} ${feature.confidence.toFixed(1)}   ${sampleBadge(feature)}${warn}`,
-    );
+    lines.push("  " + formatFeatureRow(index, feature, idW, pathW));
   }
   lines.push("");
   lines.push("범례  출처: spec=OpenAPI, doc=문서에서 추출, inf=추론 · 샘플: ●있음 ○스키마만 —없음");

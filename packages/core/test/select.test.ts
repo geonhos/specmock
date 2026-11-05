@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { analyze } from "../src/analyze/index.js";
 import { ingest } from "../src/ingest/index.js";
 import { select } from "../src/select/index.js";
-import { CatalogSchema, MockSpecSchema, SelectionSchema } from "../src/types.js";
+import { CatalogSchema, MockSpecSchema, SelectionSchema, SourceSchema } from "../src/types.js";
 import { Workspace } from "../src/workspace.js";
 import { PETSTORE } from "./helpers.js";
 
@@ -73,5 +73,25 @@ describe("select", () => {
     const spec = await ws.read("petstore", "mockspec.json", MockSpecSchema);
     expect(spec.assumptions.length).toBe(0); // petstore는 전부 스키마가 있음
     expect(result.resolved).toHaveLength(5);
+  });
+
+  it("copies harvest notes from source.json into assumptions", async () => {
+    const source = await ws.read("petstore", "source.json", SourceSchema);
+    source.inputs[0].harvested = { pages: [], interactions: [], notes: ["ego-browser 미설치. 수확 미수행"] };
+    await ws.write("petstore", "source.json", SourceSchema, source);
+    await select(ws, "petstore", ["all"]);
+    const spec = await ws.read("petstore", "mockspec.json", MockSpecSchema);
+    expect(spec.assumptions[0]).toBe("입력: ego-browser 미설치. 수확 미수행");
+  });
+
+  it("literalIds picks ids verbatim even when they look like expressions", async () => {
+    const cat = await ws.read("petstore", "catalog.json", CatalogSchema);
+    const base = cat.features[0]!;
+    const mk = (id: string, p: string) => ({ ...base, id, path: p });
+    await ws.write("petstore", "catalog.json", CatalogSchema, { ...cat, features: [...cat.features, mk("all", "/x-all"), mk("123", "/x-123")] });
+    const r = await select(ws, "petstore", ["all", "123"], { literalIds: true });
+    expect(r.resolved.sort()).toEqual(["123", "all"]);
+    expect(r.selected).toEqual(["all", "123"]);
+    await expect(select(ws, "petstore", ["nope"], { literalIds: true })).rejects.toThrow(/알 수 없는 기능 id/);
   });
 });

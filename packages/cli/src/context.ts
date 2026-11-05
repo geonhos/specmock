@@ -1,5 +1,5 @@
 import path from "node:path";
-import { Workspace, type GenerateReport, type VerifyResult } from "@specmock/core";
+import { Workspace, type AnalyzeRequest, type CatalogDiff, type GenerateReport, type MergeResult, type VerifyResult } from "@specmock/core";
 import type { Command } from "commander";
 
 export const SYSTEM_ARG_HELP = "시스템 이름 (ingest 때 준 이름)";
@@ -34,4 +34,36 @@ export function formatVerify(result: VerifyResult, coveragePath: string): string
   for (const r of result.results.filter((x) => !x.passed)) lines.push(`  ✗ ${r.featureId} [${r.name}] ${r.errors.join("; ")}`);
   lines.push(`coverage: ${coveragePath}`);
   return lines.join("\n");
+}
+
+export function formatDiff(diff: CatalogDiff): string {
+  if (diff.previousAt === null) return "";
+  const list = (ids: string[]) => (ids.length ? ` (${ids.slice(0, 5).join(", ")}${ids.length > 5 ? ", …" : ""})` : "");
+  return `이전 카탈로그 대비: 추가 ${diff.added.length}${list(diff.added)} · 삭제 ${diff.removed.length}${list(diff.removed)} · 변경 ${diff.changed.length}${list(diff.changed)}`;
+}
+
+/** 세션 모드 안내. Claude Code 스킬이 이 출력을 그대로 따라간다. */
+export function formatPrepared(system: string, req: AnalyzeRequest, wsDir: string): string {
+  const lines = [
+    `LLM 추출 준비 완료: ${req.chunks.length}개 청크 (${wsDir}/analyze-request.json)`,
+    "",
+    "다음 중 하나:",
+    `  a) specmock analyze ${system} --llm claude-code     # 로컬 claude CLI로 자동 추출`,
+    "  b) Claude Code 세션에서 직접 추출:",
+    `     1. ${wsDir}/analyze-request.json 의 prompt 와 schema 를 읽는다`,
+    `     2. 청크마다 ${wsDir}/${req.chunks[0]?.file ?? "chunks/000.md"} … 를 읽고 schema 대로 ${wsDir}/extracted/NNN.json 을 쓴다 (한 번에 하나)`,
+    `     3. specmock analyze ${system} --merge`,
+    "",
+    "청크:",
+    ...req.chunks.map((c) => `  ${c.file}  ${c.heading}  (${c.chars.toLocaleString()}자)`),
+  ];
+  return lines.join("\n");
+}
+
+export function formatMerge(r: MergeResult): string {
+  const parts = [`기능 ${r.features}개`];
+  if (r.rejected) parts.push(`거절 ${r.rejected}건 (catalog.json의 rejected 참고)`);
+  if (r.missingChunks.length) parts.push(`미추출 청크 ${r.missingChunks.length}개`);
+  if (r.invalidChunks.length) parts.push(`형식 오류 청크 ${r.invalidChunks.length}개`);
+  return parts.join(" · ");
 }

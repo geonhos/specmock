@@ -44,13 +44,27 @@ export const FeatureSchema = z.object({
 });
 export type Feature = z.infer<typeof FeatureSchema>;
 
+export const HarvestedSchema = z.object({
+  pages: z.array(z.object({ url: z.string(), title: z.string(), content: z.string() })).default([]),
+  interactions: z.array(z.object({
+    type: z.enum(["tab", "select", "details", "listbox"]),
+    label: z.string(),
+    content: z.string(),
+  })).default([]),
+  notes: z.array(z.string()).default([]),
+});
+export type Harvested = z.infer<typeof HarvestedSchema>;
+
 export const SourceInputSchema = z.object({
   kind: z.enum(["openapi", "html", "markdown", "pdf", "text"]),
   origin: z.string(),
   fetchedAt: z.string(),
   contentHash: z.string(),
   content: z.string(),
-  harvested: z.unknown().optional(),
+  title: z.string().optional(),
+  /** ingest가 상호작용 요소를 감지했을 때. 수확 전이면 reasons만, 수확 후면 harvested가 채워진다. */
+  harvestCandidate: z.object({ reasons: z.array(z.string()) }).optional(),
+  harvested: HarvestedSchema.optional(),
 });
 export type SourceInput = z.infer<typeof SourceInputSchema>;
 
@@ -64,7 +78,7 @@ export const CatalogSchema = z.object({
   system: z.string().min(1),
   generatedAt: z.string(),
   features: z.array(FeatureSchema),
-  rejected: z.array(z.object({ raw: z.unknown(), reason: z.string() })).default([]),
+  rejected: z.array(z.object({ raw: z.unknown(), reason: z.string(), chunk: z.number().int().optional() })).default([]),
 });
 export type Catalog = z.infer<typeof CatalogSchema>;
 
@@ -73,6 +87,8 @@ export const SelectionSchema = z.object({
   catalogHash: z.string(),
   selected: z.array(z.string()),
   resolved: z.array(z.string()),
+  /** 선택 시점의 카탈로그 기능 id. 이후 카탈로그가 바뀌었을 때 선택 시점 기준으로 비교한다. */
+  catalogIds: z.array(z.string()).optional(),
   updatedAt: z.string(),
 });
 export type Selection = z.infer<typeof SelectionSchema>;
@@ -123,3 +139,84 @@ export const GenerateInfoSchema = z.object({
   generatedAt: z.string(),
 });
 export type GenerateInfo = z.infer<typeof GenerateInfoSchema>;
+
+/* ---------- LLM 추출 (analyze prepare/extract/merge) ---------- */
+
+/** LLM이 청크 하나에서 돌려주는 항목. 얇게 유지한다. 검증·보정은 merge가 한다. */
+export const ExtractedParamSchema = z.object({
+  name: z.string().min(1),
+  required: z.boolean().default(false),
+  schema: JsonSchema.nullable().default(null),
+  description: z.string().default(""),
+});
+
+export const ExtractedResponseSchema = z.object({
+  status: z.number().int().min(100).max(599),
+  schema: JsonSchema.nullable().default(null),
+  example: z.unknown().optional(),
+  description: z.string().default(""),
+});
+
+export const ExtractedEndpointSchema = z.object({
+  method: HttpMethod,
+  path: z.string().min(1),
+  title: z.string(),
+  summary: z.string().default(""),
+  group: z.string().default(""),
+  auth: z.enum(["bearer", "apiKey", "basic", "none", "unknown"]).default("unknown"),
+  pathParams: z.array(ExtractedParamSchema).default([]),
+  queryParams: z.array(ExtractedParamSchema).default([]),
+  headers: z.array(ExtractedParamSchema).default([]),
+  requestBody: JsonSchema.nullable().default(null),
+  requestExample: z.unknown().optional(),
+  responses: z.array(ExtractedResponseSchema),
+  evidence: z.array(z.string()),
+  confidence: z.number().min(0).max(1),
+  inferred: z.object({ method: z.boolean().default(false), path: z.boolean().default(false) }).default({ method: false, path: false }),
+});
+export type ExtractedEndpoint = z.infer<typeof ExtractedEndpointSchema>;
+
+export const ExtractionResultSchema = z.object({ endpoints: z.array(ExtractedEndpointSchema) });
+export type ExtractionResult = z.infer<typeof ExtractionResultSchema>;
+
+/**
+ * `claude --json-schema`에 넘길 JSON Schema(draft-7, `$ref` 없음). zod 변환 결과에서 `$schema`를 뗀다.
+ * 자유 객체(JsonSchema 자리)는 `anyOf: [{type:"object"}, {type:"null"}]` 로 나온다.
+ */
+export function extractionJsonSchema(): Record<string, unknown> & { required?: string[] } {
+  const js = z.toJSONSchema(ExtractionResultSchema, { io: "input", target: "draft-7" }) as Record<string, unknown>;
+  delete js.$schema;
+  return js as Record<string, unknown> & { required?: string[] };
+}
+
+export const ChunkInfoSchema = z.object({
+  index: z.number().int().min(0),
+  file: z.string(),          // workspace 상대 경로 "chunks/000.md"
+  inputIndex: z.number().int().min(0),
+  heading: z.string(),
+  chars: z.number().int().min(0),
+  /** 청크 본문의 sha256. extract가 문서 변경으로 낡은 추출 결과를 가려내는 데 쓴다. */
+  contentHash: z.string().optional(),
+});
+export type ChunkInfo = z.infer<typeof ChunkInfoSchema>;
+
+/** `.specmock/<system>/analyze-request.json` — prepare 결과. 스킬 모드에서 Claude가 읽는 작업 지시서. */
+export const AnalyzeRequestSchema = z.object({
+  system: z.string().min(1),
+  createdAt: z.string(),
+  prompt: z.string(),
+  schema: z.record(z.string(), z.unknown()),
+  chunks: z.array(ChunkInfoSchema),
+  /** OpenAPI 입력에서 이미 결정적으로 뽑은 기능 수. merge가 합칠 때 참고용. */
+  openapiFeatures: z.number().int().min(0).default(0),
+});
+export type AnalyzeRequest = z.infer<typeof AnalyzeRequestSchema>;
+
+/** `.specmock/<system>/catalog-diff.json` — analyze가 이전 카탈로그와 비교한 결과. */
+export const CatalogDiffSchema = z.object({
+  previousAt: z.string().nullable(),
+  added: z.array(z.string()),
+  removed: z.array(z.string()),
+  changed: z.array(z.string()),
+});
+export type CatalogDiff = z.infer<typeof CatalogDiffSchema>;

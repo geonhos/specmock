@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# structured_output 없이 result 문자열에 JSON이 들어 있는 구버전 모양.
+cat > /dev/null
+printf '{"type":"result","is_error":false,"result":"{\\"endpoints\\":[]}"}\n'

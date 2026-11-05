@@ -1,6 +1,6 @@
 # specmock
 
-API 스펙을 읽어 **기능 목록을 뽑고, 필요한 것만 골라, mock 서버를 생성**하는 도구입니다. OpenAPI 파일은 LLM 없이 결정적으로 처리합니다. 웹 문서나 PDF처럼 구조화되지 않은 스펙은 Claude Code가 읽어 기능을 추출하는 방식으로 확장할 예정입니다(Phase 1B).
+API 스펙을 읽어 **기능 목록을 뽑고, 필요한 것만 골라, mock 서버를 생성**하는 도구입니다. OpenAPI 파일은 LLM 없이 결정적으로 처리합니다. 웹 문서·Markdown·PDF처럼 구조화되지 않은 스펙은 Claude Code(구독)가 읽어 기능을 추출하고, 추출 결과는 원문 근거 대조와 신뢰도로 표시됩니다.
 
 ```mermaid
 flowchart LR
@@ -27,26 +27,73 @@ curl -s localhost:4010/pets/1       # {"id":1,"name":"Rex","tag":"dog"}
 
 `run`은 ingest → analyze → select → generate → verify를 한 번에 실행합니다. 마지막 verify가 mock을 띄워 contract test를 돌리고 `contract: 통과 6 / 실패 0 / 전체 6`을 출력합니다. 더 자세한 흐름은 [examples/petstore](examples/petstore/README.md)에 있습니다.
 
+### 문서 입력 빠른 시작
+
+OpenAPI가 없는 Markdown 문서에서 시작하는 경로입니다([examples/docs-sample](examples/docs-sample/README.md)). 로컬에 `claude` CLI(Claude Code)가 설치돼 로그인돼 있어야 합니다.
+
+```bash
+pnpm specmock ingest docs examples/docs-sample/pets-api.md
+pnpm specmock analyze docs --llm claude-code        # 청크별로 claude --print 호출 → 기능 표
+pnpm specmock select docs all
+pnpm specmock generate docs && pnpm specmock verify docs
+```
+
+녹음된 응답으로 LLM 없이 재현하려면(B 경로; A 경로는 모델 출력에 따라 달라질 수 있음) 저장소에 있는 추출 결과를 `extracted/`에 넣고 합치면 됩니다.
+
+```bash
+pnpm specmock ingest docs examples/docs-sample/pets-api.md
+pnpm specmock analyze docs --prepare                # 청크와 analyze-request.json만 만들고 멈춤
+cp examples/docs-sample/extracted/*.json .specmock/docs/extracted/
+pnpm specmock analyze docs --merge                  # LLM 호출 없이 카탈로그 생성
+```
+
 ## 사용 방식
 
 ### CLI
 
 ```bash
-specmock ingest   <system> <spec.yaml|url>...       # 스펙 읽기 → .specmock/<system>/source.json
-specmock analyze  <system>                          # 기능 카탈로그 생성 + 표 출력
-specmock list     <system> [--group g] [--json]     # 카탈로그 표 (그룹 필터 시에도 번호는 전체 기준)
-specmock show     <system> <featureId> [--json]     # 기능 하나의 요청·응답 스키마, 샘플
-specmock select   <system> <표현식>... [--add|--remove]
-specmock generate <system> [--out dir] [--force]    # ./mock/<system>/ 에 Hono 프로젝트 생성
-specmock verify   <system> [--dir d] [--report p]   # mock 기동 → contract test → coverage.md
-specmock run      <system> <spec> [--select 표현식] [--no-verify]   # 위 과정을 한 번에
+specmock ingest   <system> <origins...> [--refresh] [--harvest auto|always|never] [--json]
+                                                     # 스펙 파일/URL(OpenAPI·HTML·Markdown·PDF·텍스트) → .specmock/<system>/source.json
+specmock analyze  <system> [--llm session|claude-code] [--model m] [--prepare] [--merge] [--refresh] [--json]
+                                                     # 기능 카탈로그 생성 + 표 출력. 문서 입력은 LLM 추출을 거친다
+specmock list     <system> [--group g] [--json]      # 카탈로그 표 (그룹 필터 시에도 번호는 전체 기준)
+specmock show     <system> <featureId> [--json]      # 기능 하나의 요청·응답 스키마, 샘플, 근거
+specmock select   <system> [표현식...] [--add|--remove] [--interactive] [--group g] [--json]
+specmock generate <system> [--lang ts] [--out dir] [--force] [--json]   # ./mock/<system>/ 에 Hono 프로젝트 생성
+specmock verify   <system> [--dir d] [--report p] [--json]              # mock 기동 → contract test → coverage.md
+specmock run      <system> <origins...> [--select 표현식] [--lang ts] [--out dir] [--no-verify]
+                                          [--llm claude-code] [--model m] [--refresh] [--json]   # 위 과정을 한 번에
 ```
 
-이 저장소 안에서는 `pnpm specmock <command>`로 실행합니다. `verify`는 mock 디렉터리에 `node_modules`가 없으면 `npm install`을 먼저 수행하고, contract가 하나라도 실패하면 종료 코드 2, 기동 실패 등 오류는 1을 돌려줍니다.
+이 저장소 안에서는 `pnpm specmock <command>`로 실행합니다. 옵션이 헷갈리면 `specmock <command> --help`가 기준입니다. `verify`는 mock 디렉터리에 `node_modules`가 없으면 `npm install`을 먼저 수행합니다.
 
-### Claude Code 스킬 (Phase 1B, 예정)
+종료 코드:
 
-Claude Code 안에서 "이 스펙으로 mock 만들어줘"라고 하면 스킬이 위 명령을 순서대로 실행하고, 기능 목록을 보여준 뒤 선택을 받아 생성합니다. 웹 문서처럼 LLM이 읽어야 하는 스펙은 이 모드에서 처리합니다.
+| 명령 | 0 | 1 | 2 |
+|---|---|---|---|
+| 모든 명령 | 성공 | 오류(메시지 출력) | 명령마다 다름(아래) |
+| `analyze` | 성공 | 오류 | 일부 청크 추출 실패. 같은 명령을 다시 실행하면 실패한 청크만 재시도 |
+| `run` | 성공 | 오류(청크 전부 실패 포함) | contract 실패 **또는** 일부 청크 추출 실패 |
+| `verify` | 성공 | 기동 실패 등 오류 | contract 실패 |
+
+`--json`을 주면 결과를 JSON 하나로 출력합니다(`run`은 진행 상황을 stderr로 보냅니다).
+
+### Claude Code 스킬
+
+저장소의 `plugin/`이 Claude Code 플러그인입니다. 세션에 한해 로드합니다.
+
+```bash
+claude --plugin-dir ./plugin
+```
+
+```
+나: examples/docs-sample/pets-api.md 로 mock 만들어줘
+Claude: (ingest → analyze --prepare → 청크를 읽고 extracted/*.json 작성 → analyze --merge) 기능 4개를 찾았습니다. [표]
+나: 1-3이랑 pets 그룹
+Claude: select → generate → verify 완료. contract 전부 통과. 샘플 없는 항목은 스키마로 만든 응답입니다.
+```
+
+스킬 모드는 추출을 **세션의 Claude가 직접** 합니다(`--llm session`, 기본값). 추가 `claude` 호출도 API 키도 없고, 구독 한도만 씁니다. 자세한 절차는 [plugin/README.md](plugin/README.md)를 보세요.
 
 ### Web UI (Phase 2, 예정)
 
@@ -58,8 +105,9 @@ Claude Code 안에서 "이 스펙으로 mock 만들어줘"라고 하면 스킬�
 |---|---|---|---|
 | OpenAPI 3.x (json, yaml, 파일/URL) | 지원 | 불필요 | `$ref` 해석(순환 참조 포함), example 수집 |
 | Swagger 2.0 | 지원 | 불필요 | formData → body 객체, `type: file` → `string/binary` 로 변환 |
-| 웹 문서 URL | Phase 1B | 필요 | 셀렉트박스·탭 뒤 내용은 ego-browser로 수확 |
-| Markdown / PDF / 텍스트 | Phase 1B | 필요 | |
+| 웹 문서 URL | 지원 | 필요(Claude Code 구독 또는 세션) | 본문은 Markdown으로 변환. 탭·select 뒤 내용은 ego-browser 설치 시 자동 수확, 아니면 누락될 수 있음(리포트에 표시) |
+| Markdown / 텍스트 | 지원 | 필요(Claude Code 구독 또는 세션) | 헤딩 단위로 청크 분할 |
+| PDF | 지원 | 필요(Claude Code 구독 또는 세션) | 텍스트만 추출(페이지 헤딩 부여). 표 구조는 손실 |
 | gRPC / GraphQL | 미정 | | |
 
 ## 기능 목록과 선택
@@ -81,6 +129,26 @@ petstore — 5개 기능 (openapi 5 · 문서추출 0 · 추론 0)
 범례  출처: spec=OpenAPI, doc=문서에서 추출, inf=추론 · 샘플: ●있음 ○스키마만 —없음
 ```
 
+문서에서 추출한 기능은 `출처`가 `doc`입니다. 아래는 `examples/docs-sample`을 B 경로(녹음된 추출 결과)로 돌린 실제 출력입니다.
+
+```
+docs — 4개 기능 (openapi 0 · 문서추출 4 · 추론 0)
+
+  #   id           method  path           출처  신뢰  샘플
+── Pets (4) ────────────────────────────────────────
+  1   pets.list    GET     /pets          doc   1.0   ●
+  2   pets.create  POST    /pets          doc   0.8   —
+  3   pets.get     GET     /pets/{petId}  doc   1.0   ●
+  4   pets.delete  DELETE  /pets/{petId}  doc   0.8   —
+```
+
+`신뢰`(confidence)의 의미:
+
+- OpenAPI에서 온 기능은 항상 `1.0`(결정적 변환).
+- 문서 추출은 LLM 자기평가 값에서 시작해, 샘플 응답이 있으면 +0.1(최대 1.0이라 문서 추출도 `1.0`이 될 수 있음).
+- 근거 인용이 원문에서 안 찾아지면 ×0.3(`notes`에 "근거 불일치"), 근거 자체가 없으면 ×0.7.
+- method/path를 추측했으면 최대 `0.5`.
+
 `operationId`가 있으면 그대로 id가 되고, 없으면 경로와 메서드로 만듭니다(`GET /store/inventory` → `inventory.list`). 그룹은 첫 번째 tag, 없으면 경로의 첫 세그먼트입니다(`v1`, `api` 같은 접두사는 건너뜁니다).
 
 선택 표현식 (`specmock select <system> <표현식>...`):
@@ -96,7 +164,7 @@ petstore — 5개 기능 (openapi 5 · 문서추출 0 · 추론 0)
 | `-deletePet` | 제외 (앞에 `-`). 별도 인자로 줘도 된다: `select petstore all -deletePet` |
 | `@selection.json` | 파일에서 (이전 선택 재사용) |
 
-`--add` / `--remove`는 기존 선택에 더하거나 뺍니다. 나중에 기능을 더 넣으려면 `specmock select <system> --add <id>` 후 `generate`를 다시 실행합니다.
+`--add` / `--remove`는 기존 선택에 더하거나 뺍니다. 표현식 대신 `--interactive`(TTY 필요)를 주면 그룹별 체크박스로 고르고, 이전 선택은 미리 체크돼 있습니다(`--group g`로 한 그룹만 표시). 카탈로그가 바뀌어 다시 `analyze`하면 `catalog-diff.json`에 추가/삭제된 기능이 남고, `select`가 선택에 영향이 있는 변경을 알려 줍니다. 나중에 기능을 더 넣으려면 `specmock select <system> --add <id>` 후 `generate`를 다시 실행합니다.
 
 ```bash
 pnpm specmock select petstore group:pets -deletePet     # 선택 3개: listPets, createPet, getPet
@@ -105,6 +173,42 @@ pnpm specmock generate petstore
 ```
 
 상태 파일 `.specmock/<system>/`와 생성 결과 `mock/<system>/`는 **명령을 실행한 디렉터리** 기준입니다(`pnpm specmock`은 repo 루트에서 실행됩니다). `--workspace <dir>`, `generate --out <dir>`로 바꿀 수 있고, `verify`는 마지막 `generate --out` 경로를 기억하므로 `--dir`을 다시 줄 필요가 없습니다.
+
+## LLM은 어디에 쓰이나
+
+LLM은 **비구조 문서(웹·Markdown·PDF·텍스트)의 청크에서 기능을 추출하는 단계에만** 씁니다. OpenAPI 변환, 선택, 생성, 검증은 전부 결정적 코드입니다.
+
+```mermaid
+sequenceDiagram
+    participant C as specmock analyze
+    participant F as .specmock/&lt;system&gt;/
+    participant L as LLM 어댑터
+    C->>F: 1. prepare — chunks/NNN.md, analyze-request.json
+    C->>L: 2. 청크마다 호출 (session: Claude가 직접 / claude-code: claude --print)
+    L->>F: extracted/NNN.json, manifest.json
+    C->>F: 3. merge — 스키마 검증 · 근거 대조 · 병합 → catalog.json
+```
+
+| 어댑터 | 쓰는 곳 | 동작 | 단계 |
+|---|---|---|---|
+| `session` (기본) | Claude Code 스킬 | `analyze --prepare` 후 세션의 Claude가 청크를 읽고 `extracted/`를 직접 씀. `analyze --merge`로 합침 | 지원 |
+| `claude-code` | CLI 단독 | 청크마다 로컬 `claude --print --output-format json --json-schema …`를 자동 호출 | 지원 |
+| `api` | 배포용 | Anthropic API 키 | 3단계 |
+
+- **호출 수 = 청크 수.** 청크는 헤딩 기준으로 최대 6,000자(겹침 200자)입니다. `analyze --prepare`로 호출 전에 청크 수와 내용을 볼 수 있습니다.
+- **재현 가능.** 추출 결과는 `.specmock/<system>/extracted/`에 파일로 남습니다. 이 파일을 두고 `analyze --merge`를 다시 돌리면 LLM 없이 같은 카탈로그가 나옵니다. 일부 청크가 실패하면 다시 실행할 때 실패한 청크만 재시도하고, `--refresh`는 전부 다시 추출합니다.
+- **격리.** `claude` 자식 프로세스는 빈 임시 디렉터리에서 실행하고(저장소 파일을 읽지 않음) `--no-session-persistence`로 세션 기록을 남기지 않습니다.
+- **과금.** 구독 로그인 상태면 구독 한도를 씁니다. 환경에 `ANTHROPIC_API_KEY`가 있으면 `claude`가 API 과금으로 동작할 수 있으니 의도한 것인지 확인하세요.
+- **결과 검증.** 응답은 JSON 스키마(ajv)로 검증하고, 근거 인용이 원문에 있는지 대조해 신뢰도를 깎습니다. 실패 항목은 `rejected`와 `notes`에 이유와 함께 남습니다.
+
+### 웹 문서 수확(ego-browser)
+
+탭·select·접힘 영역 뒤의 내용은 일반 fetch로 안 보입니다. 이런 요소가 감지되면(`--harvest auto`) ego-browser(브라우저 자동화 CLI)로 페이지를 열어 내용을 수확합니다. 알아 둘 점:
+
+- **로그인 상태로 열립니다.** ego-browser의 로그인 세션으로 페이지를 열기 때문에 로그인이 필요한 문서도 읽히지만, 그 페이지에 보이는 내용이 수확 대상이 됩니다. 수확 결과는 비밀값 마스킹 후 `source.json`에 저장됩니다(패턴 기반이라 완전하지 않음).
+- **링크 추종 범위.** 같은 출처의 docs/reference 류 링크만 깊이 2, 최대 50페이지까지 따라갑니다. bare `/api/` 경로는 앱 API를 호출하게 될 수 있어 따라가지 않습니다.
+- **자동 수확이 못 하는 것.** 커스텀 드롭다운(listbox/combobox)은 수동으로 해야 합니다(스킬의 manual-harvest 참고).
+- **ego-browser가 없으면** 수확을 건너뛰고 그 사실을 stderr와 `source.json`의 `harvested.notes`에 기록합니다. `--harvest never`로 끌 수도 있습니다.
 
 ## 생성 결과물
 
@@ -135,18 +239,20 @@ mock/<system>/
 
 `verify`가 `.specmock/<system>/coverage.md`를 씁니다(`--report <path>`로 사본 저장). fixture 출처 비율(spec-example / doc-sample / schema-generated / empty), 신뢰도 분포, 가정 목록, contract 결과, 선택되지 않은 기능이 들어 있습니다. 이 파일이 "이 mock을 어디까지 믿을지"의 근거입니다.
 
-## 제한 사항 (Phase 1A)
+## 제한 사항 (Phase 1B)
 
-- 입력은 OpenAPI 3.x / Swagger 2.0 파일·URL뿐입니다. 웹 문서, Markdown, PDF, LLM 기반 추출은 아직 없습니다.
 - 생성 언어는 TypeScript(Hono) 하나입니다.
-- `select --interactive`(대화형 체크박스)와 `ingest` / `analyze` / `run`의 `--json` 출력은 아직 없습니다.
+- 모든 응답은 고정 fixture입니다. 상태를 가진 동작(POST 후 GET에 반영 등)은 없습니다.
+- 기능마다 가장 낮은 2xx 응답 하나만 서빙하고, 4xx fixture는 생성되지 않습니다(coverage.md 집계에는 포함).
 - fixture는 스펙의 example이 없으면 스키마에서 시드 고정 난수로 만듭니다. 구조는 맞지만 값은 임의입니다(coverage.md의 `schema-generated` 수치로 확인).
-- 순환 `$ref`는 되돌아가는 간선을 `x-specmock-circular` 표식으로 끊고, fixture에서는 `null`로 채웁니다.
-- 상태를 가진 동작(POST 후 GET에 반영 등)은 없습니다. 모든 응답은 고정 fixture입니다.
-- 기능마다 가장 낮은 2xx 응답 하나만 서빙하고, 4xx fixture는 생성되지 않습니다(coverage.md 집계에는 포함). 시나리오별 응답 제어는 3단계에서 다룹니다.
-- `source.json`의 비밀값 마스킹은 `Bearer …`, `sk_live_…`, `api_key: …` 류 패턴 기반이라 완전하지 않습니다. 스펙에 실제 토큰을 넣지 마세요.
-- `ingest --refresh`(원문 캐시 재사용)는 없습니다. `ingest`는 항상 파일·URL을 다시 읽습니다.
-- 스펙이 바뀌어 카탈로그가 달라지면 `select`가 경고만 합니다. "새 기능 N개 / 사라진 기능 M개" diff는 아직 없습니다.
+- 순환 `$ref`는 되돌아가는 간선을 `x-specmock-circular` 표식으로 끊고, fixture에서는 `null`로 채웁니다. `2XX` 같은 범위 상태 키와 cookie 파라미터는 지원하지 않습니다.
+- `source.json`의 비밀값 마스킹은 `Bearer …`, `sk_live_…`, `api_key: …` 류 패턴 기반이라 완전하지 않습니다. 스펙과 수확 대상 페이지에 실제 토큰이 없는지 확인하세요.
+- 문서 추출은 LLM 출력이라 틀릴 수 있습니다. 신뢰도와 근거 인용으로 걸러 보여 주지만, `doc` 출처 기능은 `show`로 근거를 확인하세요.
+- 커스텀 드롭다운(listbox)은 자동 수확되지 않습니다. PDF는 텍스트만 추출하므로 표 구조가 사라집니다.
+- `run`은 세션 모드(`--llm session`)를 지원하지 않습니다. 문서 입력은 `--llm claude-code`로만 한 번에 실행되고, 세션 모드는 `analyze`로 단계별 진행합니다.
+- `analyze`가 모든 청크에서 추출에 실패하면 `catalog.json`이 빈 카탈로그로 덮어써집니다(`run`은 이 경우 exit 1).
+- `select --interactive`에는 그룹 접기·검색이 없습니다. 저장할 때 선택이 id 목록으로 평탄화되어, 처음 준 표현식(`group:pets` 등)은 `selection.json`에 남지 않습니다.
+- 카탈로그 변경 diff(`catalog-diff.json`, `select` 경고)는 기능의 추가/삭제만 보여 주고, 내용이 바뀐 기능은 표시하지 않습니다.
 - `generate`는 `src/`를 통째로 다시 씁니다. `mock/<system>/src/`에 직접 추가한 route 파일은 삭제됩니다. 바꿀 것은 fixture에 두세요.
 - `select --add`는 기존 선택이 없으면 새 선택으로 동작합니다(오류가 아님).
 
@@ -155,7 +261,8 @@ mock/<system>/
 - [아키텍처 한눈에 보기](docs/architecture.md)
 - [설계 문서](docs/superpowers/specs/2026-11-04-specmock-design.md)
 - [구현 계획](docs/superpowers/plans/)
-- [Petstore 예제](examples/petstore/README.md)
+- [Petstore 예제](examples/petstore/README.md) · [문서(Markdown) 예제](examples/docs-sample/README.md)
+- [Claude Code 플러그인](plugin/README.md)
 
 ## 기여 방법
 
@@ -165,13 +272,13 @@ pnpm test          # core 빌드 → vitest (생성된 mock을 실제로 띄우�
 pnpm typecheck     # src와 test 모두
 ```
 
-변경 후 위 두 명령이 통과하면 PR을 엽니다. 설계 의도는 [설계 문서](docs/superpowers/specs/2026-11-04-specmock-design.md)에, 단계별 작업 단위는 [구현 계획](docs/superpowers/plans/2026-11-04-phase1a-core-openapi-cli.md)에 있습니다. 설계와 다르게 구현한 지점은 설계 문서 12장 "구현 중 변경"에 이유와 함께 적습니다.
+변경 후 위 두 명령이 통과하면 PR을 엽니다. 설계 의도는 [설계 문서](docs/superpowers/specs/2026-11-04-specmock-design.md)에, 단계별 작업 단위는 [구현 계획](docs/superpowers/plans/)(1A, 1B)에 있습니다. 설계와 다르게 구현한 지점은 설계 문서 12장 "구현 중 변경"에 이유와 함께 적습니다.
 
 ## 로드맵
 
 | 단계 | 내용 |
 |---|---|
-| 1A | core + CLI (OpenAPI) ← 현재 |
-| 1B | 웹 문서·PDF 분석, LLM 어댑터, ego-browser 수확, Claude Code 스킬, `select --interactive` |
+| 1A | core + CLI (OpenAPI) — 완료 |
+| 1B | 웹 문서·PDF 분석, LLM 어댑터, ego-browser 수확, Claude Code 스킬, `select --interactive` ← 현재 |
 | 2 | MCP 서버, Web UI |
 | 3 | 다른 언어 생성(LLM), Proxy/녹화, API 키 어댑터 |

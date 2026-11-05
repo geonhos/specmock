@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# is_error: true 이지만 종료 코드는 0인 경우.
+cat > /dev/null
+printf '{"type":"result","subtype":"error_max_turns","is_error":true,"result":"Reached max turns"}\n'

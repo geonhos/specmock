@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# 테스트용 가짜 claude. 실제 CLI와 같은 JSON 봉투를 출력한다. python3 등 외부 도구는 쓰지 않는다.
+set -euo pipefail
+if [ -n "${ARGS_LOG:-}" ]; then printf '%s\n' "$@" > "$ARGS_LOG"; fi
+input=$(cat)
+if [[ $input == *'/pets/{petId}'* ]]; then
+  so='{"endpoints":[{"method":"GET","path":"/pets/{petId}","title":"Get a pet","responses":[{"status":200,"example":{"id":1}}],"evidence":["`GET /pets/{petId}` returns one pet."],"confidence":0.9}]}'
+else
+  so='{"endpoints":[]}'
+fi
+# result는 사람이 읽는 요약 문자열일 뿐이라 고정 리터럴로 둔다.
+printf '{"type":"result","subtype":"success","is_error":false,"num_turns":1,"result":"ok","structured_output":%s}\n' "$so"

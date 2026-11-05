@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# JSON이 아닌 stdout.
+cat > /dev/null
+printf 'this is not json\n'

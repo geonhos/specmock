@@ -1,0 +1,10 @@
+{
+  "name": "specmock",
+  "description": "API 스펙(OpenAPI · 웹 문서 · PDF)에서 기능 목록을 뽑고, 필요한 것만 골라 mock 서버를 생성한다",
+  "version": "0.1.0",
+  "author": { "name": "geonhos" },
+  "homepage": "https://github.com/geonhos/specmock",
+  "repository": "https://github.com/geonhos/specmock",
+  "license": "MIT",
+  "keywords": ["mock", "openapi", "api", "contract-test"]
+}
