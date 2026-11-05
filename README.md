@@ -95,7 +95,49 @@ Claude: select → generate → verify 완료. contract 전부 통과. 샘플 �
 
 스킬 모드는 추출을 **세션의 Claude가 직접** 합니다(`--llm session`, 기본값). 추가 `claude` 호출도 API 키도 없고, 구독 한도만 씁니다. 자세한 절차는 [plugin/README.md](plugin/README.md)를 보세요.
 
-### Web UI (Phase 2, 예정)
+### Claude Code에서 MCP로 쓰기
+
+같은 플러그인이 MCP 서버도 함께 켭니다. 셸 명령 없이 도구 호출만으로 끝까지 갑니다.
+
+```bash
+git clone https://github.com/geonhos/specmock && cd specmock
+pnpm install && pnpm build
+claude --plugin-dir ./plugin
+```
+
+Claude Code에서 `/mcp`를 열어 `specmock` 서버와 도구 10개가 보이면 준비된 것입니다. 서버가 안 보이면 `packages/mcp/dist/server.js`가 있는지(`pnpm build`를 했는지) 확인하세요.
+
+| 도구 | 하는 일 |
+|---|---|
+| `ingest_spec` | 스펙 파일/URL 읽기 (`origins`, `harvest`, `refresh`) |
+| `analyze_spec` | 기능 카탈로그. 문서면 추출할 청크 목록 |
+| `get_chunk` | 청크 하나의 본문 |
+| `submit_extraction` | 청크 하나의 추출 결과 제출(해시 확인 · 엄격 검증) |
+| `merge_extractions` | 제출된 추출 결과 병합 |
+| `list_features` | 기능 표 |
+| `show_feature` | 기능 하나의 스키마 · 샘플 · 근거 |
+| `select_features` | 선택 표현식으로 고르기 (`mode`: set/add/remove) |
+| `generate_mock` | mock 서버 생성 |
+| `verify_mock` | contract test + 커버리지 |
+
+대화는 이런 식으로 흐릅니다(예시 흐름이며 실제 출력은 매번 다릅니다).
+
+```
+나: examples/docs-sample/pets-api.md 로 mock 만들어줘
+Claude: (ingest_spec → analyze_spec → get_chunk/submit_extraction → merge_extractions → list_features) 기능 목록입니다. [표]
+나: 필요한 것만 골라줘
+Claude: (select_features → generate_mock → verify_mock) mock을 만들고 contract test 결과를 알려 드립니다.
+```
+
+문서 추출은 지금 대화하는 Claude가 합니다. 별도 `claude` 프로세스도, API 키도 없습니다. MCP 서버는 Claude Code를 실행한 디렉터리를 프로젝트 루트로 씁니다(`.specmock/`, `mock/`).
+
+제한 사항:
+
+- 플러그인은 저장소를 clone한 곳에서 `--plugin-dir`로만 동작합니다. 마켓플레이스 설치는 `packages/`를 가져가지 않아 지원하지 않습니다(후속 과제).
+- `ingest_spec`의 웹 수확과 `verify_mock`의 첫 실행(mock의 `npm install`)은 오래 걸릴 수 있습니다. 서버는 진행 알림을 보내지만, Claude Code의 도구 호출 제한 시간은 알림으로 늘어나지 않습니다. 호출이 중간에 끊기면 Claude Code를 시작할 때 환경변수 `MCP_TOOL_TIMEOUT`(밀리초)을 늘려 주세요. 예: `MCP_TOOL_TIMEOUT=600000 claude --plugin-dir ./plugin`.
+- 커스텀 드롭다운 같은 수동 수확은 여전히 스킬의 파일 절차([수동 수확](plugin/skills/specmock/references/manual-harvest.md))로 합니다. 도구가 아닙니다.
+
+### Web UI (Phase 2B, 예정)
 
 로컬에서 실행해 브라우저에서 스펙 입력 → 기능 체크 → 생성까지 진행합니다.
 
@@ -272,13 +314,14 @@ pnpm test          # core 빌드 → vitest (생성된 mock을 실제로 띄우�
 pnpm typecheck     # src와 test 모두
 ```
 
-변경 후 위 두 명령이 통과하면 PR을 엽니다. 설계 의도는 [설계 문서](docs/superpowers/specs/2026-11-04-specmock-design.md)에, 단계별 작업 단위는 [구현 계획](docs/superpowers/plans/)(1A, 1B)에 있습니다. 설계와 다르게 구현한 지점은 설계 문서 12장 "구현 중 변경"에 이유와 함께 적습니다.
+변경 후 위 두 명령이 통과하면 PR을 엽니다. 설계 의도는 [설계 문서](docs/superpowers/specs/2026-11-04-specmock-design.md)에, 단계별 작업 단위는 [구현 계획](docs/superpowers/plans/)(1A, 1B, 2A)에 있습니다. 설계와 다르게 구현한 지점은 설계 문서 12장 "구현 중 변경"에 이유와 함께 적습니다.
 
 ## 로드맵
 
 | 단계 | 내용 |
 |---|---|
 | 1A | core + CLI (OpenAPI) — 완료 |
-| 1B | 웹 문서·PDF 분석, LLM 어댑터, ego-browser 수확, Claude Code 스킬, `select --interactive` ← 현재 |
-| 2 | MCP 서버, Web UI |
+| 1B | 웹 문서·PDF 분석, LLM 어댑터, ego-browser 수확, Claude Code 스킬, `select --interactive` — 완료 |
+| 2A | 공용 서비스 층, MCP 서버(도구 10개), 스킬 MCP 우선 흐름 ← 현재 |
+| 2B | Web UI |
 | 3 | 다른 언어 생성(LLM), Proxy/녹화, API 키 어댑터 |

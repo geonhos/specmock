@@ -1,7 +1,7 @@
 # specmock 설계 문서
 
 작성일: 2026-11-04
-상태: 승인됨. 1B 구현 완료 (2026-11-05). 구현 중 확인된 사항은 12장 "구현 중 변경" 참고.
+상태: 승인됨. 2A 구현 완료 (2026-11-05, 사용자 수동 확인 2건 대기). 구현 중 확인된 사항은 12장 "구현 중 변경" 참고.
 대상 범위: 전체 아키텍처 + 1단계 상세. 2·3단계는 인터페이스 경계만 정의.
 
 ---
@@ -26,6 +26,11 @@
 | 믿을 수 있는지 보여준다 | 어디가 실제 샘플 기반이고 어디가 추측인지 커버리지 리포트로 명시 |
 | 언어는 나중에 바꿀 수 있다 | TypeScript 참조 구현을 먼저 만들고, 검증된 MockSpec으로 다른 언어 생성 가능 |
 | 구독만으로 동작 | Claude Code 구독만으로 LLM 단계를 수행. API 키는 선택 사항 |
+
+**사용자 환경 가정 (2A부터 명시):**
+- 사용자에게 있는 것: Claude Code, Node 26, pnpm. ego-browser는 선택(없으면 수확만 건너뜀).
+- 사용자에게 없는 것: 작성자의 개발 도구. 제품 코드·플러그인·스킬·README·커밋되는 설정은 이것 없이 동작하고 읽혀야 한다.
+- 설치는 `git clone` → `pnpm install && pnpm build` → `claude --plugin-dir ./plugin`. 이것으로 스킬과 MCP 도구가 함께 켜진다.
 
 ### 1.3 비목표 (1단계)
 
@@ -519,7 +524,13 @@ specmock/
 | 2 | MCP 서버 + Web UI | 브라우저 화면에서 같은 흐름 수행(스펙 입력 → 진행 로그 → 기능 체크리스트 → 언어 선택 → 결과·리포트). MCP로 Claude Code에서 도구 호출 |
 | 3 | 다른 언어 생성, Proxy/녹화, API 키 어댑터 | 검증된 MockSpec + TS 참조 구현을 보고 Claude가 임의 언어로 생성, 같은 verify 통과. 키 있을 때 실제 시스템 전달 및 응답 녹화 |
 
-2단계 인터페이스 경계: MCP 도구는 CLI 서브커맨드와 1:1 대응(`ingest_spec`, `list_features`, `select_features`, `generate_mock`, `verify_mock`). Web UI 서버는 core를 직접 호출하고 LLM은 `ClaudeCodeAdapter`를 쓴다.
+2단계 인터페이스 경계: 2A(서비스 층 + MCP)와 2B(Web UI)로 나눈다. MCP 도구는 10개다.
+- CLI 대응: `ingest_spec`, `analyze_spec`, `list_features`, `show_feature`, `select_features`, `generate_mock`, `verify_mock`.
+- 문서 추출: `get_chunk`, `submit_extraction`, `merge_extractions`.
+- `run` 도구는 없다(중간에 사용자 선택이 필요하다).
+- CLI·MCP·Web UI는 `core/src/service/`를 호출한다.
+- Web UI 서버는 LLM으로 `ClaudeCodeAdapter`를 쓴다.
+- 상세: [2026-11-05-phase2a-mcp-design.md](2026-11-05-phase2a-mcp-design.md).
 
 3단계 인터페이스 경계: `Generator` 인터페이스(`generate(mockspec, outDir)`)에 `TsHonoGenerator`(템플릿)와 `LlmGenerator`(언어 인자 + MockSpec + 참조 구현을 프롬프트로)를 둔다. verify는 lock 파일의 기동 명령만 알면 된다.
 
@@ -535,7 +546,7 @@ specmock/
 | 선택 표현식 + selection.json | 대화형 UI만 | 재현 가능하고 스크립트화 가능. 나중에 기능 추가가 쉬움 |
 | 코어 → CLI → MCP 순서 | MCP 우선 | CLI가 디버깅이 빠르고 end-to-end를 먼저 확인할 수 있음. MCP는 같은 코어의 얇은 껍데기 |
 
-## 12. 구현 중 변경 (1A, 1B 2026-11-04 ~ 05)
+## 12. 구현 중 변경 (1A, 1B, 2A)
 
 리뷰 과정에서 설계를 바꾼 지점. 위 본문에는 반영되어 있고, 여기에는 이유만 남긴다.
 
@@ -579,3 +590,8 @@ specmock/
 | **1B** `select --interactive` 축소: 그룹 접기·`/` 검색 없음, 저장은 id 목록으로 평탄화 | 1B 범위 축소(그룹 구분선 + 체크박스 + 이전 선택 사전 체크). 병합은 core 함수(`mergeInteractivePick`)로 분리해 테스트 |
 | **1B** Claude Code 플러그인(`plugin/`) + 스킬 문서에 옵션 drift 테스트 | 스킬이 설명하는 CLI 옵션이 실제와 어긋나면 사용자가 잘못된 명령을 받는다. `--help`와 대조 |
 | **1B** 구현 중 발견·수정: CommonMark 펜스 매칭, 공백 구간에서 1글자 전진하던 청크 분할 버그, ajv 루트 `$id`로 인한 카탈로그 오염, 프로토타입 키(`__proto__`) 안전 | 속성 테스트와 Task별 코드 리뷰에서 나온 실제 결함. 각각 회귀 테스트 추가 |
+| **2A** MCP 도구에 분석 단계(`analyze_spec`, `get_chunk`, `submit_extraction`, `merge_extractions`)와 `show_feature` 추가 | 원래 1:1 목록에는 문서 추출 단계가 없어 MCP만으로 문서 입력을 끝낼 수 없었다 |
+| **2A** 흐름 조립을 CLI에서 `core/src/service/`로 이동 | CLI·MCP·Web UI가 모드 분기와 판정을 두 벌 갖지 않게 |
+| **2A** 청크 제출은 `submitExtraction`(해시 확인 · 엄격 검증 · 원자적 쓰기 · manifest) | 세션 모드 수기 파일은 manifest가 없어 문서가 바뀌어도 예전 결과가 쓰였다. 제출 시점 검증이어야 Claude가 바로 고친다 |
+| **2A** MCP 서버 루트 = 실행 디렉터리(대비책 `--root`) | Claude Code가 플러그인 MCP 서버를 프로젝트 디렉터리에서 띄우는 것을 확인했다 |
+| **2A** 플러그인 `mcpServers`가 `${CLAUDE_PLUGIN_ROOT}/../packages/mcp/dist/server.js` 실행, npm 배포 안 함 | clone해서 쓰는 전제. CLI도 배포하지 않으므로 MCP만 배포할 이득이 없다 |

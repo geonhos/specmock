@@ -24,8 +24,8 @@ flowchart TB
     subgraph 인터페이스["인터페이스 (얇음)"]
         CLI[CLI]
         SKILL[Claude Code 스킬]
-        MCP["MCP 서버 (2단계)"]
-        WEB["Web UI (2단계)"]
+        MCP["MCP 서버 (2A)"]
+        WEB["Web UI (2B)"]
     end
 
     subgraph CORE["core (두꺼움 · 결정적 · 테스트됨)"]
@@ -45,6 +45,16 @@ flowchart TB
 ```
 
 **원칙**: LLM은 "비구조 문서에서 기능 추출"과 "다른 언어 생성"에만 쓴다. 나머지는 전부 결정적 코드다.
+
+2A부터 CLI와 MCP 서버는 같은 **서비스 층**(`packages/core/src/service/`)을 호출한다. 흐름 조립과 판정은 서비스 층 한 곳에 있고, 인터페이스는 옵션 파싱과 출력만 맡는다.
+
+```mermaid
+flowchart LR
+    CLI["packages/cli"] --> SVC["core/src/service<br/>ingestSpec · analyzeSpec · summarizeChunks/getChunk<br/>listFeatures/findFeature · verifyMock · runPipeline"]
+    MCP["packages/mcp<br/>stdio · 도구 10개"] --> SVC
+    SVC --> CORE["core 단계 함수<br/>ingest · prepare · submitExtraction · merge · select · generate · verify"]
+    PLUGIN["plugin.json mcpServers"] -. node 실행 .-> MCP
+```
 
 ## 상태 파일 (파일이 인터페이스)
 
@@ -120,6 +130,30 @@ sequenceDiagram
 - 일부 청크가 실패하면 나머지로 `catalog.json`을 만들고 종료 코드 2를 돌려준다. 같은 명령을 다시 실행하면 실패한 청크만 재시도한다.
 - `--prepare`는 1단계에서 멈추고, `--merge`는 3단계만 실행한다. `--refresh`는 기존 `extracted/`를 무시(claude-code)하거나 지운다(session).
 
+### MCP로 추출할 때
+
+```mermaid
+sequenceDiagram
+    participant C as Claude
+    participant M as MCP 서버
+    C->>M: analyze_spec
+    M-->>C: prompt · schema · chunks[index, heading, chars, contentHash, done]
+    loop done=false 인 청크
+        C->>M: get_chunk(i)
+        C->>M: submit_extraction(i, contentHash, result)
+        M-->>C: ok / ok=false(errors)
+    end
+    C->>M: merge_extractions
+```
+
+`submit_extraction`은 다음 순서로 처리한다.
+1. 해시로 청크가 지금 문서와 같은지 확인한다.
+2. 모르는 키까지 거부하는 엄격 검증을 한다.
+3. 원자적으로 쓴다.
+4. manifest에 해시를 남긴다.
+
+`--llm claude-code` 자동 추출도 청크마다 같은 함수를 쓴다(모르는 키는 버리는 관대한 모드).
+
 ## 기능 선택 흐름
 
 ```mermaid
@@ -146,7 +180,7 @@ gantt
     section 1단계
     core · CLI · Claude Code 스킬        :a1, 0, 3
     section 2단계
-    MCP 서버 · Web UI                    :a2, after a1, 2
+    MCP 서버(2A) · Web UI(2B)            :a2, after a1, 2
     section 3단계
     다른 언어 생성 · Proxy/녹화 · API 키 :a3, after a2, 2
 ```
@@ -154,5 +188,5 @@ gantt
 | 단계 | 완료 기준 |
 |---|---|
 | 1 | OpenAPI와 웹 문서에서 TS mock 생성, contract test 통과, coverage.md 출력, 기능 추가 재생성 |
-| 2 | 브라우저 화면에서 같은 흐름. MCP로 Claude Code에서 도구 호출 |
+| 2 | 2A: MCP로 Claude Code에서 도구 호출(셸 없이 끝까지). 2B: 브라우저 화면에서 같은 흐름 |
 | 3 | 검증된 MockSpec으로 임의 언어 생성. 키 있으면 실제 시스템 전달·녹화 |
