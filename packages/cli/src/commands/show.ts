@@ -1,4 +1,4 @@
-import { CatalogSchema } from "@specmock/core";
+import { findFeature, type Feature } from "@specmock/core";
 import type { Command } from "commander";
 import { fail, printJsonOr, SYSTEM_ARG_HELP, workspaceFrom } from "../context.js";
 
@@ -10,9 +10,8 @@ export function registerShow(program: Command): void {
     .argument("<featureId>", "기능 id (specmock list로 확인)")
     .option("--json", "JSON으로 출력", false)
     .action(async (system: string, featureId: string, opts: { json: boolean }, cmd: Command) => {
-      const catalog = await workspaceFrom(cmd).read(system, "catalog.json", CatalogSchema);
-      const f = catalog.features.find((x) => x.id === featureId);
-      if (!f) fail(`알 수 없는 기능 id: ${featureId}`);
+      let f: Feature;
+      try { f = await findFeature(workspaceFrom(cmd), system, featureId); } catch (e) { fail((e as Error).message); }
       printJsonOr(opts.json, f, () => [
         `${f.id}  (${f.group})`,
         `${f.method} ${f.path}`,

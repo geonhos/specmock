@@ -1,4 +1,4 @@
-import { ingest, SourceSchema } from "@specmock/core";
+import { ingestSpec } from "@specmock/core";
 import type { Command } from "commander";
 import { fail, printJsonOr, SYSTEM_ARG_HELP, workspaceFrom } from "../context.js";
 
@@ -15,20 +15,11 @@ export function registerIngest(program: Command): void {
       if (!["auto", "always", "never"].includes(opts.harvest)) fail(`--harvest 값이 올바르지 않습니다: ${opts.harvest} (auto | always | never)`);
       const ws = workspaceFrom(cmd);
       // 진행 로그는 항상 stderr로 보내 --json의 stdout을 깨끗하게 둔다.
-      const { file, inputs: read } = await ingest(ws, system, origins, {
+      const { file, inputs } = await ingestSpec(ws, system, origins, {
         refresh: opts.refresh,
         harvest: opts.harvest as "auto" | "always" | "never",
-        onLog: (m) => process.stderr.write(m + "\n"),
+        onEvent: (e) => process.stderr.write(e.message + "\n"),
       });
-      const src = await ws.read(system, "source.json", SourceSchema);
-      const inputs = read.map((r, n) => ({
-        kind: r.kind,
-        origin: r.origin,
-        chars: r.chars,
-        cached: r.cached,
-        harvestCandidate: src.inputs[n]?.harvestCandidate?.reasons ?? [],
-        harvested: Boolean(src.inputs[n]?.harvested),
-      }));
       printJsonOr(opts.json, { system, file, inputs }, () => {
         const lines = [`source.json 작성: ${file}`];
         for (const i of inputs) {

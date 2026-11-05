@@ -1,23 +1,8 @@
-import { readdir, rm } from "node:fs/promises";
-import path from "node:path";
-import { analyze, CatalogSchema, EXTRACTED_DIR, formatCatalog, merge, prepare, type CatalogDiff } from "@specmock/core";
+import { analyzeSpec, CatalogSchema, formatCatalog, type CatalogDiff } from "@specmock/core";
 import type { Command } from "commander";
-import { runLlmAnalyze } from "../llmFlow.js";
 import { EXPR_HELP, fail, formatDiff, formatMerge, formatPrepared, printJsonOr, SYSTEM_ARG_HELP, workspaceFrom } from "../context.js";
 
 interface Opts { llm?: string; model?: string; prepare: boolean; merge: boolean; refresh: boolean; json: boolean }
-
-/** extracted/ 의 NNN.json 과 manifest.json 을 모두 지우고 지운 NNN.json 개수를 돌려준다. */
-async function clearExtracted(dir: string): Promise<number> {
-  let names: string[];
-  try { names = await readdir(dir); } catch { return 0; }
-  let n = 0;
-  for (const name of names) {
-    if (/^\d{3,}\.json$/.test(name)) { await rm(path.join(dir, name), { force: true }); n++; }
-    else if (name === "manifest.json") await rm(path.join(dir, name), { force: true });
-  }
-  return n;
-}
 
 export function registerAnalyze(program: Command): void {
   program
@@ -50,33 +35,25 @@ export function registerAnalyze(program: Command): void {
         });
       };
 
-      if (opts.merge) {
-        const r = await merge(ws, system);
-        return printCatalog(r.diff, { merge: r }, formatMerge(r), r.missingChunks.length > 0);
-      }
-
-      const outcome = await analyze(ws, system);
-      if (outcome.mode === "openapi") return printCatalog(outcome.diff);
-
-      if (llm === "session" || opts.prepare) {
-        if (opts.refresh) {
-          const removed = await clearExtracted(ws.file(system, EXTRACTED_DIR));
-          process.stderr.write(`기존 추출 결과 ${removed}개를 지웠습니다\n`);
-        }
-        const req = await prepare(ws, system);
-        if (req.chunks.length === 0) process.stderr.write("경고: 추출할 청크가 없습니다 (문서 내용이 비어 있음)\n");
+      const r = await analyzeSpec(ws, system, {
+        step: opts.merge ? "merge" : opts.prepare ? "prepare" : "auto",
+        llm: llm as "session" | "claude-code",
+        model: opts.model,
+        refresh: opts.refresh,
+        onEvent: (e) => process.stderr.write(e.message + "\n"),
+      });
+      if (r.mode === "prepared") {
         // 세션 어댑터는 extract를 호출하지 않는다(Claude Code 세션이 직접 extracted/를 쓴다). 안내만 출력하고 끝낸다.
         return printJsonOr(
           opts.json,
-          { mode: "prepared", chunks: req.chunks.length, request: ws.file(system, "analyze-request.json"), chunkFiles: req.chunks.map((c) => ws.file(system, c.file)) },
-          () => formatPrepared(system, req, ws.dir(system)),
+          { mode: "prepared", chunks: r.request.chunks.length, request: ws.file(system, "analyze-request.json"), chunkFiles: r.request.chunks.map((c) => ws.file(system, c.file)) },
+          () => formatPrepared(system, r.request, ws.dir(system)),
         );
       }
-
-      const flow = await runLlmAnalyze(ws, system, { model: opts.model, refresh: opts.refresh, log: (m) => process.stderr.write(m + "\n") });
-      const incomplete = flow.extract.failed.length > 0 || flow.merge.missingChunks.length > 0;
-      await printCatalog(flow.merge.diff, { extract: flow.extract, merge: flow.merge }, formatMerge(flow.merge), incomplete);
+      if (r.via === "openapi") return printCatalog(r.diff);
+      if (r.via === "merge") return printCatalog(r.merge.diff, { merge: r.merge }, formatMerge(r.merge), r.incomplete);
+      await printCatalog(r.merge.diff, { extract: r.extract, merge: r.merge }, formatMerge(r.merge), r.incomplete);
       // process.exit는 stdout을 잘라먹을 수 있어 exitCode만 설정한다.
-      if (flow.extract.failed.length) process.exitCode = 2;
+      if (r.extract.failed.length) process.exitCode = 2;
     });
 }
