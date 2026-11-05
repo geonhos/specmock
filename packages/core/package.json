@@ -1,0 +1,25 @@
+{
+  "name": "@specmock/core",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist", "templates"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run --root ../.. packages/core"
+  },
+  "dependencies": {
+    "@apidevtools/swagger-parser": "^13.1.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "eta": "^4.6.0",
+    "get-port": "^7.2.0",
+    "json-schema-faker": "^0.6.3",
+    "openapi-types": "^12.1.3",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
+  }
+}

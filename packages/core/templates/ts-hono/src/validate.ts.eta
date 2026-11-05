@@ -1,0 +1,19 @@
+// specmock이 생성한 파일. 요청 params/query/body를 스키마로 검증한다.
+import { Ajv, type ErrorObject } from "ajv";
+import addFormats from "ajv-formats";
+
+const ajv = new Ajv({ allErrors: true, strict: false, coerceTypes: true, useDefaults: true });
+// ajv-formats는 CommonJS 모듈이라 NodeNext에서는 default import가 module.exports 전체를 가리킨다.
+addFormats.default(ajv);
+for (const f of ["int32", "int64", "float", "double", "byte", "binary", "password"]) ajv.addFormat(f, true);
+
+const cache = new Map<object, ReturnType<typeof ajv.compile>>();
+
+export function validate(schema: object, data: unknown): ErrorObject[] | null {
+  let fn = cache.get(schema);
+  if (!fn) {
+    fn = ajv.compile(schema);
+    cache.set(schema, fn);
+  }
+  return fn(data) ? null : (fn.errors ?? []);
+}

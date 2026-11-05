@@ -1,0 +1,20 @@
+// specmock이 생성한 파일. 선택되지 않은 기능과 알 수 없는 경로를 구분해 응답한다.
+import type { Context } from "hono";
+
+const NOT_MOCKED: ReadonlyArray<{ id: string; method: string; path: string }> = <%~ JSON.stringify(it.notMocked, null, 2) %>;
+
+function toRegex(path: string): RegExp {
+  return new RegExp("^" + path.replace(/[.*+?^$()|[\]\\]/g, "\\$&").replace(/\{[^}]+\}/g, "[^/]+") + "/?$");
+}
+
+export function notMocked(c: Context) {
+  const url = new URL(c.req.url);
+  const hit = NOT_MOCKED.find((f) => f.method === c.req.method && toRegex(f.path).test(url.pathname));
+  if (hit) {
+    return c.json(
+      { error: "not_mocked", feature: hit.id, hint: `specmock select <%= it.system %> --add ${hit.id} && specmock generate <%= it.system %>` },
+      501,
+    );
+  }
+  return c.json({ error: "unknown_path", method: c.req.method, path: url.pathname }, 404);
+}

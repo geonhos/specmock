@@ -3480,3 +3480,28 @@ git commit -m "docs: README와 Petstore 예제"
 - [ ] `select --add` 후 `generate`가 수정된 fixture를 보존
 - [ ] 선택되지 않은 경로 요청 시 501 + 안내
 - [ ] `.specmock/`과 `mock/`이 git에 올라가지 않음 (`git status`로 확인)
+
+---
+
+## 실행 기록 (2026-11-04 ~ 05)
+
+13개 Task를 Task마다 새 서브에이전트가 구현하고, 스펙 준수 → 코드 품질 2단계 리뷰를 거쳐 진행했다. 리뷰에서 나온 수정은 같은 Task의 후속 커밋으로 반영했다. 계획 본문과 실제 코드가 다른 지점은 다음과 같다.
+
+| Task | 계획과 달라진 점 | 이유 |
+|---|---|---|
+| 1 | `engines.node >= 22.19`, 패키지별 `test` 스크립트가 루트 vitest 설정 사용, `allowBuilds: esbuild` | swagger-parser 13 요구 버전. pnpm은 pre 스크립트 미실행 |
+| 2 | Workspace 에러에 파일 경로·`z.prettifyError`, 검증 후 mkdir, 시스템 이름 검증 | 사용자가 어느 파일이 문제인지 알 수 있어야 함 |
+| 3 | 부분 템플릿 세그먼트(`{id}.json`)를 파라미터로, 비정상 operationId 폴백, `/v1/`·`/api/` 그룹 건너뛰기 | 선택 불가능하거나 안전하지 않은 id 방지 |
+| 4 | `circular: true` + 순환 안전 직렬화(`x-specmock-circular` 마커), 파싱 기반 OpenAPI 감지, URL 단일 fetch | `circular: "ignore"`가 재귀 스키마를 통째로 날림 |
+| 5 | 입력 간 공유 id 레지스트리, operationId 우선 2-pass, formData → body, v2 파라미터 키 보존, `type: file` → `string/binary`, deprecated 노트, 3.1 `examples` | 실제 스펙에서 흔한 경우들 |
+| 6 | 코드포인트 비교 정렬, 그룹 구분선 폭, 빈 카탈로그, `formatCatalog(catalog, { group })` | 로케일 의존 번호 방지. 그룹 필터 시 전역 번호 유지 |
+| 7 | `group:<이름>` 필터, `@파일` 항목 쉼표 분리, 역순 범위·무일치 글롭 오류 | `users.*`는 id 글롭. select가 저장한 원본 표현식을 되읽을 수 있어야 함 |
+| 8 | json-schema-faker 0.6.x `generateSync(schema, { seed })`, 샘플 스칼라가 제약 준수, 422도 400 기대, 순환 마커 → null, `util/random.ts` 삭제 | 0.6은 재작성판. 정상 요청이 400 나는 문제 |
+| 9 | `--remove` 쉼표 분리·기존 선택 없으면 거부, add+remove 거부, 카탈로그 변경 항상 감지 | 조용히 잘못된 결과가 나오는 경로 제거 |
+| 10 | 보존 기준 해시를 "생성기가 썼을 내용"으로, 고아 산출물 정리(`orphaned`), 생성 프로젝트 `tsc --noEmit` 통과(ajv named import, `strict: false` 라우팅), 이름 레지스트리 | 두 번째 재생성에서 수정이 되돌아가던 버그. 사용자가 에디터로 여는 코드 |
+| 11 | 스폰 오류 즉시 실패, 헬스체크 2초 타임아웃, `onLog`, coverage 표 `\|` 이스케이프 | 없는 명령이면 프로세스가 죽거나 영원히 대기 |
+| 12 | `list --group` 전역 번호, `select` `-id` 인자 허용, `exitCode = 2`, 공용 포맷터, 도움말 정리, 명령별 try/catch 제거 | 사용자 함정 두 개와 중복 제거 |
+| 13 | README에 실제 동작 기준 표현식 표·제한 사항·서버 동작 표 추가 | 계획 시점과 달라진 동작 반영 |
+| 최종 리뷰 | 서빙되는 2xx fixture만 파일로 생성, 손상된 lock은 오류, 비밀값 마스킹(`ingest/mask.ts`), `generate.json`으로 출력 경로 기억, 시스템 이름 유니코드 허용·공백 거부, 테스트 파일 타입체크, 예제 스펙 드리프트 가드, README 제한 사항 보강 | 4xx fixture를 고쳐도 반영되지 않는 함정, 설계 §6 미구현, `generate --out` 뒤 `verify` 실패 |
+
+최종: 18개 테스트 파일, 95개 테스트 통과. `pnpm specmock run petstore examples/petstore/petstore.yaml --select all`이 verify 6/6까지 통과.

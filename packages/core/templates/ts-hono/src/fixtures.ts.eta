@@ -1,0 +1,11 @@
+// specmock이 생성한 파일. fixtures/<featureId>/<status>.json 을 런타임에 읽는다.
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures");
+
+export async function loadFixture(featureId: string, status: number): Promise<unknown> {
+  const file = path.join(root, featureId, `${status}.json`);
+  return JSON.parse(await readFile(file, "utf8"));
+}
