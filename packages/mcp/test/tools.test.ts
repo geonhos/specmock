@@ -123,11 +123,18 @@ describe("errors do not kill the server", () => {
     const { pets } = await copySample();
     expect((await s.ok("ingest_spec", { system: "pets", origins: [pets] })).system).toBe("pets");
   });
+});
 
-  it("leaves no harness traces on stderr", async () => {
-    const { pets } = await copySample();
-    await s.ok("ingest_spec", { system: "pets", origins: [pets] });
-    expect(s.stderr()).not.toMatch(/harness/i);
+describe("generate_mock output directory guard", () => {
+  it("rejects a non-specmock outDir with tool-style hints, then keeps serving", async () => {
+    await s.ok("ingest_spec", { system: "petstore", origins: [PETSTORE] });
+    await s.ok("analyze_spec", { system: "petstore" });
+    await s.ok("select_features", { system: "petstore", exprs: ["getPet"] });
+    const msg = await s.err("generate_mock", { system: "petstore", outDir: "." });
+    expect(msg).toContain("specmock이 만든 디렉터리가 아닙니다");
+    expect(msg).toContain("force: true");
+    expect(msg).not.toContain("--force");
+    expect(await s.ok("list_features", { system: "petstore" })).toHaveProperty("total");
   });
 });
 

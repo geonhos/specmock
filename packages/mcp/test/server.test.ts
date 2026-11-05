@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -44,21 +44,28 @@ describe("mcp server process", () => {
 });
 
 describe("stdout purity", () => {
-  it("every byte on stdout is a JSON-RPC line, even after tool calls that log progress", async () => {
+  it("keeps progress logs on stderr and only JSON-RPC lines on stdout", async () => {
+    const spec = path.join(dir, "api.md");
+    await writeFile(spec, "# API\n\nGET /pets returns a list of pets.\n");
     const child = spawn(process.execPath, [SERVER], { cwd: dir, stdio: ["pipe", "pipe", "pipe"] });
     let out = "";
+    let err = "";
     child.stdout.on("data", (b: Buffer) => { out += b.toString("utf8"); });
+    child.stderr.on("data", (b: Buffer) => { err += b.toString("utf8"); });
     const send = (m: object) => child.stdin.write(`${JSON.stringify(m)}\n`);
+    const has = (id: number) => out.split("\n").some((l) => { try { return (JSON.parse(l) as { id?: number }).id === id; } catch { return false; } });
     try {
       send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } });
-      await expect.poll(() => out.includes('"id":1'), { timeout: 20000 }).toBe(true);
+      await expect.poll(() => has(1), { timeout: 10000 }).toBe(true);
       send({ jsonrpc: "2.0", method: "notifications/initialized" });
-      send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "list_features", arguments: { system: "nosuch" } } });
+      send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "ingest_spec", arguments: { system: "api", origins: [spec] } } });
       send({ jsonrpc: "2.0", id: 3, method: "tools/list" });
-      await expect.poll(() => out.includes('"id":3'), { timeout: 20000 }).toBe(true);
+      // 응답 순서는 보장되지 않으므로 기다리는 id를 모두 확인한다.
+      await expect.poll(() => has(2) && has(3), { timeout: 10000 }).toBe(true);
       const lines = out.split("\n").filter((l) => l.trim());
       expect(lines.length).toBeGreaterThanOrEqual(3);
       for (const l of lines) expect(JSON.parse(l)).toMatchObject({ jsonrpc: "2.0" });
+      expect(err).toContain("[ingest]");
     } finally { child.kill(); }
   });
 });

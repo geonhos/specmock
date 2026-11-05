@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { findFeature, generate, listFeatures, select, verifyMock, type OnEvent, type Workspace } from "@specmock/core";
 import { z } from "zod";
-import { absPath, guard, ok, progressEmitter } from "../result.js";
+import { absPath, guard, ok, withProgress } from "../result.js";
 import { SystemArg } from "./analysis.js";
 
 const Loose = z.looseObject({});
@@ -11,7 +11,7 @@ function coverageSummary(md: string): string {
   return md.split("\n## contract test")[0]!.trimEnd();
 }
 
-export function registerMockTools(server: McpServer, ws: Workspace, onEvent: OnEvent): void {
+export function registerMockTools(server: McpServer, ws: Workspace, onEvent: OnEvent, opts: { heartbeatMs?: number } = {}): void {
   server.registerTool("list_features", {
     title: "기능 목록",
     description: "카탈로그를 번호·그룹·출처·신뢰도·샘플 여부와 함께 표로 돌려준다. 표(table)를 사용자에게 그대로 보여 주고 어떤 기능이 필요한지 묻는다. 번호는 select_features 표현식과 같다.",
@@ -78,7 +78,7 @@ export function registerMockTools(server: McpServer, ws: Workspace, onEvent: OnE
       coverageFile: z.string(), coverageSummary: z.string(),
     }),
   }, guard(async ({ system, dir }, ctx) => {
-    const v = await verifyMock(ws, system, { dir, onEvent: progressEmitter(ctx, onEvent) });
+    const v = await withProgress(ctx, onEvent, (ev) => verifyMock(ws, system, { dir, onEvent: ev }), opts.heartbeatMs ?? 5000);
     const failures = v.result.results.filter((r) => !r.passed).map((r) => ({ featureId: r.featureId, name: r.name, expectedStatus: r.expectedStatus, actualStatus: r.actualStatus ?? null, errors: r.errors }));
     const data = { total: v.result.total, passed: v.result.passed, failed: v.result.failed, failures, coverageFile: absPath(ws.dir(system), v.coverageFile), coverageSummary: coverageSummary(v.coverageMarkdown) };
     return ok(`contract: 통과 ${data.passed} / 실패 ${data.failed}. 커버리지: ${data.coverageFile}`, data);

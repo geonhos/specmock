@@ -9,7 +9,9 @@ const TOOL_FOR: Record<string, string> = {
 export function rewriteHints(message: string): string {
   return message
     .replace(/`?specmock (ingest|analyze|select|generate|verify)(?: (?:<[^>\s]+>|[A-Za-z0-9_-]+))?`?/g, (_, cmd: string) => `\`${TOOL_FOR[cmd]}\``)
-    .replace(/--dir 로/g, "dir 인자로");
+    .replace(/--dir 로/g, "dir 인자로")
+    .replace(/--force/g, "force: true")
+    .replace(/<(?:표현식|exprs)>/g, "exprs");
 }
 
 type Text = { type: "text"; text: string };
@@ -26,17 +28,32 @@ export interface ProgressCtx {
 
 /**
  * 서비스 이벤트를 stderr 로그로 남기고, 클라이언트가 progressToken을 줬으면 MCP progress notification으로도 보낸다.
- * progress는 호출 안에서 단조 증가해야 하므로 이벤트마다 1씩 올린다(이벤트의 done/total은 메시지에 이미 있다).
+ * progress는 호출 안에서 단조 증가해야 하므로 알림마다 1씩 올린다(이벤트의 done/total은 메시지에 이미 있다).
  */
-export function progressEmitter(ctx: ProgressCtx, log: OnEvent): OnEvent {
+function makeProgress(ctx: ProgressCtx, log: OnEvent): { onEvent: OnEvent; send?: (message: string) => void } {
   const token = ctx.mcpReq._meta?.progressToken;
-  if (token === undefined) return log;
+  if (token === undefined) return { onEvent: log };
   let n = 0;
-  return (e: ServiceEvent) => {
-    log(e);
+  const send = (message: string) => {
     n += 1;
-    ctx.mcpReq.notify({ method: "notifications/progress", params: { progressToken: token, progress: n, message: `[${e.stage}] ${e.message}` } }).catch(() => {});
+    ctx.mcpReq.notify({ method: "notifications/progress", params: { progressToken: token, progress: n, message } }).catch(() => {});
   };
+  return { onEvent: (e: ServiceEvent) => { log(e); send(`[${e.stage}] ${e.message}`); }, send };
+}
+
+export function progressEmitter(ctx: ProgressCtx, log: OnEvent): OnEvent {
+  return makeProgress(ctx, log).onEvent;
+}
+
+/** progressEmitter에 더해, heartbeatMs 주기로 fn이 끝날 때까지 "진행 중" 알림을 보낸다(이벤트가 없는 긴 작업용). */
+export async function withProgress<R>(ctx: ProgressCtx, log: OnEvent, fn: (onEvent: OnEvent) => Promise<R>, heartbeatMs: number): Promise<R> {
+  const { onEvent, send } = makeProgress(ctx, log);
+  const timer = send ? setInterval(() => send("[verify] 진행 중…"), heartbeatMs) : undefined;
+  try {
+    return await fn(onEvent);
+  } finally {
+    if (timer) clearInterval(timer);
+  }
 }
 
 export function toolError(e: unknown): { content: Text[]; isError: true } {

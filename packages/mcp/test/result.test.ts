@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rewriteHints, toolError } from "../src/result.js";
+import { rewriteHints, toolError, withProgress } from "../src/result.js";
 
 describe("rewriteHints", () => {
   it("replaces CLI commands in core messages with tool names", () => {
@@ -17,10 +17,36 @@ describe("rewriteHints", () => {
     expect(rewriteHints("먼저 `specmock generate`를")).toBe("먼저 `generate_mock`를");
     expect(rewriteHints("specmock verify pets.")).toBe("`verify_mock`.");
   });
+  it("turns CLI flags and placeholders into tool arguments", () => {
+    expect(rewriteHints("파일을 삭제하고 specmock generate <system> --force 로 다시 생성하세요.")).toBe("파일을 삭제하고 `generate_mock` force: true 로 다시 생성하세요.");
+    expect(rewriteHints("덮어쓰려면 --force")).toBe("덮어쓰려면 force: true");
+    expect(rewriteHints("먼저 specmock select pets <표현식>을 실행하세요.")).toBe("먼저 `select_features` exprs을 실행하세요.");
+    expect(rewriteHints("형식: <exprs>")).toBe("형식: exprs");
+  });
   it("leaves other text alone", () => {
     expect(rewriteHints("알 수 없는 기능 id: x")).toBe("알 수 없는 기능 id: x");
   });
   it("toolError marks isError and keeps the message", () => {
     expect(toolError(new Error("boom"))).toEqual({ content: [{ type: "text", text: "boom" }], isError: true });
+  });
+});
+
+describe("withProgress heartbeat", () => {
+  const log = () => {};
+  it("sends increasing heartbeat notifications while fn runs, then stops", async () => {
+    const sent: number[] = [];
+    const ctx = { mcpReq: { _meta: { progressToken: "t" }, notify: async (n: { params?: Record<string, unknown> }) => { sent.push(n.params!.progress as number); } } };
+    await withProgress(ctx, log, async () => { await new Promise((r) => setTimeout(r, 120)); }, 20);
+    expect(sent.length).toBeGreaterThanOrEqual(2);
+    expect(sent).toEqual([...sent].sort((a, b) => a - b));
+    const after = sent.length;
+    await new Promise((r) => setTimeout(r, 60));
+    expect(sent.length).toBe(after);
+  });
+  it("sends nothing without a progressToken", async () => {
+    let calls = 0;
+    const ctx = { mcpReq: { notify: async () => { calls += 1; } } };
+    await withProgress(ctx, log, async () => { await new Promise((r) => setTimeout(r, 60)); }, 10);
+    expect(calls).toBe(0);
   });
 });

@@ -568,6 +568,7 @@ specmock/
 | **1B** `claude` 자식 프로세스를 빈 임시 cwd에서 실행, `--no-session-persistence`, `--tools ""` | 저장소 파일 접근과 세션 기록을 막고 모델이 청크 외 정보를 쓰지 못하게 함 |
 | **1B** `extracted/manifest.json`(청크 본문 해시)로 낡은 결과 건너뛰기 방지 | 문서가 바뀌었는데 이전 추출을 재사용하면 조용히 틀린 카탈로그가 된다 |
 | **1B** `--refresh` 의미 분리: ingest = 원문 캐시, analyze = 기존 `extracted/` 무시(claude-code) 또는 삭제(session) | 같은 이름이라도 지우는 대상이 다르다. 세션 모드는 Claude가 파일을 쓰므로 CLI가 지워야 한다 |
+| **2A** generate가 specmock.lock.json 없는 비어 있지 않은 디렉터리를 --force 없이 거부 | MCP에서는 에이전트가 outDir을 고르므로 기존 프로젝트를 덮어쓸 위험이 커짐(리뷰 Major). CLI도 같이 보호 |
 | **1B** `catalog-diff.json` 추가, `selection.json`에 `catalogIds` | §4.4 diff를 구현. 선택 시점의 전체 id가 있어야 "선택에 영향 있는 변경"을 알 수 있다. 내용 변경(changed)은 감지하지 않음 |
 | **1B** 일부 청크 추출 실패 시 나머지로 계속 진행하고 `analyze`는 exit 2 | 한 청크 때문에 전체를 버리면 비용이 낭비된다. 재실행 시 실패분만 재시도 |
 | **1B** 종료 코드 정리: analyze 2 = 추출 일부 실패, run 2 = contract 또는 추출 실패, verify 2 = contract | 스킬과 스크립트가 구분해 처리해야 한다. 전부 실패하면 run은 exit 1 |
