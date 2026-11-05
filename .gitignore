@@ -31,3 +31,7 @@ tmp/
 # git worktrees
 .claude/worktrees/
 .worktrees/
+
+# harness (워커 요청 상태, 체크아웃별 설정)
+.harness/
+.claude/settings.local.json
