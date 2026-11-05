@@ -193,6 +193,8 @@ export const ChunkInfoSchema = z.object({
   inputIndex: z.number().int().min(0),
   heading: z.string(),
   chars: z.number().int().min(0),
+  /** 청크 본문의 sha256. extract가 문서 변경으로 낡은 추출 결과를 가려내는 데 쓴다. */
+  contentHash: z.string().optional(),
 });
 export type ChunkInfo = z.infer<typeof ChunkInfoSchema>;
 

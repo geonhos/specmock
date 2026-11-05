@@ -1,4 +1,5 @@
-import { mkdir, readdir, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   AnalyzeRequestSchema,
@@ -15,6 +16,12 @@ import { EXTRACTION_PROMPT } from "./prompt.js";
 
 export const CHUNKS_DIR = "chunks";
 export const EXTRACTED_DIR = "extracted";
+/** extracted/ 안의 청크 해시 기록. 형태: { "000": "<sha256>" }. 청크 파일명 규칙(^\d{3,}\.json$)과 겹치지 않는다. */
+export const EXTRACT_MANIFEST = "manifest.json";
+
+export function hashText(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
 
 const pad3 = (n: number): string => String(n).padStart(3, "0");
 
@@ -74,8 +81,9 @@ export async function prepare(ws: Workspace, system: string, chunkOpts: ChunkOpt
       const file = path.posix.join(CHUNKS_DIR, chunkFileName(index));
       // 헤딩 없는 텍스트/PDF나 첫 헤딩 앞의 긴 구간은 heading이 ""다. 요청서에는 문서 제목이나 출처를 대신 적는다.
       const heading = c.heading || input.title || input.origin;
-      chunks.push({ index, file, inputIndex, heading, chars: c.text.length });
-      texts.push(c.text.endsWith("\n") ? c.text : c.text + "\n");
+      const text = c.text.endsWith("\n") ? c.text : c.text + "\n";
+      chunks.push({ index, file, inputIndex, heading, chars: c.text.length, contentHash: hashText(text) });
+      texts.push(text);
     }
   }
 
@@ -96,7 +104,38 @@ export async function prepare(ws: Workspace, system: string, chunkOpts: ChunkOpt
   return request;
 }
 
-/** 현재 request의 청크 수보다 큰 번호의 extracted 파일은 이전 prepare의 잔재다. 지운다. */
+export type ExtractManifest = Record<string, string>;
+
+/** 없거나 깨졌으면 빈 매니페스트로 본다(그 경우 파일은 손으로 쓴 것으로 취급돼 유지된다). */
+export async function readManifest(ws: Workspace, system: string): Promise<ExtractManifest> {
+  try {
+    const raw: unknown = JSON.parse(await readFile(ws.file(system, path.posix.join(EXTRACTED_DIR, EXTRACT_MANIFEST)), "utf8"));
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    const out: ExtractManifest = {};
+    for (const [k, v] of Object.entries(raw)) if (typeof v === "string") out[k] = v;
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export async function writeManifest(ws: Workspace, system: string, manifest: ExtractManifest): Promise<void> {
+  await writeFileAtomic(ws.file(system, path.posix.join(EXTRACTED_DIR, EXTRACT_MANIFEST)), JSON.stringify(manifest, null, 2) + "\n");
+}
+
+/** 같은 디렉터리의 .tmp에 쓰고 rename한다. 중간에 죽어도 반쯤 쓴 파일은 남지 않는다. */
+export async function writeFileAtomic(file: string, content: string): Promise<void> {
+  const tmp = `${file}.tmp`;
+  try {
+    await writeFile(tmp, content, "utf8");
+    await rename(tmp, file);
+  } catch (e) {
+    await rm(tmp, { force: true });
+    throw e;
+  }
+}
+
+/** 현재 request의 청크 수보다 큰 번호의 extracted 파일과 매니페스트 항목은 이전 prepare의 잔재다. 지운다. */
 export async function pruneExtracted(ws: Workspace, system: string, chunkCount: number): Promise<string[]> {
   const dir = ws.file(system, EXTRACTED_DIR);
   let names: string[];
@@ -112,6 +151,11 @@ export async function pruneExtracted(ws: Workspace, system: string, chunkCount: 
       await rm(path.join(dir, n), { force: true });
       removed.push(n);
     }
+  }
+  if (names.includes(EXTRACT_MANIFEST)) {
+    const manifest = await readManifest(ws, system);
+    const kept = Object.fromEntries(Object.entries(manifest).filter(([k]) => Number(k) < chunkCount));
+    if (Object.keys(kept).length !== Object.keys(manifest).length) await writeManifest(ws, system, kept);
   }
   return removed;
 }

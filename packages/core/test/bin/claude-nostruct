@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# structured_output도 JSON인 result도 없는 경우.
+cat > /dev/null
+printf '{"type":"result","is_error":false,"result":"just prose"}\n'

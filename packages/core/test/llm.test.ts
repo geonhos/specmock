@@ -21,7 +21,7 @@ describe("ClaudeCodeAdapter", () => {
     const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude"), model: "sonnet", env: { ARGS_LOG: argsLog } });
     const out = await adapter.extract({ prompt: "find `GET /pets/{petId}` returns one pet.", schema });
     expect(out).toMatchObject({ endpoints: [{ method: "GET", path: "/pets/{petId}" }] });
-    const args = (await readFile(argsLog, "utf8")).trim().split("\n");
+    const args = (await readFile(argsLog, "utf8")).split("\n");   // trim 금지: 마지막 인자가 빈 문자열일 수 있다
     expect(args).toContain("--print");
     expect(args).toContain("--output-format"); expect(args[args.indexOf("--output-format") + 1]).toBe("json");
     expect(args).toContain("--json-schema"); expect(JSON.parse(args[args.indexOf("--json-schema") + 1])).toEqual(schema);
@@ -37,6 +37,41 @@ describe("ClaudeCodeAdapter", () => {
   it("fails fast when the command does not exist", async () => {
     const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "nope") });
     await expect(adapter.extract({ prompt: "x", schema })).rejects.toThrow(/claude CLI를 실행할 수 없습니다/);
+  });
+
+  it("keeps multi-byte characters intact when output is split mid-character", async () => {
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-split") });
+    const out = (await adapter.extract({ prompt: "x", schema })) as { note: string };
+    expect(out.note).toBe("한글 한글");
+  });
+
+  it("disables session persistence and puts --tools right before extraArgs", async () => {
+    const argsLog = path.join(dir, "args.txt");
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude"), extraArgs: ["--verbose"], env: { ARGS_LOG: argsLog } });
+    await adapter.extract({ prompt: "x", schema });
+    const args = (await readFile(argsLog, "utf8")).split("\n");
+    expect(args).toContain("--no-session-persistence");
+    expect(args.slice(args.indexOf("--tools"), args.indexOf("--tools") + 3)).toEqual(["--tools", "", "--verbose"]);
+  });
+
+  it("reports is_error envelopes even with exit code 0", async () => {
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-iserror") });
+    await expect(adapter.extract({ prompt: "x", schema })).rejects.toThrow("claude 오류: Reached max turns");
+  });
+
+  it("falls back to a JSON result string when structured_output is missing", async () => {
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-legacy") });
+    await expect(adapter.extract({ prompt: "x", schema })).resolves.toEqual({ endpoints: [] });
+  });
+
+  it("explains a missing structured_output", async () => {
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-nostruct") });
+    await expect(adapter.extract({ prompt: "x", schema })).rejects.toThrow(/structured_output이 없습니다/);
+  });
+
+  it("rejects non-JSON stdout", async () => {
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-garbage") });
+    await expect(adapter.extract({ prompt: "x", schema })).rejects.toThrow(/JSON으로 읽을 수 없습니다: this is not json/);
   });
 
   it("times out", async () => {
