@@ -21,6 +21,8 @@ export interface Session {
   stderr: () => string;
   /** 도구를 호출하고 isError가 아님을 확인한 뒤 structuredContent를 돌려준다. */
   ok: (name: string, args?: Json) => Promise<Json>;
+  /** 도구를 호출하고 isError가 아님을 확인한 뒤 응답 텍스트를 돌려준다. */
+  text: (name: string, args?: Json) => Promise<string>;
   /** 도구를 호출하고 isError임을 확인한 뒤 텍스트를 돌려준다. */
   err: (name: string, args?: Json) => Promise<string>;
   close: () => Promise<void>;
@@ -41,6 +43,11 @@ export async function connect(cwd: string, args: string[] = []): Promise<Session
       const r = (await client.callTool({ name, arguments: a })) as Json;
       expect(r.isError, `${name} 오류: ${text(r)}`).toBeFalsy();
       return r.structuredContent as Json;
+    },
+    text: async (name, a = {}) => {
+      const r = (await client.callTool({ name, arguments: a })) as Json;
+      expect(r.isError, `${name} 오류: ${text(r)}`).toBeFalsy();
+      return text(r);
     },
     err: async (name, a = {}) => {
       const r = (await client.callTool({ name, arguments: a })) as Json;

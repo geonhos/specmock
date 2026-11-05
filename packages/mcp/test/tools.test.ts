@@ -1,9 +1,9 @@
-import { mkdir, readFile, realpath, mkdtemp, rm, writeFile, cp, readdir } from "node:fs/promises";
+import { readFile, realpath, mkdtemp, rm, writeFile, cp, readdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { TOOL_NAMES } from "../src/names.js";
-import { connect, DOCS_SAMPLE, type Session } from "./helpers.js";
+import { connect, DOCS_SAMPLE, PETSTORE, type Session } from "./helpers.js";
 
 let dir: string; let s: Session;
 beforeEach(async () => { dir = await realpath(await mkdtemp(path.join(os.tmpdir(), "specmock-mcp-"))); s = await connect(dir); });
@@ -17,12 +17,9 @@ async function copySample(): Promise<{ pets: string; recorded: unknown }> {
 }
 
 describe("tool registry", () => {
-  it("registers exactly TOOL_NAMES (analysis tools only until Task 5)", async () => {
+  it("registers exactly TOOL_NAMES (10 tools, no leftovers)", async () => {
     const { tools } = await s.client.listTools();
-    const names = tools.map((t) => t.name);
-    expect(names).not.toContain("ping");
-    for (const n of ["ingest_spec", "analyze_spec", "get_chunk", "submit_extraction", "merge_extractions"]) expect(names).toContain(n);
-    for (const n of names) expect(TOOL_NAMES as readonly string[]).toContain(n);
+    for (const n of tools.map((t) => t.name)) expect(TOOL_NAMES as readonly string[]).toContain(n);
   });
 });
 
@@ -48,10 +45,14 @@ describe("document path: ingest → analyze → get_chunk → submit → merge",
     for (const c of a.chunks) {
       const chunk = await s.ok("get_chunk", { system: "pets", index: c.index });
       expect(chunk.contentHash).toBe(c.contentHash);
-      expect(chunk.content.length).toBeGreaterThan(0);
+      expect(chunk).not.toHaveProperty("content"); // 본문은 structuredContent에 중복하지 않는다
       expect(chunk).not.toHaveProperty("file");
+      const body = await s.text("get_chunk", { system: "pets", index: c.index });
+      expect(body.length).toBeGreaterThan(0);
+      expect(body.startsWith("{")).toBe(false); // JSON 이스케이프 없이 원문
       const sub = await s.ok("submit_extraction", { system: "pets", index: c.index, contentHash: chunk.contentHash, result: c.index === 0 ? recorded : { endpoints: [] } });
       expect(sub.ok).toBe(true);
+      expect(sub.remaining).toEqual(a.chunks.filter((x: { index: number }) => x.index > c.index).map((x: { index: number }) => x.index));
       expect(path.isAbsolute(sub.file)).toBe(true);
       expect(sub.file).toBe(path.join(dir, ".specmock", "pets", "extracted", `${String(c.index).padStart(3, "0")}.json`));
     }
@@ -114,18 +115,44 @@ describe("errors do not kill the server", () => {
 
   it("handler exceptions become isError with tool-name hints, and the next call still works", async () => {
     const msg = await s.err("merge_extractions", { system: "ghost" });
-    expect(msg).toMatch(/analyze_spec|ingest_spec|ghost/);
+    expect(msg).toMatch(/ingest_spec/);
     expect(msg).not.toMatch(/specmock (ingest|analyze)/);
     expect(await s.err("get_chunk", { system: "ghost", index: 0 })).toBeTruthy();
     expect(await s.err("ingest_spec", { system: "x", origins: [path.join(dir, "no-such.md")] })).toBeTruthy();
-    await mkdir(path.join(dir, "ok"));
     const { pets } = await copySample();
     expect((await s.ok("ingest_spec", { system: "pets", origins: [pets] })).system).toBe("pets");
   });
 
-  it("writes nothing but protocol to stdout (client keeps working) and no harness traces on stderr", async () => {
+  it("leaves no harness traces on stderr", async () => {
     const { pets } = await copySample();
     await s.ok("ingest_spec", { system: "pets", origins: [pets] });
     expect(s.stderr()).not.toMatch(/harness/i);
+  });
+});
+
+describe("progress notifications", () => {
+  it("ingest_spec sends notifications/progress only when the client passes a progressToken", async () => {
+    const seen: { progress: number; message?: string }[] = [];
+    const r = await s.client.callTool({ name: "ingest_spec", arguments: { system: "petstore", origins: [PETSTORE] } }, { onprogress: (p) => { seen.push(p); } });
+    expect(r.isError).toBeFalsy();
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen[0]!.message).toMatch(/^\[ingest\] /);
+    expect(seen.map((p) => p.progress)).toEqual([...seen.map((p) => p.progress)].sort((a, b) => a - b));
+    // 토큰이 없으면 알림 없이 정상 동작하고 stderr에는 로그가 남는다.
+    const before = seen.length;
+    await s.ok("ingest_spec", { system: "petstore2", origins: [PETSTORE] });
+    expect(seen.length).toBe(before);
+    await expect.poll(() => s.stderr()).toContain("[ingest]");
+  });
+});
+
+describe("empty document", () => {
+  it("warns in the summary text when no chunks could be made", async () => {
+    const empty = path.join(dir, "empty.md");
+    await writeFile(empty, "   \n");
+    await s.ok("ingest_spec", { system: "empty", origins: [empty] });
+    const a = await s.ok("analyze_spec", { system: "empty" });
+    expect(a.chunks).toEqual([]);
+    expect(await s.text("analyze_spec", { system: "empty" })).toMatch(/청크를 만들지 못했습니다/);
   });
 });

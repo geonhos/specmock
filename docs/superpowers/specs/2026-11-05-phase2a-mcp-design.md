@@ -105,8 +105,8 @@ submitExtraction(ws, system, { index, contentHash, result }):
 |---|---|---|
 | `ingest_spec` | `origins[]`, `refresh?`, `harvest?: auto\|always\|never` | 입력별 종류·크기·캐시 여부, 수확 후보 이유, 수확 여부 |
 | `analyze_spec` | `refresh?` | OpenAPI: `{ mode: "catalog", features, diff }`. 문서: `{ mode: "needs-extraction", prompt, schema, chunks: [{ index, heading, chars, contentHash, done }] }` (본문 없음). `refresh`는 기존 추출 결과 삭제 |
-| `get_chunk` | `index` | `{ index, heading, contentHash, content }` |
-| `submit_extraction` | `index`, `contentHash`, `result` | `{ ok: true }` 또는 `{ ok: false, reason, errors }` |
+| `get_chunk` | `index` | 응답 텍스트 = 청크 원문(이스케이프 없음). structuredContent = `{ index, heading, contentHash }` |
+| `submit_extraction` | `index`, `contentHash`, `result` | `{ ok: true, file, remaining: number[] }`(아직 done이 아닌 청크 번호) 또는 `{ ok: false, reason, errors }` |
 | `merge_extractions` | — | `{ features, rejected, missingChunks, invalidChunks, diff }` |
 | `list_features` | `group?` | 설계 4.1의 표(Markdown) + `[{ index, id, group, method, path, provenance, confidence, hasExample, warnings }]` |
 | `show_feature` | `id` | Feature 전체(스키마, 샘플, 근거 인용, notes) |
