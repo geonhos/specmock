@@ -227,4 +227,13 @@ describe("Phase 1B CLI", () => {
     expect(stderr).toContain("기존 추출 결과 1개를 지웠습니다");
     expect(await readdir(ex)).toEqual([]);
   });
+
+  it("select --interactive refuses without a TTY, with expressions, and --group without --interactive", async () => {
+    await specmock("ingest", "petstore", PETSTORE);
+    await specmock("analyze", "petstore");
+    await expect(specmock("select", "petstore", "--interactive")).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining("터미널에서만") });
+    await expect(specmock("select", "petstore", "--interactive", "--add")).rejects.toMatchObject({ code: 1 });
+    await expect(specmock("select", "petstore", "all", "--group", "pets")).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining("--interactive와 함께만") });
+    await expect(specmock("select", "petstore")).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining("--interactive를 쓰세요") });
+  });
 });
