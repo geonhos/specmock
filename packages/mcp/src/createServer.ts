@@ -1,12 +1,13 @@
+import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/server";
-import { VERSION } from "@specmock/core";
+import { VERSION, Workspace, type ServiceEvent } from "@specmock/core";
+import { registerAnalysisTools } from "./tools/analysis.js";
 
-export function createServer(_root: string): McpServer {
+export function createServer(root: string): McpServer {
+  const ws = new Workspace(path.join(root, ".specmock"));
+  // 진행 이벤트는 stderr로만. stdout은 프로토콜 전용이다.
+  const onEvent = (e: ServiceEvent) => { process.stderr.write(`[${e.stage}] ${e.message}\n`); };
   const server = new McpServer({ name: "specmock", version: VERSION });
-  server.registerTool(
-    "ping",
-    { title: "ping", description: "서버가 살아 있는지 확인한다 (임시 도구, Task 4에서 제거)" },
-    async () => ({ content: [{ type: "text" as const, text: "pong" }] }),
-  );
+  registerAnalysisTools(server, ws, onEvent);
   return server;
 }
