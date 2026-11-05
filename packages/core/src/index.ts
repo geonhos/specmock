@@ -23,3 +23,5 @@ export type { GenerateReport } from "./generate/tsHono.js";
 export { verify, loadContracts, type VerifyOptions, type VerifyResult, type ContractResult } from "./verify/index.js";
 export { startMock, ensureInstalled, type RunningMock, type StartMockOptions } from "./verify/server.js";
 export { renderCoverage } from "./verify/coverage.js";
+export { extract, type ExtractOptions, type ExtractProgress, type ExtractResult } from "./analyze/extract.js";
+export { createAdapter, ADAPTER_NAMES, ClaudeCodeAdapter, SessionAdapter, type AdapterName, type LlmAdapter, type ExtractRequest, type ClaudeCodeOptions } from "./llm/index.js";
