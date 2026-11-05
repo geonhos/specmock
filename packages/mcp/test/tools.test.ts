@@ -1,9 +1,9 @@
-import { readFile, realpath, mkdtemp, rm, writeFile, cp, readdir } from "node:fs/promises";
+import { readFile, realpath, mkdtemp, rm, writeFile, cp, readdir, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { TOOL_NAMES } from "../src/names.js";
-import { connect, DOCS_SAMPLE, PETSTORE, type Session } from "./helpers.js";
+import { connect, DOCS_SAMPLE, PETSTORE, ROOT_NODE_MODULES, type Session } from "./helpers.js";
 
 let dir: string; let s: Session;
 beforeEach(async () => { dir = await realpath(await mkdtemp(path.join(os.tmpdir(), "specmock-mcp-"))); s = await connect(dir); });
@@ -19,7 +19,8 @@ async function copySample(): Promise<{ pets: string; recorded: unknown }> {
 describe("tool registry", () => {
   it("registers exactly TOOL_NAMES (10 tools, no leftovers)", async () => {
     const { tools } = await s.client.listTools();
-    for (const n of tools.map((t) => t.name)) expect(TOOL_NAMES as readonly string[]).toContain(n);
+    expect(tools.map((t) => t.name).sort()).toEqual([...TOOL_NAMES].sort());
+    expect(TOOL_NAMES).toHaveLength(10);
   });
 });
 
@@ -127,6 +128,101 @@ describe("errors do not kill the server", () => {
     const { pets } = await copySample();
     await s.ok("ingest_spec", { system: "pets", origins: [pets] });
     expect(s.stderr()).not.toMatch(/harness/i);
+  });
+});
+
+async function linkNodeModules(outDir: string) {
+  await symlink(ROOT_NODE_MODULES, path.join(outDir, "node_modules"), "dir");
+}
+
+describe("OpenAPI path: ingest → analyze → list → show → select → generate → verify", () => {
+  it("passes every contract", async () => {
+    await s.ok("ingest_spec", { system: "petstore", origins: [PETSTORE] });
+    const a = await s.ok("analyze_spec", { system: "petstore" });
+    expect(a).toMatchObject({ mode: "catalog", features: 5 });
+
+    const l = await s.ok("list_features", { system: "petstore" });
+    expect(l.rows).toHaveLength(5);
+    expect(l.table).toContain("petstore — 5개 기능");
+    const f = await s.ok("show_feature", { system: "petstore", id: "getPet" });
+    expect(f.feature).toMatchObject({ id: "getPet", method: "GET", path: "/pets/{petId}" });
+
+    const sel = await s.ok("select_features", { system: "petstore", exprs: ["all"] });
+    expect(sel.resolved).toHaveLength(5);
+    const g = await s.ok("generate_mock", { system: "petstore" });
+    expect(g.outDir).toBe(path.join(dir, "mock", "petstore")); // 서버 루트 기준 기본 경로
+    await linkNodeModules(g.outDir);
+
+    const v = await s.ok("verify_mock", { system: "petstore" });
+    expect(v.failed, JSON.stringify(v.failures, null, 2)).toBe(0);
+    expect(v.total).toBeGreaterThanOrEqual(6);
+    expect(v.coverageFile).toBe(path.join(dir, ".specmock", "petstore", "coverage.md"));
+    expect(v.coverageSummary).toContain("# petstore coverage");
+  });
+
+  it("select mode add/remove adjusts the previous selection", async () => {
+    await s.ok("ingest_spec", { system: "petstore", origins: [PETSTORE] });
+    await s.ok("analyze_spec", { system: "petstore" });
+    await s.ok("select_features", { system: "petstore", exprs: ["getPet"] });
+    expect((await s.ok("select_features", { system: "petstore", exprs: ["createPet"], mode: "add" })).resolved.sort()).toEqual(["createPet", "getPet"]);
+    expect((await s.ok("select_features", { system: "petstore", exprs: ["getPet"], mode: "remove" })).resolved).toEqual(["createPet"]);
+  });
+});
+
+describe("document path through verify", () => {
+  it("submitted extraction → merge → select → generate → verify passes", async () => {
+    const { pets: PETS_API, recorded: rec0 } = await copySample();
+    await s.ok("ingest_spec", { system: "pets", origins: [PETS_API] });
+    const a = await s.ok("analyze_spec", { system: "pets" });
+    const rec = rec0;
+    for (const c of a.chunks) {
+      await s.ok("submit_extraction", { system: "pets", index: c.index, contentHash: c.contentHash, result: c.index === 0 ? rec : { endpoints: [] } });
+    }
+    expect((await s.ok("merge_extractions", { system: "pets" })).features).toBe(4);
+    const l = await s.ok("list_features", { system: "pets" });
+    expect(l.rows.map((r: { id: string }) => r.id).sort()).toEqual(["pets.create", "pets.delete", "pets.get", "pets.list"]);
+    await s.ok("select_features", { system: "pets", exprs: ["all"] });
+    const g = await s.ok("generate_mock", { system: "pets" });
+    await linkNodeModules(g.outDir);
+    const v = await s.ok("verify_mock", { system: "pets" });
+    expect(v.failed, JSON.stringify(v.failures, null, 2)).toBe(0);
+  });
+});
+
+describe("errors", () => {
+  it("unknown system → isError with a tool hint, and the server keeps answering", async () => {
+    const t = await s.err("list_features", { system: "nosuch" });
+    expect(t).toContain("analyze_spec");
+    expect(t).not.toContain("specmock analyze");
+    expect((await s.client.listTools()).tools.length).toBe(10);
+  });
+
+  it("invalid system name and missing required args are tool errors", async () => {
+    expect(await s.err("list_features", { system: "../x" })).toMatch(/시스템 이름이 올바르지 않습니다/);
+    await s.err("list_features", {});
+    expect((await s.client.listTools()).tools.length).toBe(10);
+  });
+
+  it("bad selection expression and unknown feature id → isError", async () => {
+    await s.ok("ingest_spec", { system: "petstore", origins: [PETSTORE] });
+    await s.ok("analyze_spec", { system: "petstore" });
+    expect(await s.err("select_features", { system: "petstore", exprs: ["nosuch"] })).toMatch(/알 수 없는 기능 id: nosuch/);
+    expect(await s.err("show_feature", { system: "petstore", id: "nosuch" })).toMatch(/알 수 없는 기능 id: nosuch/);
+    expect(await s.err("verify_mock", { system: "petstore" })).toContain("generate_mock");
+  });
+
+  it("hash mismatch, unknown chunk and broken submission are ok=false, not errors", async () => {
+    const { pets: PETS_API, recorded: rec0 } = await copySample();
+    await s.ok("ingest_spec", { system: "pets", origins: [PETS_API] });
+    const a = await s.ok("analyze_spec", { system: "pets" });
+    const c = a.chunks[0];
+    expect(await s.ok("submit_extraction", { system: "pets", index: c.index, contentHash: "0".repeat(64), result: { endpoints: [] } })).toMatchObject({ ok: false, reason: "stale-chunk" });
+    expect(await s.ok("submit_extraction", { system: "pets", index: 999, contentHash: c.contentHash, result: { endpoints: [] } })).toMatchObject({ ok: false, reason: "unknown-chunk" });
+    const bad = await s.ok("submit_extraction", { system: "pets", index: c.index, contentHash: c.contentHash, result: { endpoints: [{ method: "FETCH" }] } });
+    expect(bad).toMatchObject({ ok: false, reason: "invalid" });
+    expect(bad.errors.some((e: { path: string }) => e.path.startsWith("endpoints.0"))).toBe(true);
+    // 깨진 제출 뒤에도 서버가 응답하고, 고친 제출은 받아들인다.
+    expect((await s.ok("submit_extraction", { system: "pets", index: c.index, contentHash: c.contentHash, result: { endpoints: [] } })).ok).toBe(true);
   });
 });
 

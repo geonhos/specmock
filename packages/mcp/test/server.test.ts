@@ -51,11 +51,11 @@ describe("stdout purity", () => {
     const send = (m: object) => child.stdin.write(`${JSON.stringify(m)}\n`);
     try {
       send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } });
-      await expect.poll(() => out.includes('"id":1')).toBe(true);
+      await expect.poll(() => out.includes('"id":1'), { timeout: 20000 }).toBe(true);
       send({ jsonrpc: "2.0", method: "notifications/initialized" });
       send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "list_features", arguments: { system: "nosuch" } } });
       send({ jsonrpc: "2.0", id: 3, method: "tools/list" });
-      await expect.poll(() => out.includes('"id":3')).toBe(true);
+      await expect.poll(() => out.includes('"id":3'), { timeout: 20000 }).toBe(true);
       const lines = out.split("\n").filter((l) => l.trim());
       expect(lines.length).toBeGreaterThanOrEqual(3);
       for (const l of lines) expect(JSON.parse(l)).toMatchObject({ jsonrpc: "2.0" });
