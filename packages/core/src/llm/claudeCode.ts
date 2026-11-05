@@ -21,7 +21,7 @@ interface ResultEnvelope { is_error?: boolean; subtype?: string; result?: unknow
  * `--no-session-persistence`로 청크마다 ~/.claude/projects 아래 대화 기록이 쌓이지 않게 한다.
  *
  * `extraArgs`는 옵션(`--flag`)만 넣는다. `--tools`는 가변 인자라 그 뒤에 위치 인자를 두면 삼켜진다.
- * 자식은 빈 임시 디렉터리에서 실행한다. 호출자 cwd의 .claude/settings.json(agent·hook 등)과 CLAUDE.md를 상속하지 않게 하기 위해서다.
+ * 자식은 빈 임시 디렉터리에서 실행한다. 사용자·프로젝트의 Claude Code 설정(.claude/settings*.json, agent 지정 등)과 CLAUDE.md를 자식 프로세스가 상속하지 않게 하기 위해서다.
  * 부모 환경에 ANTHROPIC_API_KEY가 있으면 claude가 구독 대신 API 키로 과금한다(일부러 제거하지 않는다).
  */
 export class ClaudeCodeAdapter implements LlmAdapter {

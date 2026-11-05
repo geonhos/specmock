@@ -32,6 +32,5 @@ tmp/
 .claude/worktrees/
 .worktrees/
 
-# harness (워커 요청 상태, 체크아웃별 설정)
-.harness/
+# Claude Code 로컬 설정
 .claude/settings.local.json
