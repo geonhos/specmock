@@ -44,4 +44,11 @@ describe("plugin MCP wiring", () => {
     expect(skill).toContain("outDir");        // 사용자가 지정하지 않으면 주지 않는다
     expect(skill).toContain("remaining");     // submit_extraction 진행 추적
   });
+
+  it("skill explains missing-tool recovery and unknown-chunk handling", async () => {
+    const skill = await readFile(path.join(SKILL_DIR, "SKILL.md"), "utf8");
+    expect(skill).toContain("pnpm build");    // 도구 미노출 시 빌드 안내
+    expect(skill).toContain("/mcp");          // 연결 확인
+    expect(skill).toContain("unknown-chunk"); // 잘못된 청크 번호 처리
+  });
 });

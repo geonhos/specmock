@@ -25,7 +25,7 @@ CLI 안에 흩어진 흐름 조립 코드를 core의 **서비스 층**으로 모
 
 이 문서와 이후 모든 단계의 전제다.
 
-- 사용자에게 있는 것: **Claude Code, Node 26, pnpm**. ego-browser는 선택(없으면 수확만 건너뜀).
+- 사용자에게 있는 것: **Claude Code, Node 22.19 이상, pnpm**. ego-browser는 선택(없으면 수확만 건너뜀).
 - 사용자에게 없는 것: 작성자의 개발 도구(harness 등). 제품 코드·플러그인·스킬 문서·README·커밋되는 설정은 이것 없이 동작하고 읽혀야 한다.
 - 설치: `git clone` → `pnpm install && pnpm build` → `claude --plugin-dir ./plugin`. 이것으로 스킬과 MCP 도구가 함께 켜진다.
 

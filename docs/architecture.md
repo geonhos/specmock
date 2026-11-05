@@ -105,7 +105,7 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant CLI as specmock analyze
-    participant WS as .specmock/&lt;system&gt;/
+    participant WS as .specmock/SYSTEM/
     participant AD as 어댑터
     Note over CLI,WS: 1. prepare (결정적)
     CLI->>WS: source.json 읽기

@@ -134,7 +134,7 @@ Claude: (select_features → generate_mock → verify_mock) mock을 만들고 co
 제한 사항:
 
 - 플러그인은 저장소를 clone한 곳에서 `--plugin-dir`로만 동작합니다. 마켓플레이스 설치는 `packages/`를 가져가지 않아 지원하지 않습니다(후속 과제).
-- `ingest_spec`의 웹 수확과 `verify_mock`의 첫 실행(mock의 `npm install`)은 오래 걸릴 수 있습니다. 서버는 진행 알림을 보내지만, Claude Code의 도구 호출 제한 시간은 알림으로 늘어나지 않습니다. 호출이 중간에 끊기면 Claude Code를 시작할 때 환경변수 `MCP_TOOL_TIMEOUT`(밀리초)을 늘려 주세요. 예: `MCP_TOOL_TIMEOUT=600000 claude --plugin-dir ./plugin`.
+- `ingest_spec`의 웹 수확과 `verify_mock`의 첫 실행(mock의 `npm install`)은 오래 걸릴 수 있습니다. 수확이나 첫 verify(`npm install`)는 몇 분 걸릴 수 있습니다. 서버는 그동안 진행 알림을 보내고, Claude Code(2.1.318 기준)는 진행 알림이 오는 동안 유휴 제한(기본 30분)을 연장합니다. 보통 따로 설정할 필요가 없습니다. 값은 Claude Code 버전에 따라 다를 수 있습니다.
 - 커스텀 드롭다운 같은 수동 수확은 여전히 스킬의 파일 절차([수동 수확](plugin/skills/specmock/references/manual-harvest.md))로 합니다. 도구가 아닙니다.
 
 ### Web UI (Phase 2B, 예정)
