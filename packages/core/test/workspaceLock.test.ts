@@ -1,10 +1,10 @@
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { LockBusyError, Workspace, analyzeSpec, ingestSpec, listFeatures, prepare, submitExtraction, withSystemLock } from "../src/index.js";
+import { LockBusyError, Workspace, analyzeSpec, clearExtracted, ingestSpec, listFeatures, prepare, pruneExtracted, select, submitExtraction, withSystemLock } from "../src/index.js";
 import { PETSTORE } from "./helpers.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -28,6 +28,7 @@ afterEach(async () => { await rm(root, { recursive: true, force: true }); });
 describe("withSystemLock", () => {
   it("다른 프로세스가 쥐고 있으면 timeoutMs 뒤 LockBusyError(code busy)", async () => {
     const ws = new Workspace(root);
+    await mkdir(ws.dir("pets"), { recursive: true });
     const holder = child(["hold", root, "pets", "1500"]);
     expect(await holder.firstLine).toBe("locked");
     const err = await withSystemLock(ws, "pets", async () => "ran", { timeoutMs: 200 }).catch((e) => e);
@@ -56,7 +57,7 @@ describe("withSystemLock", () => {
 
   it("심볼릭 링크로 연 작업 공간도 같은 잠금(프로세스 안에서 순서 보장)", async () => {
     const real = path.join(root, "real");
-    await mkdir(real);
+    await mkdir(path.join(real, "pets"), { recursive: true });
     const alias = path.join(root, "alias");
     await symlink(real, alias);
     const a = new Workspace(real), b = new Workspace(alias);
@@ -73,8 +74,45 @@ describe("withSystemLock", () => {
 
   it("끝나면 .lock을 지운다(예외로 끝나도)", async () => {
     const ws = new Workspace(root);
+    await mkdir(ws.dir("pets"), { recursive: true });
     await expect(withSystemLock(ws, "pets", async () => { throw new Error("boom"); })).rejects.toThrow("boom");
     await expect(readFile(path.join(ws.dir("pets"), ".lock"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
+
+describe("없는 시스템·정리 함수의 잠금", () => {
+  it("없는 시스템에는 빈 디렉터리를 만들지 않고, select는 기존 오류 문구로 실패한다", async () => {
+    const ws = new Workspace(root);
+    const err = await select(ws, "ghost", ["GET /x"]).catch((e) => e);
+    expect(err.message).toContain("catalog.json 파일이 없습니다");
+    await expect(readdir(ws.dir("ghost"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("pruneExtracted와 clearExtracted는 잠금을 기다린다", async () => {
+    const ws = new Workspace(root);
+    await mkdir(ws.file("pets", "extracted"), { recursive: true });
+    await writeFile(ws.file("pets", "extracted/005.json"), "{}");
+    await writeFile(ws.file("pets", "extracted/manifest.json"), JSON.stringify({ "005": "h" }));
+    let release!: () => void;
+    const held = withSystemLock(ws, "pets", () => new Promise<void>((r) => { release = r; }));
+    await new Promise((r) => setTimeout(r, 20));
+    let pruned = false, cleared = false;
+    const p1 = pruneExtracted(ws, "pets", 1).then(() => { pruned = true; });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(pruned).toBe(false);
+    release();
+    await Promise.all([held, p1]);
+    expect(pruned).toBe(true);
+    await writeFile(ws.file("pets", "extracted/001.json"), "{}");
+    let release2!: () => void;
+    const held2 = withSystemLock(ws, "pets", () => new Promise<void>((r) => { release2 = r; }));
+    await new Promise((r) => setTimeout(r, 20));
+    const p2 = clearExtracted(ws, "pets").then(() => { cleared = true; });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(cleared).toBe(false);
+    release2();
+    await Promise.all([held2, p2]);
+    expect(cleared).toBe(true);
   });
 });
 

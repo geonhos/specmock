@@ -3,7 +3,8 @@ import path from "node:path";
 import { AnalyzeRequestSchema } from "../types.js";
 import type { LlmAdapter } from "../llm/adapter.js";
 import type { Workspace } from "../workspace.js";
-import { EXTRACTED_DIR, extractedFileName, hashText, pruneExtracted, readManifest } from "./prepare.js";
+import { withSystemLock } from "../workspaceLock.js";
+import { EXTRACTED_DIR, extractedFileName, hashText, pruneExtracted, readManifest, writeManifest } from "./prepare.js";
 import { buildChunkPrompt } from "./prompt.js";
 import { submitExtraction } from "./submit.js";
 
@@ -18,7 +19,8 @@ export interface ExtractResult { total: number; written: number; skipped: number
  * 지금 청크의 contentHash와 다르면 문서가 바뀐 것이므로 다시 추출한다. 매니페스트에 항목이 없는 파일(세션 모드나
  * 손으로 쓴 것)은 그대로 둔다. `refresh`는 매니페스트를 무시하고 전부 다시 추출한다.
  *
- * 청크는 순차로 처리한다. 쓰기 경로(submitExtraction)는 고유 tmp 이름과 manifest 잠금으로 동시 제출에도 안전하다.
+ * 청크는 순차로 처리한다. 쓰기 경로(submitExtraction)는 고유 tmp 이름과 시스템 단위 파일 잠금(withSystemLock)으로 동시 제출에도 안전하다.
+ * 낡은 결과 삭제와 manifest 정리도 같은 잠금 안에서 디스크에 반영한다.
  */
 export async function extract(ws: Workspace, system: string, adapter: LlmAdapter, opts: ExtractOptions = {}): Promise<ExtractResult> {
   const request = await ws.read(system, "analyze-request.json", AnalyzeRequestSchema);
@@ -41,7 +43,14 @@ export async function extract(ws: Workspace, system: string, adapter: LlmAdapter
       if (fileExists && manifest[key] !== undefined) stale = manifest[key] !== (chunk.contentHash ?? hashText(await load()));
     } catch (e) { fail(e); continue; }
     // 낡은 결과는 재추출이 실패해도 merge에 흘러들지 않도록 먼저 지운다(merge는 "미추출"로 기록한다).
-    if (stale) { await rm(ws.file(system, rel), { force: true }); delete manifest[key]; }
+    if (stale) {
+      await withSystemLock(ws, system, async () => {
+        await rm(ws.file(system, rel), { force: true });
+        const disk = await readManifest(ws, system);   // 다른 프로세스가 쓴 항목을 덮어쓰지 않도록 잠금 안에서 다시 읽는다
+        if (key in disk) { delete disk[key]; await writeManifest(ws, system, disk); }
+      });
+      delete manifest[key];
+    }
     if (!opts.refresh && fileExists && !stale) { result.skipped += 1; report("skipped"); continue; }
     try {
       const body = await load();

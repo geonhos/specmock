@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { link, mkdir, open, readFile, realpath, rename, rm, stat } from "node:fs/promises";
+import { link, open, readFile, realpath, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import type { Workspace } from "./workspace.js";
 
@@ -32,9 +32,12 @@ const chains = new Map<string, Promise<unknown>>();
  * 같은 시스템에 대해 중첩 호출하면 교착되므로 fn 안에서 다시 부르지 않는다.
  */
 export async function withSystemLock<T>(ws: Workspace, system: string, fn: () => Promise<T>, opts: SystemLockOptions = {}): Promise<T> {
-  const dir = ws.dir(system);
-  await mkdir(dir, { recursive: true });
-  const key = await realpath(dir);
+  // 없는 시스템의 빈 디렉터리를 만들지 않는다. 잠글 대상이 없으므로 fn이 기존 "파일 없음" 오류로 스스로 실패하게 둔다.
+  let key: string;
+  try { key = await realpath(ws.dir(system)); } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return fn();
+    throw e;
+  }
   const file = path.join(key, SYSTEM_LOCK_FILE);
   const task = () => withFileLock(file, fn, opts);
   const prev = chains.get(key) ?? Promise.resolve();
@@ -87,12 +90,16 @@ async function acquire(file: string, { timeoutMs = 15_000, staleMs = 10 * 60_000
 /**
  * 남은 잠금을 치운다. 판정과 삭제 사이에 다른 프로세스가 회수·재획득했을 수 있으므로
  * 고유 이름으로 옮긴 뒤 token을 다시 확인하고, 다르면(새 잠금을 가져온 것) link로 되돌린다.
+ * seen이 null(깨진·빈 잠금)이어도 옮긴 파일이 유효한 잠금이면 새 잠금이므로 되돌린다.
+ * 한계: rename과 link 사이에 제3자가 wx로 잠금을 만들면 link가 EEXIST로 실패해 되돌리지 못한다.
+ * 파일 시스템만으로는 이 창을 닫을 수 없다(원자적 "비교 후 교체"가 없다). 확률은 낮고, 되돌릴 대상은 방금 만든
+ * 짧은 잠금이라 staleMs 안에 자연히 풀린다.
  */
 async function reclaim(file: string, seen: LockBody | null): Promise<void> {
   const aside = `${file}.${process.pid}.${randomUUID()}.stale`;
   try { await rename(file, aside); } catch { return; }
   const got = await readBody(aside);
-  if (seen && got && got.token !== seen.token) await link(aside, file).catch(() => {});
+  if (got && got.token !== seen?.token) await link(aside, file).catch(() => {});
   await rm(aside, { force: true });
 }
 

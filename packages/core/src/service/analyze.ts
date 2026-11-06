@@ -8,6 +8,7 @@ import { createAdapter } from "../llm/index.js";
 import type { LlmAdapter } from "../llm/adapter.js";
 import type { AnalyzeRequest, CatalogDiff } from "../types.js";
 import type { Workspace } from "../workspace.js";
+import { withSystemLock } from "../workspaceLock.js";
 import type { OnEvent } from "./events.js";
 
 export const NO_CHUNKS_WARNING = "경고: 추출할 청크가 없습니다 (문서 내용이 비어 있음)";
@@ -33,6 +34,10 @@ export type AnalyzeSpecResult =
 
 /** extracted/ 의 NNN.json 과 manifest.json 을 모두 지우고 지운 NNN.json 개수를 돌려준다. */
 export async function clearExtracted(ws: Workspace, system: string): Promise<number> {
+  return withSystemLock(ws, system, () => clearExtractedUnlocked(ws, system));
+}
+
+async function clearExtractedUnlocked(ws: Workspace, system: string): Promise<number> {
   const dir = ws.file(system, EXTRACTED_DIR);
   let names: string[];
   try { names = await readdir(dir); } catch { return 0; }
