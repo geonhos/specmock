@@ -12,6 +12,7 @@
   "dependencies": {
     "@inquirer/checkbox": "^5.2.8",
     "@specmock/core": "workspace:*",
+    "@specmock/ui-server": "workspace:*",
     "commander": "^15.0.0"
   }
 }

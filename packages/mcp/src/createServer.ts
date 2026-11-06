@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { VERSION, Workspace, type ServiceEvent } from "@specmock/core";
 import { registerAnalysisTools } from "./tools/analysis.js";
 import { registerMockTools } from "./tools/mock.js";
+import { registerUiTools } from "./tools/ui.js";
 
 export function createServer(root: string, opts: { heartbeatMs?: number } = {}): McpServer {
   const ws = new Workspace(path.join(root, ".specmock"));
@@ -11,5 +12,6 @@ export function createServer(root: string, opts: { heartbeatMs?: number } = {}):
   const server = new McpServer({ name: "specmock", version: VERSION });
   registerAnalysisTools(server, ws, onEvent);
   registerMockTools(server, ws, onEvent, opts);
+  registerUiTools(server, root);
   return server;
 }

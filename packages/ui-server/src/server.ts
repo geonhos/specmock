@@ -14,6 +14,8 @@ const CLOSE_WAIT_MS = 5000;
 
 export interface StartUiServerOptions {
   root: string;
+  /** 상태 디렉터리. 생략하면 <root>/.specmock. */
+  workspaceDir?: string;
   /** 0 또는 생략이면 자동. */
   port?: number;
   webDir?: string;
@@ -28,10 +30,11 @@ export async function startUiServer(opts: StartUiServerOptions): Promise<UiServe
   if (!existsSync(path.join(webDir, "index.html"))) {
     throw new Error(`화면 빌드 결과가 없어요 (${webDir}). 저장소 루트에서 \`pnpm build\`를 먼저 실행하세요.`);
   }
-  await mkdir(path.join(opts.root, ".specmock"), { recursive: true });
+  const workspaceDir = opts.workspaceDir ?? path.join(opts.root, ".specmock");
+  await mkdir(workspaceDir, { recursive: true });
   let port = 0;
-  const { app, bus, jobs } = createApp({ root: opts.root, webDir, port: () => port, claudeCommand: opts.claudeCommand, unref: opts.unref });
-  const watcher = watchWorkspace(path.join(opts.root, ".specmock"), (e) => bus.publish("workspace-changed", e), { unref: opts.unref, onError: (e) => bus.publish("watch-error", { message: e.message }) });
+  const { app, bus, jobs } = createApp({ root: opts.root, workspaceDir, webDir, port: () => port, claudeCommand: opts.claudeCommand, unref: opts.unref });
+  const watcher = watchWorkspace(workspaceDir, (e) => bus.publish("workspace-changed", e), { unref: opts.unref, onError: (e) => bus.publish("watch-error", { message: e.message }) });
   const server = await new Promise<ReturnType<typeof serve>>((resolve, reject) => {
     const s = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: opts.port ?? 0 }, (info: AddressInfo) => { port = info.port; resolve(s); });
     s.once("error", (e: NodeJS.ErrnoException) => reject(e.code === "EADDRINUSE"

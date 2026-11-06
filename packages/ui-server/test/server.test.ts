@@ -23,6 +23,16 @@ it("127.0.0.1의 자동 포트에 뜨고 close로 내려간다", async () => {
   await expect(fetch(new URL("/api/env", s.url))).rejects.toThrow();
 });
 
+it("workspaceDir이 있으면 상태를 그곳에 쓴다(없으면 <root>/.specmock)", async () => {
+  const workspaceDir = path.join(root, "state");
+  const s = await startUiServer({ root, webDir, workspaceDir });
+  try {
+    const { stat } = await import("node:fs/promises");
+    expect((await stat(workspaceDir)).isDirectory()).toBe(true);
+    await expect(stat(path.join(root, ".specmock"))).rejects.toThrow();
+  } finally { await s.close(); }
+});
+
 it("지정 포트가 사용 중이면 명확한 오류", async () => {
   const blocker = createServer().listen(0, "127.0.0.1");
   await new Promise((r) => blocker.once("listening", r));

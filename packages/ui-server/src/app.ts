@@ -35,6 +35,8 @@ async function body<T>(c: Context, schema: z.ZodType<T>): Promise<T> {
 export interface AppOptions {
   /** 프로젝트 루트. 상태는 <root>/.specmock, mock 기본 경로는 <root>/mock/<system>. */
   root: string;
+  /** 상태 디렉터리. 생략하면 <root>/.specmock. CLI의 --workspace와 같다. */
+  workspaceDir?: string;
   webDir: string;
   /** listen 뒤 실제 포트. Host 검사에 쓴다. */
   port: () => number;
@@ -47,7 +49,7 @@ export interface AppOptions {
 }
 
 export function createApp(opts: AppOptions) {
-  const ws = new Workspace(path.join(opts.root, ".specmock"));
+  const ws = new Workspace(opts.workspaceDir ?? path.join(opts.root, ".specmock"));
   const claudeCommand = opts.claudeCommand ?? "claude";
   const bus = new EventBus();
   const jobs = new JobManager(bus);
