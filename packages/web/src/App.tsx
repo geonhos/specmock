@@ -4,6 +4,8 @@ import { ApiError, api } from "./api";
 import { Notice } from "./components/Notice";
 import { nextScreen, Sidebar } from "./components/Sidebar";
 import { Analyze } from "./screens/Analyze";
+import { Generate } from "./screens/Generate";
+import { Verify } from "./screens/Verify";
 import { Register } from "./screens/Register";
 import { Select, type Change } from "./screens/Select";
 import { StepBar } from "./components/StepBar";
@@ -86,6 +88,12 @@ export function App() {
             {route.screen === "new" ? <Register go={go} onRegistered={reload} /> : null}
             {route.screen === "analyze" && route.system ? (
               <Analyze key={route.system} system={route.system} claude={env?.claude} jobs={jobs} tick={tick} go={go} refreshJobs={refreshJobs} onChanged={reload} />
+            ) : null}
+            {route.screen === "generate" && route.system ? (
+              <Generate key={route.system} system={route.system} jobs={jobs} tick={tick} go={go} refreshJobs={refreshJobs} onChanged={reload} />
+            ) : null}
+            {route.screen === "verify" && route.system ? (
+              <Verify key={route.system} system={route.system} jobs={jobs} tick={tick} go={go} refreshJobs={refreshJobs} onChanged={reload} />
             ) : null}
           </main>
         )}

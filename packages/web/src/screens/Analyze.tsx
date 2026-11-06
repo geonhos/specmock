@@ -1,12 +1,13 @@
 import type { Job, SystemOverview } from "@specmock/ui-server/api-types";
 import type { ChunkSummary } from "@specmock/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "../api";
 import { ChunkTable } from "../components/ChunkTable";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Notice } from "../components/Notice";
 import { jobKindLabel, kindLabel } from "../format";
 import { pathFor } from "../route";
+import { useJob } from "../useJob";
 
 interface ExtractResult { mode?: string; incomplete?: boolean; extract?: { failed?: { chunk: number }[] }; merge?: { missingChunks?: number[] } }
 interface Props {
@@ -24,9 +25,7 @@ export function Analyze({ system, claude, jobs, tick, go, refreshJobs, onChanged
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [, bump] = useState(0);
-  // 이 화면이 시작했거나(응답의 jobId) 실행 중인 걸 본 작업만 끝났을 때 화면을 옮긴다. 렌더 타이밍에 기대지 않는다.
-  const watched = useRef(new Set<string>());
-  const watch = useCallback((id: string) => { if (!watched.current.has(id)) { watched.current.add(id); bump((n) => n + 1); } }, []);
+  const { last, running, seen, watch } = useJob(jobs, system, "extract");
 
   const load = useCallback(async () => {
     try {
@@ -37,12 +36,7 @@ export function Analyze({ system, claude, jobs, tick, go, refreshJobs, onChanged
   }, [system]);
   useEffect(() => { void load(); }, [load, tick]);
 
-  const mine = jobs.filter((j) => j.system === system && j.kind === "extract");
-  const last = mine[mine.length - 1];
-  if (last?.state === "running") watched.current.add(last.id);
-  const running = last?.state === "running" ? last : undefined;
-
-  const doneId = last?.state === "done" && watched.current.has(last.id) ? last.id : undefined;
+  const doneId = seen?.state === "done" ? seen.id : undefined;
   const result = last?.state === "done" ? (last.result as ExtractResult | undefined) : undefined;
   useEffect(() => {
     if (!doneId) return;
@@ -91,8 +85,8 @@ export function Analyze({ system, claude, jobs, tick, go, refreshJobs, onChanged
           다른 작업({jobKindLabel(other.kind)})이 진행 중이에요{other.progress?.message ? ` · ${other.progress.message}` : ""}{other.progress?.done !== undefined && other.progress.total ? ` (${other.progress.done}/${other.progress.total})` : ""}. 끝나면 이어서 할 수 있어요.
         </p>
       ) : null}
-      {last?.state === "failed" && watched.current.has(last.id) ? <Notice message={last.error?.message ?? "추출에 실패했어요"} hint={last.error?.hint} /> : null}
-      {last?.state === "cancelled" && watched.current.has(last.id) ? <p className="muted">추출을 취소했어요. 끝낸 청크는 그대로 남아 있어요.</p> : null}
+      {seen?.state === "failed" ? <Notice message={seen.error?.message ?? "추출에 실패했어요"} hint={seen.error?.hint} /> : null}
+      {seen?.state === "cancelled" ? <p className="muted">추출을 취소했어요. 끝낸 청크는 그대로 남아 있어요.</p> : null}
 
       {overview.analyze === "catalog" && !incomplete ? (
         <>

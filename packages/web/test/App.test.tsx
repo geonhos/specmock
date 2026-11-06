@@ -14,6 +14,8 @@ const base = () => ({
   "GET /api/env": () => ({ body: { ok: true, data: { root: "/r", claude: true } } }),
   "GET /api/systems": () => ({ body: { ok: true, data: systems } }),
   "GET /api/jobs": () => ({ body: { ok: true, data: { running: [], recent: [] } } }),
+  // "/"가 ④ 생성 화면으로 가므로 그 화면이 읽는 개요도 있어야 한다.
+  "GET /api/systems/petstore": () => ({ body: { ok: true, data: { summary: systems[0], source: [], analyze: "catalog", catalogTotal: 3, selection: null, generate: null, coverage: null, defaultOutDir: "/r/mock/petstore" } } }),
 });
 
 it("사이드바에 시스템 목록과 + 스펙 등록, 상단에 단계 5개", async () => {

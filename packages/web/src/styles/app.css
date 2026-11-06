@@ -136,3 +136,16 @@ dialog h2 { margin: 0 0 8px; font-size: var(--fs-dialog-title); }
 .fd-none { margin: 0; color: var(--text-3); }
 .fd-quote { margin: 0 0 6px; padding: 6px 10px; border-left: 3px solid var(--line-strong); color: var(--text-2); font: var(--fs-num)/1.5 var(--mono); }
 .fd-note { margin: 0 0 4px; color: var(--post); }
+
+/* ④ 생성 · ⑤ 검증 */
+.result { display: flex; flex-direction: column; gap: 8px; }
+.result p, .verify .summary { margin: 0; }
+.files { margin: 0; padding: 8px 12px; list-style: none; max-height: 240px; overflow: auto; background: var(--surface-2); border-radius: var(--radius-sm); }
+.cmd, .coverage { margin: 0; padding: 10px 12px; background: var(--surface-2); border-radius: var(--radius-sm); font-family: var(--mono); font-size: var(--fs-num); white-space: pre-wrap; overflow-x: auto; }
+.stale-note { margin: 0; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--surface-2); border-left: 3px solid var(--accent); font-weight: 600; }
+.verify { max-width: 840px; }
+.results .st { width: auto; white-space: nowrap; }
+.results .num { width: 72px; }
+.results .why td { background: var(--surface-2); height: auto; padding: 4px 12px; }
+.results .why ul { margin: 4px 0; padding-left: 18px; }
+.link { color: var(--accent); font-weight: 600; text-decoration: underline; }
