@@ -50,6 +50,67 @@ describe("OpenAPI 경로", () => {
   });
 });
 
+describe("Task 4 리뷰 수정", () => {
+  it("없는 파일·디렉터리 경로 등록 → 400 invalid, 읽기 쉬운 메시지, 시스템 디렉터리 없음", async () => {
+    const c = client();
+    const missing = await c.post("/systems", { system: "x", origins: [path.join(root, "nope.yaml")] });
+    expect(missing.status).toBe(400);
+    expect(missing.body.error).toMatchObject({ code: "invalid", message: `파일을 찾을 수 없어요: ${path.join(root, "nope.yaml")}` });
+    const dir = await c.post("/systems", { system: "x", origins: [root] });
+    expect(dir.status).toBe(400);
+    expect(dir.body.error.message).toBe(`파일이 아니라 디렉터리예요: ${root}`);
+    expect((await c.get("/systems")).body.data).toEqual([]);
+  });
+  it("접속할 수 없는 URL 등록 → 400 invalid", async () => {
+    const r = await client().post("/systems", { system: "x", origins: ["http://127.0.0.1:1/spec.yaml"] });
+    expect(r.status).toBe(400);
+    expect(r.body.error.code).toBe("invalid");
+  });
+  it("없는 기능 id 상세 → 404 not-found", async () => {
+    const c = client();
+    await c.post("/systems", { system: "petstore", origins: [PETSTORE] });
+    await c.post("/systems/petstore/analyze");
+    const r = await c.get("/systems/petstore/features/nope.get");
+    expect(r.status).toBe(404);
+    expect(r.body.error.code).toBe("not-found");
+  });
+  it("선택에 모르는 id → 여전히 400 invalid", async () => {
+    const c = client();
+    await c.post("/systems", { system: "petstore", origins: [PETSTORE] });
+    await c.post("/systems/petstore/analyze");
+    expect((await c.post("/systems/petstore/selection", { ids: ["nope.get"] })).status).toBe(400);
+  });
+  it("상대 경로 origin은 root 기준 → source.json엔 절대 경로", async () => {
+    const { copyFile, readFile } = await import("node:fs/promises");
+    await copyFile(PETSTORE, path.join(root, "spec.yaml"));
+    const c = client();
+    expect((await c.post("/systems", { system: "rel", origins: ["spec.yaml"] })).status).toBe(200);
+    const src = JSON.parse(await readFile(path.join(root, ".specmock", "rel", "source.json"), "utf8"));
+    expect(src.inputs[0].origin).toBe(path.join(root, "spec.yaml"));
+    expect((await c.get("/systems/rel")).body.data.source[0].origin).toBe(path.join(root, "spec.yaml"));
+  });
+  it("빈 group 쿼리는 필터 없음", async () => {
+    const c = client();
+    await c.post("/systems", { system: "petstore", origins: [PETSTORE] });
+    await c.post("/systems/petstore/analyze");
+    const all = (await c.get("/systems/petstore/features")).body.data;
+    const empty = (await c.get("/systems/petstore/features?group=")).body.data;
+    expect(empty.rows).toEqual(all.rows);
+    expect(empty.groups).toEqual(all.groups);
+  });
+  it("작업 공간 파일 손상 → 500 failed (요청 본문 오류는 400)", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    const c = client();
+    await c.post("/systems", { system: "petstore", origins: [PETSTORE] });
+    await c.post("/systems/petstore/analyze");
+    await writeFile(path.join(root, ".specmock", "petstore", "catalog.json"), "{ not json");
+    const r = await c.get("/systems/petstore/features");
+    expect(r.status).toBe(500);
+    expect(r.body.error.code).toBe("failed");
+    expect((await c.post("/systems", { system: "x" })).status).toBe(400);
+  });
+});
+
 describe("문서 경로", () => {
   it("분석은 prepared + 청크 표(done=false)", async () => {
     const c = client();

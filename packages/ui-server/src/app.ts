@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import path from "node:path";
 import { analyzeSpec, findFeature, ingestSpec, listFeatures, select, summarizeChunks, Workspace } from "@specmock/core";
-import { errorBody, InvalidRequest, toApiError } from "./errors.js";
+import { errorBody, ingestInputError, InvalidRequest, NotFound, toApiError } from "./errors.js";
 import { localOnly, methodGuard } from "./security.js";
 import { serveWeb } from "./static.js";
 import { listSystems, readSelection, systemOverview } from "./systems.js";
@@ -41,17 +41,27 @@ export function createApp(opts: AppOptions) {
   app.post("/api/systems", async (c) => {
     const b = await body(c, IngestBody);
     // 화면 등록은 브라우저 수집(최대 300s, 대화형)을 쓰지 않는다.
-    return ok(c, await ingestSpec(ws, b.system, b.origins, { refresh: b.refresh, harvest: "never" }));
+    // 상대 경로는 서버 cwd가 아니라 프로젝트 root 기준으로 읽고, source.json에도 절대 경로로 남긴다.
+    const origins = b.origins.map((o) => (/^https?:\/\//.test(o) ? o : path.resolve(opts.root, o)));
+    try {
+      return ok(c, await ingestSpec(ws, b.system, origins, { refresh: b.refresh, harvest: "never" }));
+    } catch (e) { throw ingestInputError(e); }
   });
   app.get("/api/systems/:s", async (c) => ok(c, await systemOverview(ws, opts.root, c.req.param("s"))));
   app.post("/api/systems/:s/analyze", async (c) => ok(c, await analyzeSpec(ws, c.req.param("s"), { llm: "session" })));
   app.get("/api/systems/:s/chunks", async (c) => ok(c, await summarizeChunks(ws, c.req.param("s"))));
   app.get("/api/systems/:s/features", async (c) => {
-    const r = await listFeatures(ws, c.req.param("s"), { group: c.req.query("group") });
-    const all = c.req.query("group") === undefined ? r : await listFeatures(ws, c.req.param("s"));
+    const group = c.req.query("group") || undefined; // 빈 문자열은 필터 없음
+    const r = await listFeatures(ws, c.req.param("s"), { group });
+    const all = group === undefined ? r : await listFeatures(ws, c.req.param("s"));
     return ok(c, { total: r.total, rows: r.rows, groups: [...new Set(all.rows.map((x) => x.group))] });
   });
-  app.get("/api/systems/:s/features/:id", async (c) => ok(c, await findFeature(ws, c.req.param("s"), c.req.param("id"))));
+  app.get("/api/systems/:s/features/:id", async (c) => {
+    try { return ok(c, await findFeature(ws, c.req.param("s"), c.req.param("id"))); } catch (e) {
+      if (e instanceof Error && e.message.startsWith("알 수 없는 기능 id")) throw new NotFound(e.message);
+      throw e;
+    }
+  });
   app.get("/api/systems/:s/selection", async (c) => ok(c, await readSelection(ws, c.req.param("s"))));
   app.post("/api/systems/:s/selection", async (c) => {
     const b = await body(c, SelectionBody);
