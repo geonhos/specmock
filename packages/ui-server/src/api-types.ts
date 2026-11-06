@@ -31,9 +31,12 @@ export type JobKind = "extract" | "generate" | "verify";
 export type Job = {
   id: string; system: string; kind: JobKind;
   state: "running" | "done" | "failed" | "cancelled";
+  /** false면 화면이 취소 버튼을 보이지 않는다. */
+  cancellable: boolean;
   startedAt: string; endedAt?: string;
   progress?: { message: string; done?: number; total?: number };
   result?: unknown; error?: ApiErrorBody["error"];
 };
 export type JobList = { running: Job[]; recent: Job[] };
 export type WorkspaceChanged = { system: string | null; files: string[] };
+export type WatchError = { message: string };

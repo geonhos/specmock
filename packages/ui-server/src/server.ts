@@ -10,6 +10,8 @@ import { watchWorkspace } from "./watch.js";
 /** 모노레포 안 웹 빌드 결과: packages/ui-server/dist → packages/web/dist */
 export const DEFAULT_WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist");
 
+const CLOSE_WAIT_MS = 5000;
+
 export interface StartUiServerOptions {
   root: string;
   /** 0 또는 생략이면 자동. */
@@ -29,7 +31,7 @@ export async function startUiServer(opts: StartUiServerOptions): Promise<UiServe
   await mkdir(path.join(opts.root, ".specmock"), { recursive: true });
   let port = 0;
   const { app, bus, jobs } = createApp({ root: opts.root, webDir, port: () => port, claudeCommand: opts.claudeCommand, unref: opts.unref });
-  const watcher = watchWorkspace(path.join(opts.root, ".specmock"), (e) => bus.publish("workspace-changed", e), { unref: opts.unref });
+  const watcher = watchWorkspace(path.join(opts.root, ".specmock"), (e) => bus.publish("workspace-changed", e), { unref: opts.unref, onError: (e) => bus.publish("watch-error", { message: e.message }) });
   const server = await new Promise<ReturnType<typeof serve>>((resolve, reject) => {
     const s = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: opts.port ?? 0 }, (info: AddressInfo) => { port = info.port; resolve(s); });
     s.once("error", (e: NodeJS.ErrnoException) => reject(e.code === "EADDRINUSE"
@@ -40,6 +42,11 @@ export async function startUiServer(opts: StartUiServerOptions): Promise<UiServe
   return {
     url: `http://127.0.0.1:${port}/`,
     port,
-    close: () => new Promise<void>((resolve) => { watcher.close(); jobs.cancelAll(); server.close(() => resolve()); (server as { closeAllConnections?: () => void }).closeAllConnections?.(); }),
+    close: async () => {
+      watcher.close();
+      jobs.cancelAll();
+      await jobs.whenIdle(CLOSE_WAIT_MS); // 자식 프로세스·파일 쓰기가 정리될 시간을 준다
+      await new Promise<void>((resolve) => { server.close(() => resolve()); (server as { closeAllConnections?: () => void }).closeAllConnections?.(); });
+    },
   };
 }

@@ -4,8 +4,8 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import path from "node:path";
 import { analyzeSpec, ClaudeCodeAdapter, findFeature, generate, ingestSpec, listFeatures, select, summarizeChunks, verifyMock, Workspace } from "@specmock/core";
 import { streamSSE } from "hono/streaming";
-import { EventBus, type BusEvent } from "./bus.js";
-import { BusyJobError, JobManager } from "./jobs.js";
+import { EventBus, pushBounded, type BusEvent } from "./bus.js";
+import { BusyJobError, JobManager, NotCancellableError } from "./jobs.js";
 import { errorBody, ingestInputError, InvalidRequest, NotFound, toApiError } from "./errors.js";
 import { localOnly, methodGuard } from "./security.js";
 import { serveWeb } from "./static.js";
@@ -42,6 +42,8 @@ export interface AppOptions {
   claudeCommand?: string;
   /** true면 SSE 하트비트 타이머가 프로세스를 붙잡지 않는다. */
   unref?: boolean;
+  /** SSE 클라이언트별 대기 큐 상한. 기본 1000. */
+  sseQueueLimit?: number;
 }
 
 export function createApp(opts: AppOptions) {
@@ -54,6 +56,7 @@ export function createApp(opts: AppOptions) {
   app.use("/api/*", methodGuard);
   app.onError((e, c) => {
     if (e instanceof BusyJobError) return c.json({ ...errorBody("busy", e.message, "진행 중인 작업이 있어요."), jobId: e.jobId }, 409);
+    if (e instanceof NotCancellableError) return c.json(errorBody("not-cancellable", e.message), 409);
     const r = toApiError(e); return c.json(r.body, r.status as ContentfulStatusCode);
   });
   app.get("/api/env", async (c) => c.json({ ok: true, data: { root: opts.root, claude: (await findExecutable(claudeCommand)) !== null } }));
@@ -120,8 +123,9 @@ export function createApp(opts: AppOptions) {
   app.get("/api/events", (c) => streamSSE(c, async (stream) => {
     const queue: BusEvent[] = [];
     let wake: (() => void) | undefined;
-    const off = bus.subscribe((e) => { queue.push(e); wake?.(); });
-    const ping = setInterval(() => { queue.push({ event: "ping", data: {} }); wake?.(); }, 15_000);
+    const limit = opts.sseQueueLimit ?? 1000;
+    const off = bus.subscribe((e) => { pushBounded(queue, e, limit); wake?.(); });
+    const ping = setInterval(() => { pushBounded(queue, { event: "ping", data: {} }, limit); wake?.(); }, 15_000);
     if (opts.unref) ping.unref();
     stream.onAbort(() => { off(); clearInterval(ping); wake?.(); });
     await stream.writeSSE({ event: "ready", data: "{}" });

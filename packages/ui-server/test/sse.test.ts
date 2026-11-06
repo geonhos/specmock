@@ -128,3 +128,37 @@ it("OpenAPI 시스템: 생성 작업 → done, 같은 곳에 덮어쓰기 거부
   const j2 = await until(async () => { const j = (await c.get("/jobs")).body.data.recent.find((x: { kind: string }) => x.kind === "generate"); return j && j.id !== j1.id ? j : undefined; });
   expect(j2).toMatchObject({ state: "failed", error: { code: "overwrite-required" } });
 });
+
+it("취소 불가 작업(generate)에 cancel → 409 not-cancellable, 작업은 계속된다", async () => {
+  const c = make();
+  await c.post("/systems", { system: "petstore", origins: [PETSTORE] });
+  await c.post("/systems/petstore/analyze");
+  const id = (await c.get("/systems/petstore/features")).body.data.rows[0].id;
+  await c.post("/systems/petstore/selection", { ids: [id] });
+  const { jobId } = (await c.post("/systems/petstore/generate", { outDir: path.join(root, "out") })).body.data;
+  const r = await c.post(`/jobs/${jobId}/cancel`);
+  if (r.status === 409) expect(r.body).toMatchObject({ ok: false, error: { code: "not-cancellable", message: "이 작업은 취소할 수 없어요" } });
+  else expect(r.body).toEqual({ ok: true, data: { state: "done" } }); // 이미 끝났으면 상태만
+  const j = await until(async () => (await c.get("/jobs")).body.data.recent[0]);
+  expect(j).toMatchObject({ kind: "generate", state: "done", cancellable: false });
+});
+
+it("SSE 큐 상한: 넘치면 오래된 job-progress부터 버리고 job-done은 남는다", async () => {
+  const made = createApp({ root, webDir: path.join(root, "web"), port: () => 4310, sseQueueLimit: 5 });
+  const res = await made.app.request("/api/events", { headers: HOST });
+  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+  await sleep(20);
+  // 소비자가 못 따라가는 상황: 한 틱 안에서 몰아서 발행
+  made.bus.publish("workspace-changed", { system: "a", files: [] });
+  for (let i = 0; i < 50; i++) made.bus.publish("job-progress", { n: i });
+  made.bus.publish("job-done", { id: "1" });
+  let text = "";
+  for (;;) { const { value, done } = await reader.read(); if (done) break; text += value; if (text.includes("job-done")) break; }
+  await reader.cancel();
+  const events = [...text.matchAll(/^event: (.+)$/gm)].map((m) => m[1]);
+  expect(events).toContain("workspace-changed");
+  expect(events.at(-1)).toBe("job-done");
+  expect(events.filter((e) => e === "job-progress").length).toBeLessThan(50);
+  const last = [...text.matchAll(/"n":(\d+)/g)].map((m) => Number(m[1]));
+  expect(last.at(-1)).toBe(49); // 최신 진행은 남는다
+});

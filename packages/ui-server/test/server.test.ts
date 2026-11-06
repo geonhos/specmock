@@ -48,3 +48,14 @@ it("SSE로 작업 공간 변경을 알리고, 연결이 열려 있어도 close�
   expect(text).toMatch(/event: ready[\s\S]*event: workspace-changed\ndata: \{"system":"pets","files":\[[^\]]*"selection\.json"/);
   await s.close();
 });
+
+it("close는 진행 중인 작업이 끝나길 기다린다", async () => {
+  const { JobManager } = await import("../src/jobs.js");
+  const { EventBus } = await import("../src/bus.js");
+  const jobs = new JobManager(new EventBus());
+  let done = false;
+  jobs.start("a", "extract", ({ signal }) => new Promise((_, rej) => signal.addEventListener("abort", () => setTimeout(() => { done = true; rej(signal.reason); }, 80))));
+  jobs.cancelAll();
+  await jobs.whenIdle(5000);
+  expect(done).toBe(true);
+});

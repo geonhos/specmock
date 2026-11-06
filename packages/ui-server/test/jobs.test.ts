@@ -73,3 +73,39 @@ it("cancelAll은 진행 중인 모든 작업을 취소한다", async () => {
   jobs.cancelAll(); await tick(); await tick();
   expect([jobs.get(a.id)!.state, jobs.get(b.id)!.state]).toEqual(["cancelled", "cancelled"]);
 });
+
+it("취소 불가 작업(generate): cancel은 NotCancellableError, 실제 오류가 cancelled로 가려지지 않는다", async () => {
+  const jobs = new JobManager(new EventBus());
+  let fail!: () => void;
+  const j = jobs.start("pets", "generate", () => new Promise((_, reject) => { fail = () => reject(new Error("진짜 오류")); }));
+  expect(j.cancellable).toBe(false);
+  expect(() => jobs.cancel(j.id)).toThrowError(expect.objectContaining({ name: "NotCancellableError" }));
+  jobs.cancelAll(); // 종료 시 일괄 abort 뒤에도 판정은 그대로
+  fail(); await tick(); await tick();
+  expect(jobs.get(j.id)).toMatchObject({ state: "failed", error: { message: "진짜 오류" } });
+});
+
+it("extract·verify는 cancellable, /jobs 목록에도 실린다", async () => {
+  const jobs = new JobManager(new EventBus());
+  const a = jobs.start("a", "extract", () => new Promise(() => {}));
+  const b = jobs.start("b", "verify", () => new Promise(() => {}));
+  expect(jobs.list().running.map((j) => [j.id, j.cancellable])).toEqual([[a.id, true], [b.id, true]]);
+});
+
+it("abort 뒤에도 성공 완료하면 done 유지", async () => {
+  const jobs = new JobManager(new EventBus());
+  let finish!: () => void;
+  const j = jobs.start("pets", "extract", () => new Promise<string>((r) => { finish = () => r("merged"); }));
+  jobs.cancel(j.id); finish(); await tick(); await tick();
+  expect(jobs.get(j.id)).toMatchObject({ state: "done", result: "merged" });
+});
+
+it("whenIdle은 진행 중 작업이 끝나면 true, 시간이 지나면 false", async () => {
+  const jobs = new JobManager(new EventBus());
+  let finish!: () => void;
+  jobs.start("a", "generate", () => new Promise<void>((r) => { finish = r; }));
+  expect(await jobs.whenIdle(30)).toBe(false);
+  setTimeout(finish, 20);
+  expect(await jobs.whenIdle(1000)).toBe(true);
+  expect(await jobs.whenIdle(10)).toBe(true);
+});

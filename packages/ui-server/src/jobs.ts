@@ -8,6 +8,12 @@ export class BusyJobError extends Error {
   readonly code = "busy" as const;
   constructor(readonly jobId: string) { super("이 시스템에서 진행 중인 작업이 있어요."); this.name = "BusyJobError"; }
 }
+export class NotCancellableError extends Error {
+  readonly code = "not-cancellable" as const;
+  constructor() { super("이 작업은 취소할 수 없어요"); this.name = "NotCancellableError"; }
+}
+/** generate는 도중에 멈출 수 없다(파일을 쓰는 중). 나머지는 signal을 따른다. */
+const CANCELLABLE: Record<JobKind, boolean> = { extract: true, verify: true, generate: false };
 export interface JobContext { signal: AbortSignal; onEvent: OnEvent }
 
 /** 시스템당 작업 하나. 진행·결과는 EventBus로 알린다. */
@@ -15,12 +21,13 @@ export class JobManager {
   private jobs = new Map<string, Job>();
   private controllers = new Map<string, AbortController>();
   private running = new Map<string, string>(); // system → jobId
+  private settled = new Set<Promise<void>>();
   constructor(private readonly bus: EventBus) {}
 
   start(system: string, kind: JobKind, run: (ctx: JobContext) => Promise<unknown>): Job {
     const busy = this.running.get(system);
     if (busy) throw new BusyJobError(busy);
-    const job: Job = { id: randomUUID(), system, kind, state: "running", startedAt: new Date().toISOString() };
+    const job: Job = { id: randomUUID(), system, kind, state: "running", cancellable: CANCELLABLE[kind], startedAt: new Date().toISOString() };
     const ac = new AbortController();
     this.jobs.set(job.id, job); this.controllers.set(job.id, ac); this.running.set(system, job.id);
     // SSE 루프는 큐에서 꺼낼 때 직렬화하므로, 그때의 객체가 아니라 발행 시점의 사본을 보낸다.
@@ -30,14 +37,14 @@ export class JobManager {
       job.progress = { message: e.message, ...(e.done !== undefined ? { done: e.done } : {}), ...(e.total !== undefined ? { total: e.total } : {}) };
       this.bus.publish("job-progress", snap());
     };
-    void (async () => {
+    const task = (async () => {
       try {
         job.result = await run({ signal: ac.signal, onEvent });
         job.state = "done"; job.endedAt = new Date().toISOString();
         this.bus.publish("job-done", snap());
       } catch (e) {
-        // 취소는 오류 이름이 아니라 우리가 쥔 signal로 판정한다.
-        if (ac.signal.aborted) { job.state = "cancelled"; job.error = { code: "cancelled", message: "작업을 취소했어요." }; }
+        // 취소는 오류 이름이 아니라 우리가 쥔 signal로 판정한다. 취소할 수 없는 작업의 오류는 그대로 둔다.
+        if (ac.signal.aborted && job.cancellable) { job.state = "cancelled"; job.error = { code: "cancelled", message: "작업을 취소했어요." }; }
         else { job.state = "failed"; job.error = toApiError(e).body.error; }
         job.endedAt = new Date().toISOString();
         this.bus.publish("job-failed", snap());
@@ -46,9 +53,24 @@ export class JobManager {
         this.prune(system, kind, job.id);
       }
     })();
+    this.settled.add(task);
+    void task.finally(() => this.settled.delete(task));
     return snap();
   }
-  cancel(id: string): Job | undefined { this.controllers.get(id)?.abort(); return this.jobs.get(id); }
+  /** 진행 중이면 abort. 취소할 수 없는 작업이 아직 돌고 있으면 NotCancellableError. 끝난 작업은 그대로 돌려준다. */
+  cancel(id: string): Job | undefined {
+    const job = this.jobs.get(id);
+    if (job?.state === "running" && !job.cancellable) throw new NotCancellableError();
+    this.controllers.get(id)?.abort();
+    return job;
+  }
+  /** 진행 중인 작업이 모두 끝나면 true, timeoutMs가 지나면 false. */
+  async whenIdle(timeoutMs: number): Promise<boolean> {
+    if (this.settled.size === 0) return true;
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<false>((r) => { timer = setTimeout(() => r(false), timeoutMs); });
+    try { return await Promise.race([Promise.all([...this.settled]).then(() => true as const), timeout]); } finally { clearTimeout(timer); }
+  }
   get(id: string): Job | undefined { return this.jobs.get(id); }
   list(): { running: Job[]; recent: Job[] } {
     const all = [...this.jobs.values()];

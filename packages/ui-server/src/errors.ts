@@ -26,7 +26,7 @@ export function ingestInputError(e: unknown): unknown {
   return e;
 }
 
-export type ErrorCode = "invalid" | "not-found" | "busy" | "overwrite-required" | "cancelled" | "forbidden" | "failed";
+export type ErrorCode = "invalid" | "not-found" | "busy" | "overwrite-required" | "cancelled" | "not-cancellable" | "forbidden" | "failed";
 export interface ApiErrorBody { ok: false; error: { code: ErrorCode; message: string; hint?: string } }
 
 const STEP: Record<string, string> = { ingest: "① 등록", analyze: "② 분석", select: "③ 기능 선택", generate: "④ 생성", verify: "⑤ 검증" };
