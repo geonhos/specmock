@@ -22,9 +22,6 @@ export async function findFeature(ws: Workspace, system: string, id: string): Pr
 
 export async function listFeatures(ws: Workspace, system: string, opts: { group?: string } = {}): Promise<ListFeaturesResult> {
   const catalog = await ws.read(system, "catalog.json", CatalogSchema);
-  if (opts.group !== undefined && !catalog.features.some((f) => f.group === opts.group)) {
-    throw new Error(`알 수 없는 그룹: ${opts.group} (${[...new Set(catalog.features.map((f) => f.group))].join(", ")})`);
-  }
   const rows = orderFeatures(catalog)
     .filter((o) => opts.group === undefined || o.feature.group === opts.group)
     .map(({ index, feature: f }) => ({
