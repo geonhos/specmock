@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -27,6 +27,17 @@ describe("보안", () => {
     const r = await make().request("/api/env", { headers: { host } });
     expect(r.status).toBe(403);
     expect(await r.json()).toMatchObject({ ok: false, error: { code: "forbidden" } });
+  });
+  it("Origin: null·Host 누락·IPv6 Host는 403", async () => {
+    expect((await make().request("/api/env", { headers: { ...HOST, origin: "null" } })).status).toBe(403);
+    expect((await make().request("/api/env", { headers: { host: "" } })).status).toBe(403);
+    expect((await make().request("/api/env", { headers: { host: "[::1]:4310" } })).status).toBe(403);
+    const noHost = await make().request(new Request("http://x/api/env"));
+    expect(noHost.status).toBe(403);
+  });
+  it("Host·Origin이 둘 다 로컬이면 127.0.0.1/localhost 교차 조합도 허용", async () => {
+    const r = await make().request("/api/env", { headers: { host: "127.0.0.1:4310", origin: "http://localhost:4310" } });
+    expect(r.status).toBe(200);
   });
   it("Origin이 있는데 같은 출처가 아니면 403, 같으면 통과", async () => {
     expect((await make().request("/api/env", { headers: { ...HOST, origin: "http://evil.example" } })).status).toBe(403);
@@ -58,8 +69,21 @@ describe("정적 파일", () => {
     const spa = await make().request("/systems/pets/select", { headers: HOST });
     expect(await spa.text()).toContain("<title>specmock</title>");
   });
-  it("경로 탈출은 막는다", async () => {
-    const r = await make().request("/..%2f..%2fetc%2fpasswd", { headers: HOST });
-    expect(await r.text()).not.toContain("root:");
+  it.each(["/..%2fsecret.txt", "/%2e%2e/secret.txt", "/..%5csecret.txt", "/assets/..%2f..%2fsecret.txt", "/%2e%2e%2fsecret.txt"])(
+    "경로 탈출 %s 은 비밀 파일을 돌려주지 않는다",
+    async (p) => {
+      await writeFile(path.join(root, "secret.txt"), "TOP-SECRET-VALUE");
+      const r = await make().request(p, { headers: HOST });
+      expect(await r.text()).not.toContain("TOP-SECRET-VALUE");
+    },
+  );
+  it("웹 폴더 안의 심볼릭 링크가 바깥 파일을 가리켜도 서빙하지 않는다", async () => {
+    await writeFile(path.join(root, "secret.txt"), "TOP-SECRET-VALUE");
+    await symlink(path.join(root, "secret.txt"), path.join(webDir, "assets", "link.txt"));
+    await symlink(root, path.join(webDir, "assets", "dirlink"));
+    for (const p of ["/assets/link.txt", "/assets/dirlink/secret.txt"]) {
+      const r = await make().request(p, { headers: HOST });
+      expect(await r.text()).not.toContain("TOP-SECRET-VALUE");
+    }
   });
 });

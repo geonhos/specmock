@@ -6,6 +6,8 @@ export function localOnly(port: () => number): MiddlewareHandler {
   return async (c, next) => {
     const p = port();
     const allowed = [`127.0.0.1:${p}`, `localhost:${p}`];
+    // Host와 Origin은 각각 로컬 허용 목록으로만 검사한다. Host 127.0.0.1 + Origin localhost 같은
+    // 교차 조합도 둘 다 이 컴퓨터를 가리키므로 허용한다(리바인딩·타 사이트 요청은 어느 쪽이든 걸러진다).
     const host = c.req.header("host") ?? "";
     const origin = c.req.header("origin");
     if (!allowed.includes(host) || (origin !== undefined && !allowed.some((h) => origin === `http://${h}`))) {
