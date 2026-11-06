@@ -68,3 +68,14 @@ export async function systemOverview(ws: Workspace, root: string, system: string
     defaultOutDir: generate?.outDir ?? path.join(root, "mock", system),
   };
 }
+
+/** 등록된(source.json이 있는) 시스템인지 확인한다. 없으면 not-found 오류. */
+export async function assertRegistered(ws: Workspace, system: string): Promise<void> {
+  await ws.read(system, "source.json", SourceSchema);
+}
+
+/** 생성 기본 출력 경로: 마지막 생성 위치 → <root>/mock/<system>. */
+export async function defaultOutDir(ws: Workspace, root: string, system: string): Promise<string> {
+  const last = (await ws.exists(system, "generate.json")) ? (await ws.read(system, "generate.json", GenerateInfoSchema)).outDir : undefined;
+  return last ?? path.join(root, "mock", system);
+}

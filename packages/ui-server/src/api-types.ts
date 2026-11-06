@@ -26,3 +26,14 @@ export type SystemOverview = {
 };
 export type FeatureList = { total: number; rows: FeatureRow[]; groups: string[] };
 export type { AnalyzeSpecResult, ChunkSummary, Feature, FeatureRow, GenerateInfo, IngestSpecResult, Selection, SelectResult, SourceInput } from "@specmock/core";
+
+export type JobKind = "extract" | "generate" | "verify";
+export type Job = {
+  id: string; system: string; kind: JobKind;
+  state: "running" | "done" | "failed" | "cancelled";
+  startedAt: string; endedAt?: string;
+  progress?: { message: string; done?: number; total?: number };
+  result?: unknown; error?: ApiErrorBody["error"];
+};
+export type JobList = { running: Job[]; recent: Job[] };
+export type WorkspaceChanged = { system: string | null; files: string[] };

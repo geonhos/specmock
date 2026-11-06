@@ -2354,8 +2354,8 @@ git commit -m "test(e2e): 화면 E2E(OpenAPI 전 과정, 가짜 claude 문서 �
 | 1 core 동시성 | 출발점 40 files / 309 tests(계획의 308과 1 차이). 기존 `service.test.ts:139`가 알 수 없는 그룹의 예외를 기대해 "수정 없이 통과" 가정이 틀렸고, 새 동작(빈 rows)에 맞게 그 한 줄을 고침. 반복 5회 모두 통과 | | |
 | 2 취소 신호 | 리뷰 FAIL 수정: 취소 시 프로세스 그룹 SIGKILL(detached), npm install 완료 마커(`node_modules/.specmock-installed`), 취소 경합 처리. 499 판정은 오류 이름 대신 ui-server의 `signal.aborted`로 확정(Task 5에서 반영) | | |
 | 3 ui-server 골격 | A3 확인: `serve` 콜백 인자(`info.port`)와 `error` 이벤트(EADDRINUSE)가 계획대로 동작해 `createServer` 대체 불필요. 499는 `ContentfulStatusCode`에 없어 `app.onError`에서 캐스트(계획이 예고한 위치). `toApiError` 반환 타입에 405를 추가하고 405 가드는 `security.ts`의 `methodGuard`로 분리(`GET·HEAD·POST` 외 전부 405). 루트 `test`는 `pnpm build && vitest run`(소요 약 42초). 루트 devDependencies에 이미 있던 hono·node-server는 그대로 둠. 테스트 45 files / 359 tests | | |
-| 4 API | | | |
-| 5 작업·SSE·감시 | | | |
+| 4 API | 리뷰 FAIL 수정(별도 커밋): 등록 입력의 errno(ENOENT·EISDIR·ENOTDIR·EACCES)와 URL `요청 실패`는 400 invalid(`ingestInputError`), 없는 기능 id 상세는 404(`NotFound`), 상대 origin은 root 기준 절대 경로로 저장, 빈 `?group=`은 필터 없음, 작업 공간 파일 손상(`형식 오류`·`JSON 파싱 실패`)은 500 | | |
+| 5 작업·SSE·감시 | A4 확인: `app.request`로 받은 SSE body를 조각 단위로 읽을 수 있음(소켓 불필요). `stream.aborted`·`onAbort` 이름은 hono 4.13 그대로. 계획과 다른 점: 작업 시작 라우트가 먼저 `assertRegistered`로 없는 시스템을 404로 막음(비동기 실패 방지), 본문 없는 POST 허용, `outDir`·`dir` 상대 경로는 root 기준, `EventBus.size` 추가, `createApp`에 `unref` 옵션, `fs.watch`는 macOS가 보내는 감시 루트 자신의 이벤트(`.specmock`)를 무시, 취소 시 `job-failed` 이벤트(state=cancelled) 발행 | | |
 | 6 web 골격 | | | |
 | 7 ① 등록 ② 분석 | | | |
 | 8 ③ 기능 선택 | | | |

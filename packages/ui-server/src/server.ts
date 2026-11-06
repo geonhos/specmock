@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createApp } from "./app.js";
+import { watchWorkspace } from "./watch.js";
 
 /** 모노레포 안 웹 빌드 결과: packages/ui-server/dist → packages/web/dist */
 export const DEFAULT_WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist");
@@ -27,7 +28,8 @@ export async function startUiServer(opts: StartUiServerOptions): Promise<UiServe
   }
   await mkdir(path.join(opts.root, ".specmock"), { recursive: true });
   let port = 0;
-  const { app } = createApp({ root: opts.root, webDir, port: () => port, claudeCommand: opts.claudeCommand });
+  const { app, bus, jobs } = createApp({ root: opts.root, webDir, port: () => port, claudeCommand: opts.claudeCommand, unref: opts.unref });
+  const watcher = watchWorkspace(path.join(opts.root, ".specmock"), (e) => bus.publish("workspace-changed", e), { unref: opts.unref });
   const server = await new Promise<ReturnType<typeof serve>>((resolve, reject) => {
     const s = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: opts.port ?? 0 }, (info: AddressInfo) => { port = info.port; resolve(s); });
     s.once("error", (e: NodeJS.ErrnoException) => reject(e.code === "EADDRINUSE"
@@ -38,6 +40,6 @@ export async function startUiServer(opts: StartUiServerOptions): Promise<UiServe
   return {
     url: `http://127.0.0.1:${port}/`,
     port,
-    close: () => new Promise<void>((resolve) => { server.close(() => resolve()); (server as { closeAllConnections?: () => void }).closeAllConnections?.(); }),
+    close: () => new Promise<void>((resolve) => { watcher.close(); jobs.cancelAll(); server.close(() => resolve()); (server as { closeAllConnections?: () => void }).closeAllConnections?.(); }),
   };
 }
