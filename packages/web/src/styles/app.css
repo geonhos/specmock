@@ -1,0 +1,55 @@
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font: var(--fs-body)/1.4 var(--font); -webkit-font-smoothing: antialiased; font-feature-settings: "tnum"; }
+#root { height: 100%; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; padding: 0; }
+
+.app { display: grid; grid-template-rows: var(--h-top) minmax(0, 1fr); height: 100vh; }
+
+/* 상단: 로고 + 단계 */
+.topbar { display: flex; align-items: center; gap: 16px; padding: 0 16px; height: var(--h-top); border-bottom: 1px solid var(--line); }
+.logo { font-weight: 700; font-size: 17px; letter-spacing: -.01em; }
+.steps { display: flex; gap: 4px; margin: 0 0 0 8px; padding: 0; list-style: none; }
+.step { height: 32px; display: flex; align-items: center; gap: 6px; padding: 0 12px; border-radius: var(--radius-sm); color: var(--text-3); font-weight: 600; font-size: 13.5px; }
+button.step:hover { background: var(--surface-2); }
+.step.done { color: var(--text-2); }
+.step.cur { background: var(--accent); color: var(--accent-ink); }
+.step[aria-disabled="true"] { cursor: default; opacity: .7; }
+.stale { font-size: 11px; font-weight: 400; color: var(--text-3); }
+.step.cur .stale { color: var(--accent-ink); opacity: .8; }
+
+/* 본문: 카드 3개 */
+.body { display: grid; grid-template-columns: var(--w-sidebar) minmax(0, 1fr); gap: var(--gap); padding: var(--gap); min-height: 0; }
+.body.with-detail { grid-template-columns: var(--w-sidebar) minmax(0, 1fr) var(--w-detail); }
+.panel { background: var(--surface-1); border-radius: var(--radius-lg); overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 8px; }
+.panel-head h3 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+
+.side-nav { display: flex; flex-direction: column; overflow: auto; padding-bottom: 6px; }
+.sys { height: 38px; display: flex; align-items: center; gap: 8px; margin: 0 6px; padding: 0 8px; border-radius: var(--radius-sm); color: var(--text-2); font-weight: 600; }
+.sys:hover { background: #1b1b21; }
+.sys.on { background: var(--surface-2); color: var(--text); }
+.sys-ic { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; font-weight: 800; font-size: 12px; background: var(--surface-3); color: var(--text); flex: none; }
+.sys-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dots { margin-left: auto; display: flex; gap: 3px; }
+.dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--surface-3); }
+.dots i.on { background: var(--ok); }
+.sys.add { color: var(--text-3); margin-top: 4px; }
+
+.mid { padding: 14px; gap: 10px; overflow: auto; }
+.mid h1 { margin: 0; font-size: var(--fs-title); font-weight: 700; letter-spacing: -.01em; }
+.det { min-width: 0; }
+
+/* 알림·확인 창 */
+.notice { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-2); border-left: 3px solid var(--danger); font-weight: 600; }
+.notice-hint { font-weight: 400; color: var(--text-2); }
+.dialog-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); display: grid; place-items: center; }
+dialog { position: static; margin: 0; width: 420px; max-width: calc(100vw - 32px); padding: 20px; border: 0; border-radius: var(--radius-lg); background: var(--surface-2); color: var(--text); }
+dialog h2 { margin: 0 0 8px; font-size: 18px; }
+.dialog-body { color: var(--text-2); margin-bottom: 16px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.btn-primary, .btn-ghost { height: var(--h-button); padding: 0 20px; border-radius: var(--radius-sm); font-weight: 700; font-size: 15px; }
+.btn-primary { background: var(--accent); color: var(--accent-ink); }
+.btn-ghost { background: var(--surface-3); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

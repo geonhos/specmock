@@ -1,0 +1,15 @@
+:root {
+  --bg: #101013; --surface-1: #17171c; --surface-2: #202027; --surface-3: #2c2c35;
+  --line: #26262d; --line-strong: #34343d;
+  --text: #ffffff; --text-2: #c3c3c6; --text-3: #8b8b92;
+  --accent: #3182f6; --accent-ink: #ffffff; --selected: rgba(49,130,246,.16);
+  --get: #33c48a; --post: #ffb331; --put: #4e9bff; --patch: #a586ff; --delete: #f04452;
+  --ok: #33c48a; --danger: #f04452;
+  --radius-sm: 8px; --radius-lg: 14px;
+  --font: Pretendard, "Apple SD Gothic Neo", system-ui, sans-serif;
+  --mono: "JetBrains Mono", "SF Mono", Menlo, monospace;
+  --fs-body: 14px; --fs-title: 24px; --fs-detail-path: 22px; --fs-code: 13.5px; --fs-num: 12px;
+  --h-row: 32px; --h-group: 36px; --h-input: 38px; --h-button: 42px; --h-top: 56px;
+  --w-sidebar: 232px; --w-detail: 392px; --gap: 8px;
+  color-scheme: dark;
+}
