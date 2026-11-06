@@ -1,11 +1,22 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
+import { z } from "zod";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import path from "node:path";
-import { Workspace } from "@specmock/core";
-import { errorBody, toApiError } from "./errors.js";
+import { analyzeSpec, findFeature, ingestSpec, listFeatures, select, summarizeChunks, Workspace } from "@specmock/core";
+import { errorBody, InvalidRequest, toApiError } from "./errors.js";
 import { localOnly, methodGuard } from "./security.js";
 import { serveWeb } from "./static.js";
+import { listSystems, readSelection, systemOverview } from "./systems.js";
 import { findExecutable } from "./which.js";
+
+const IngestBody = z.object({ system: z.string().min(1), origins: z.array(z.string().min(1)).min(1), refresh: z.boolean().optional() });
+const SelectionBody = z.object({ ids: z.array(z.string()) });
+
+async function body<T>(c: Context, schema: z.ZodType<T>): Promise<T> {
+  const parsed = schema.safeParse(await c.req.json().catch(() => undefined));
+  if (!parsed.success) throw new InvalidRequest(z.prettifyError(parsed.error));
+  return parsed.data;
+}
 
 export interface AppOptions {
   /** 프로젝트 루트. 상태는 <root>/.specmock, mock 기본 경로는 <root>/mock/<system>. */
@@ -25,7 +36,28 @@ export function createApp(opts: AppOptions) {
   app.use("/api/*", methodGuard);
   app.onError((e, c) => { const r = toApiError(e); return c.json(r.body, r.status as ContentfulStatusCode); });
   app.get("/api/env", async (c) => c.json({ ok: true, data: { root: opts.root, claude: (await findExecutable(claudeCommand)) !== null } }));
-  // Task 4·5의 라우트가 여기에 붙는다.
+  const ok = (c: Context, data: unknown) => c.json({ ok: true, data });
+  app.get("/api/systems", async (c) => ok(c, await listSystems(ws)));
+  app.post("/api/systems", async (c) => {
+    const b = await body(c, IngestBody);
+    // 화면 등록은 브라우저 수집(최대 300s, 대화형)을 쓰지 않는다.
+    return ok(c, await ingestSpec(ws, b.system, b.origins, { refresh: b.refresh, harvest: "never" }));
+  });
+  app.get("/api/systems/:s", async (c) => ok(c, await systemOverview(ws, opts.root, c.req.param("s"))));
+  app.post("/api/systems/:s/analyze", async (c) => ok(c, await analyzeSpec(ws, c.req.param("s"), { llm: "session" })));
+  app.get("/api/systems/:s/chunks", async (c) => ok(c, await summarizeChunks(ws, c.req.param("s"))));
+  app.get("/api/systems/:s/features", async (c) => {
+    const r = await listFeatures(ws, c.req.param("s"), { group: c.req.query("group") });
+    const all = c.req.query("group") === undefined ? r : await listFeatures(ws, c.req.param("s"));
+    return ok(c, { total: r.total, rows: r.rows, groups: [...new Set(all.rows.map((x) => x.group))] });
+  });
+  app.get("/api/systems/:s/features/:id", async (c) => ok(c, await findFeature(ws, c.req.param("s"), c.req.param("id"))));
+  app.get("/api/systems/:s/selection", async (c) => ok(c, await readSelection(ws, c.req.param("s"))));
+  app.post("/api/systems/:s/selection", async (c) => {
+    const b = await body(c, SelectionBody);
+    return ok(c, await select(ws, c.req.param("s"), b.ids, { literalIds: true }));
+  });
+  // Task 5의 라우트가 여기에 붙는다.
   app.all("/api/*", (c) => c.json(errorBody("not-found", `알 수 없는 API: ${c.req.method} ${c.req.path}`), 404));
   app.get("*", serveWeb(opts.webDir));
   return { app, ws };

@@ -1,5 +1,10 @@
 import { LockBusyError } from "@specmock/core";
 
+/** 요청 본문이 형식에 맞지 않을 때. `invalid`(400)로 매핑한다. */
+export class InvalidRequest extends Error {
+  constructor(message: string) { super(message); this.name = "InvalidRequest"; }
+}
+
 export type ErrorCode = "invalid" | "not-found" | "busy" | "overwrite-required" | "cancelled" | "forbidden" | "failed";
 export interface ApiErrorBody { ok: false; error: { code: ErrorCode; message: string; hint?: string } }
 
@@ -25,6 +30,7 @@ export type ApiErrorStatus = 400 | 403 | 404 | 405 | 409 | 499 | 500;
 
 export function toApiError(e: unknown): { status: ApiErrorStatus; body: ApiErrorBody } {
   if (e instanceof LockBusyError) return { status: 409, body: errorBody("busy", e.message, "다른 곳(CLI/대화)에서 작업 중이에요. 끝난 뒤 다시 시도해 주세요.") };
+  if (e instanceof InvalidRequest) return { status: 400, body: errorBody("invalid", e.message) };
   const err = e instanceof Error ? e : new Error(String(e));
   if (err.name === "AbortError") return { status: 499, body: errorBody("cancelled", "작업을 취소했어요.") };
   const hintMatch = HINT_SENTENCE.exec(err.message);
