@@ -75,17 +75,22 @@ async function runContract(base: string, ajv: Ajv, c: Contract): Promise<Contrac
 export interface VerifyOptions {
   /** 오래 걸리는 단계(npm install 등)를 알려주는 콜백. */
   onLog?: (message: string) => void;
+  /** 취소. abort되면 mock을 정리하고 AbortError로 거부한다. */
+  signal?: AbortSignal;
 }
 
 export async function verify(mockDir: string, opts: VerifyOptions = {}): Promise<VerifyResult> {
   const lock = await readLock(mockDir);
   if (!lock) throw new Error(`${mockDir}에 specmock.lock.json이 없습니다. 먼저 specmock generate를 실행하세요.`);
   const contracts = await loadContracts(mockDir);
-  const server = await startMock(mockDir, lock, { onLog: opts.onLog });
+  const server = await startMock(mockDir, lock, { onLog: opts.onLog, signal: opts.signal });
   const ajv = makeAjv();
   const results: ContractResult[] = [];
   try {
-    for (const c of contracts) results.push(await runContract(`http://127.0.0.1:${server.port}`, ajv, c));
+    for (const c of contracts) {
+      opts.signal?.throwIfAborted();
+      results.push(await runContract(`http://127.0.0.1:${server.port}`, ajv, c));
+    }
   } finally {
     await server.stop();
   }

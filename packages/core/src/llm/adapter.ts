@@ -3,6 +3,8 @@ export interface ExtractRequest {
   prompt: string;
   /** 출력이 따라야 하는 JSON Schema. */
   schema: Record<string, unknown>;
+  /** 취소. abort되면 진행 중인 호출을 끝내고 AbortError로 거부한다. */
+  signal?: AbortSignal;
 }
 
 export interface LlmAdapter {

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# 취소 테스트용: 자기 pid를 PID_FILE에 남기고 오래 잔다. exec로 바꿔 pid가 sleep과 같게 한다.
+echo $$ > "${PID_FILE:?}"
+exec sleep 30

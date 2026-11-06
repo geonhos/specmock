@@ -22,6 +22,8 @@ export interface AnalyzeSpecOptions {
   /** session/prepare: prepare 전에 extracted/를 비움. claude-code: 기존 결과를 무시하고 다시 추출. */
   refresh?: boolean;
   onEvent?: OnEvent;
+  /** 취소. abort되면 진행 중인 claude 호출을 끝내고 AbortError로 거부한다. */
+  signal?: AbortSignal;
   /** 테스트용 어댑터 주입. 없으면 claude-code 어댑터를 만든다. */
   adapter?: LlmAdapter;
 }
@@ -53,7 +55,7 @@ async function clearExtractedUnlocked(ws: Workspace, system: string): Promise<nu
 export async function runLlmExtraction(
   ws: Workspace,
   system: string,
-  opts: Pick<AnalyzeSpecOptions, "model" | "refresh" | "onEvent" | "adapter"> = {},
+  opts: Pick<AnalyzeSpecOptions, "model" | "refresh" | "onEvent" | "adapter" | "signal"> = {},
 ): Promise<{ request: AnalyzeRequest; extract: ExtractResult; merge: MergeResult }> {
   const emit = opts.onEvent ?? (() => {});
   const request = await prepare(ws, system);
@@ -61,9 +63,11 @@ export async function runLlmExtraction(
   const adapter = opts.adapter ?? createAdapter("claude-code", { claude: { model: opts.model } });
   const ex = await extract(ws, system, adapter, {
     refresh: opts.refresh,
+    signal: opts.signal,
     onProgress: (p) => emit({ stage: "extract", message: `추출 ${p.done}/${p.total} (청크 ${p.chunk}: ${p.status})`, done: p.done, total: p.total }),
   });
   if (ex.failed.length) emit({ stage: "extract", message: `경고: 청크 ${ex.failed.length}개 추출 실패. 첫 오류: ${ex.failed[0]!.error}` });
+  opts.signal?.throwIfAborted();
   const m = await merge(ws, system);
   return { request, extract: ex, merge: m };
 }

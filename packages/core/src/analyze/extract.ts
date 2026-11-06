@@ -9,7 +9,7 @@ import { buildChunkPrompt } from "./prompt.js";
 import { submitExtraction } from "./submit.js";
 
 export interface ExtractProgress { done: number; total: number; chunk: number; status: "written" | "skipped" | "failed" }
-export interface ExtractOptions { refresh?: boolean; onProgress?: (p: ExtractProgress) => void }
+export interface ExtractOptions { refresh?: boolean; onProgress?: (p: ExtractProgress) => void; signal?: AbortSignal }
 export interface ExtractResult { total: number; written: number; skipped: number; failed: { chunk: number; error: string }[] }
 
 /**
@@ -30,6 +30,7 @@ export async function extract(ws: Workspace, system: string, adapter: LlmAdapter
   const result: ExtractResult = { total: request.chunks.length, written: 0, skipped: 0, failed: [] };
   let done = 0;
   for (const chunk of request.chunks) {
+    opts.signal?.throwIfAborted();
     const key = extractedFileName(chunk.index).replace(/\.json$/, "");
     const rel = path.posix.join(EXTRACTED_DIR, extractedFileName(chunk.index));
     const report = (status: ExtractProgress["status"]) => opts.onProgress?.({ done: ++done, total: result.total, chunk: chunk.index, status });
@@ -54,7 +55,7 @@ export async function extract(ws: Workspace, system: string, adapter: LlmAdapter
     if (!opts.refresh && fileExists && !stale) { result.skipped += 1; report("skipped"); continue; }
     try {
       const body = await load();
-      const raw = await adapter.extract({ prompt: buildChunkPrompt(body), schema: request.schema });
+      const raw = await adapter.extract({ prompt: buildChunkPrompt(body), schema: request.schema, signal: opts.signal });
       const r = await submitExtraction(
         ws, system,
         { index: chunk.index, contentHash: chunk.contentHash ?? hashText(body), result: raw },
@@ -66,6 +67,7 @@ export async function extract(ws: Workspace, system: string, adapter: LlmAdapter
       }
       result.written += 1; report("written");
     } catch (e) {
+      if (opts.signal?.aborted) throw e;   // 취소는 실패 청크가 아니다
       fail(e);
     }
   }
