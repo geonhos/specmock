@@ -4,7 +4,7 @@ import { z } from "zod";
 import { guard, ok } from "../result.js";
 
 /** 화면 서버는 이 MCP 프로세스 안에서 한 번만 띄운다. unref라 stdin이 닫히면 프로세스가 서버 때문에 남지 않는다. */
-export function registerUiTools(server: McpServer, root: string): void {
+export function registerUiTools(server: McpServer, root: string): { closeUi: () => Promise<void> } {
   let running: Promise<UiServerHandle> | undefined;
   server.registerTool("open_ui", {
     title: "화면 열기",
@@ -16,4 +16,6 @@ export function registerUiTools(server: McpServer, root: string): void {
     const { url } = await running;
     return ok(`화면: ${url}`, { url });
   }));
+  // 화면에서 시작한 작업(추출의 claude 자식 등)이 MCP 프로세스가 끝난 뒤에도 남지 않게, 종료 때 작업을 취소하고 서버를 닫는다.
+  return { closeUi: async () => { const p = running; running = undefined; if (p) await (await p.catch(() => undefined))?.close(); } };
 }

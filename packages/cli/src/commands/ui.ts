@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
-import type { Command } from "commander";
+import { InvalidArgumentError, type Command } from "commander";
 
 export function openCommand(platform: NodeJS.Platform, url: string): [string, string[]] {
   if (platform === "darwin") return ["open", [url]];
@@ -12,7 +12,10 @@ export function registerUi(program: Command): void {
   program
     .command("ui")
     .description("브라우저 화면으로 등록부터 검증까지 진행한다 (127.0.0.1에서만 열림)")
-    .option("--port <n>", "포트 (생략하면 자동)", (v) => Number.parseInt(v, 10))
+    .option("--port <n>", "포트 (생략하면 자동)", (v) => {
+      if (!/^\d+$/.test(v) || Number(v) > 65535) throw new InvalidArgumentError("포트는 0~65535 숫자로 적어 주세요");
+      return Number(v);
+    })
     .option("--no-open", "브라우저를 열지 않는다")
     .action(async (opts: { port?: number; open: boolean }, cmd: Command) => {
       const workspace = cmd.optsWithGlobals<{ workspace: string }>().workspace;

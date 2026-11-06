@@ -2360,7 +2360,7 @@ git commit -m "test(e2e): 화면 E2E(OpenAPI 전 과정, 가짜 claude 문서 �
 | 7 ① 등록 ② 분석 | 계획과 다른 점: App이 `env`·`jobs`(SSE job 이벤트와 `/api/jobs`로 갱신)를 들고 있고 분석 화면은 props로 받음. 등록은 결과 문구를 세팅한 직후 바로 ②로 이동(형식은 ②에도 표시). 끝난 작업은 이 화면이 running을 본 경우에만 ③으로 이동. `workspace-changed`는 `tick`으로 개요·청크 재조회. 추가 파일 `name.ts`·`format.ts` | | |
 | 8 ③ 기능 선택 | 리뷰 FAIL 수정(별도 커밋): 1초 무시 규칙 대신 `lastSaved`와 GET 비교로 메아리 판정, 배너 중 자동 저장 중지("내 선택 유지"/"다시 불러오기"), 저장 실패 시 ④ 이동 막기, 언마운트 flush. `/features` 응답에만 `summary`·`codes` 추가(core·MCP 그대로) | | |
 | 9 ④ 생성 ⑤ 검증 | 계획과 다른 점: 생성 결과 필드는 계획의 `{dir, files}`가 아니라 core `GenerateReport {outDir, written, preserved, orphaned}`. `useJob(jobs, system, kind)`는 App이 든 `jobs`를 받음(Task 7 구조 유지), Analyze도 이 훅으로 교체. "/"가 ④로 가게 돼 App.test에 개요 경로 추가. 커버리지 요약은 작업 결과의 `coverageMarkdown`(없으면 overview `coverage`)에서 `## contract test` 앞부분 | | |
-| 10 진입점 | | | |
+| 10 진입점 | 계획과 다른 점: CLI의 신호 처리는 `process.once`가 아니라 `process.on` + `stopping` 가드(procGroup 훅은 리스너가 0일 때만 신호를 다시 보내는데, once는 호출 직전에 걷혀 그 사이 훅이 "리스너 없음"으로 판단하기 때문). cli의 ui-server는 다른 명령의 시작을 늦추지 않도록 `import()`로 지연 로드하고, cli ui 테스트는 빌드된 dist를 실행. 리뷰 FAIL 수정(별도 커밋): core `killGroup`이 좀비만 남은 그룹의 EPERM도 무시, MCP는 stdin end/close 때 화면 서버 `close()`(작업 취소) 후 종료, `--port` 숫자 검사 | | |
 | 11 E2E·문서 | | | |
 | 최종 | | | |
 

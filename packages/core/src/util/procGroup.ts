@@ -67,7 +67,7 @@ export function spawnGroup(command: string, args: string[], options: SpawnOption
   return child;
 }
 
-/** 그룹 전체에 신호를 보낸다. 이미 끝났으면(ESRCH) 무시한다. */
+/** 그룹 전체에 신호를 보낸다. 이미 끝났거나(ESRCH) 좀비만 남은 그룹(macOS는 EPERM)이면 무시한다. */
 export function killGroup(child: ChildProcess, signal: NodeJS.Signals = "SIGKILL"): void {
   const pid = child.pid;
   if (pid === undefined) return;
@@ -75,6 +75,7 @@ export function killGroup(child: ChildProcess, signal: NodeJS.Signals = "SIGKILL
     if (process.platform === "win32") child.kill(signal);
     else process.kill(-pid, signal);
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== "ESRCH") throw e;
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code !== "ESRCH" && code !== "EPERM") throw e;
   }
 }
