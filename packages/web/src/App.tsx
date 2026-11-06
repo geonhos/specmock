@@ -5,6 +5,7 @@ import { Notice } from "./components/Notice";
 import { nextScreen, Sidebar } from "./components/Sidebar";
 import { Analyze } from "./screens/Analyze";
 import { Register } from "./screens/Register";
+import { Select, type Change } from "./screens/Select";
 import { StepBar } from "./components/StepBar";
 import { useServerEvents } from "./events";
 import { pathFor, useRoute, type Screen } from "./route";
@@ -26,6 +27,7 @@ export function App() {
   const [env, setEnv] = useState<EnvInfo | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [tick, setTick] = useState(0);
+  const [change, setChange] = useState<Change | null>(null);
 
   const reload = useCallback(() => {
     api.systems().then((s) => { setSystems(s); setError(null); }).catch((e: unknown) => setError(e instanceof ApiError ? e : new ApiError(0, "failed", String(e))));
@@ -44,11 +46,14 @@ export function App() {
 
   const { connected, dead } = useServerEvents({
     on: {
-      "workspace-changed": () => { reload(); setTick((t) => t + 1); },
+      "workspace-changed": (d: { system?: string | null; files?: string[] }) => {
+        reload(); setTick((t) => t + 1);
+        setChange((c) => ({ n: (c?.n ?? 0) + 1, system: d?.system ?? null, files: d?.files ?? [] }));
+      },
       "job-started": upsert, "job-progress": upsert, "job-done": upsert, "job-failed": upsert,
       "watch-error": () => setWatchStopped(true),
     },
-    onReconnect: () => { reload(); setTick((t) => t + 1); refreshJobs(); },
+    onReconnect: () => { reload(); setTick((t) => t + 1); setChange((c) => ({ n: (c?.n ?? 0) + 1, system: null, files: [] })); refreshJobs(); },
   });
 
   // "/"는 첫 시스템의 다음 단계, 없으면 등록 화면으로 보낸다.
@@ -60,22 +65,30 @@ export function App() {
   }, [screen, systems, go]);
 
   const current = systems?.find((s) => s.name === route.system);
+  const head = (
+    <>
+      {dead ? <Notice message="서버와 연결이 끊겼어요" hint="새로고침해 주세요." /> : !connected ? <Notice message="연결이 끊겼어요" hint="다시 연결하는 중이에요." /> : null}
+      {watchStopped ? <Notice message="변경 감지가 멈췄어요" hint="화면을 새로고침해 주세요." /> : null}
+      {error ? <Notice message={error.message} hint={error.hint} /> : null}
+      <h1>{TITLES[route.screen]}</h1>
+    </>
+  );
   return (
     <div className="app">
       <StepBar system={current} screen={route.screen} go={go} />
       <div className={`body${route.screen === "select" ? " with-detail" : ""}`}>
         <Sidebar systems={systems ?? []} current={route.system} go={go} />
-        <main className="panel mid">
-          {dead ? <Notice message="서버와 연결이 끊겼어요" hint="새로고침해 주세요." /> : !connected ? <Notice message="연결이 끊겼어요" hint="다시 연결하는 중이에요." /> : null}
-          {watchStopped ? <Notice message="변경 감지가 멈췄어요" hint="화면을 새로고침해 주세요." /> : null}
-          {error ? <Notice message={error.message} hint={error.hint} /> : null}
-          <h1>{TITLES[route.screen]}</h1>
-          {route.screen === "new" ? <Register go={go} onRegistered={reload} /> : null}
-          {route.screen === "analyze" && route.system ? (
-            <Analyze key={route.system} system={route.system} claude={env?.claude} jobs={jobs} tick={tick} go={go} refreshJobs={refreshJobs} onChanged={reload} />
-          ) : null}
-        </main>
-        {route.screen === "select" ? <aside className="panel det" aria-label="상세" /> : null}
+        {route.screen === "select" && route.system ? (
+          <Select key={route.system} system={route.system} change={change} go={go} header={head} />
+        ) : (
+          <main className="panel mid">
+            {head}
+            {route.screen === "new" ? <Register go={go} onRegistered={reload} /> : null}
+            {route.screen === "analyze" && route.system ? (
+              <Analyze key={route.system} system={route.system} claude={env?.claude} jobs={jobs} tick={tick} go={go} refreshJobs={refreshJobs} onChanged={reload} />
+            ) : null}
+          </main>
+        )}
       </div>
     </div>
   );
