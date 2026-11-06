@@ -96,7 +96,7 @@ Playwright 브라우저:
 **설계 문서 대비 결정 사항 (이 계획에서 확정):**
 1. **오류 코드는 화면 서버가 정한다.** 설계 §4.1은 "2A 서비스 층 코드 재사용"이라고 했지만, 서비스 층에는 코드가 없다.
    - 코드: `invalid` 400, `not-found` 404, `busy` 409, `overwrite-required` 409, `cancelled` 499, `failed` 500.
-   - 변환은 `toApiError`가 오류 클래스(`LockBusyError`, `AbortError`)와 메시지 패턴으로 한다.
+   - 변환은 `toApiError`가 오류 클래스(`LockBusyError`)와 메시지 패턴으로 한다. **취소(499)는 오류 이름이 아니라 ui-server가 쥔 `signal.aborted`로 판정한다**(Task 5의 작업 실행부가 `signal.aborted`이면 `cancelled`로 매핑). 자식 프로세스 오류가 AbortError 이름을 우연히 달고 와도, 또는 취소 후 다른 오류로 바뀌어 와도 사용자의 취소 의도가 기준이 되게 하기 위해서다.
    - hint 변환은 `rewriteHints`와 같은 방식이다(`specmock analyze x` → "② 분석").
 2. **빈 선택은 저장하지 않는다.**
    - 이유: `select`가 빈 결과에 예외를 던지고(`select/index.ts:68`), 빈 mockspec은 생성할 것이 없다.
@@ -958,6 +958,8 @@ export function toApiError(e: unknown): { status: 400 | 403 | 404 | 409 | 499 | 
   return { status: 500, body: errorBody("failed", message, hint) };
 }
 ```
+
+**취소 판정 (리뷰 반영):** `toApiError`의 `AbortError` 이름 매핑은 보조 수단이다. Task 5의 작업 실행부는 오류 이름이 아니라 ui-server가 쥔 `signal.aborted`로 취소를 판정해 `cancelled`(499)로 매핑한다. 자식 프로세스가 취소 뒤 다른 오류로 끝나도 사용자의 취소 의도가 기준이 되게 하기 위해서다.
 
 Hono `c.json(body, status)`의 status 타입(`ContentfulStatusCode`)에 비표준 499가 없을 수 있다. 없으면 `toApiError`의 반환 타입을 `ContentfulStatusCode`로 두고 499만 `as ContentfulStatusCode`로 캐스트한다. 타입 검사 결과는 Step 5에서 확인한다.
 
@@ -2350,7 +2352,7 @@ git commit -m "test(e2e): 화면 E2E(OpenAPI 전 과정, 가짜 claude 문서 �
 | Task | 계획 대비 변경 | 리뷰 결과 | 후속 과제 |
 |---|---|---|---|
 | 1 core 동시성 | 출발점 40 files / 309 tests(계획의 308과 1 차이). 기존 `service.test.ts:139`가 알 수 없는 그룹의 예외를 기대해 "수정 없이 통과" 가정이 틀렸고, 새 동작(빈 rows)에 맞게 그 한 줄을 고침. 반복 5회 모두 통과 | | |
-| 2 취소 신호 | | | |
+| 2 취소 신호 | 리뷰 FAIL 수정: 취소 시 프로세스 그룹 SIGKILL(detached), npm install 완료 마커(`node_modules/.specmock-installed`), 취소 경합 처리. 499 판정은 오류 이름 대신 ui-server의 `signal.aborted`로 확정(Task 5에서 반영) | | |
 | 3 ui-server 골격 | | | |
 | 4 API | | | |
 | 5 작업·SSE·감시 | | | |

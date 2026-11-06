@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,6 +53,19 @@ describe("withSystemLock", () => {
     const old = new Date(Date.now() - 60_000).toISOString();
     await writeFile(path.join(ws.dir("pets"), ".lock"), JSON.stringify({ pid: process.pid, at: old, token: "t" }));
     expect(await withSystemLock(ws, "pets", async () => "ran", { timeoutMs: 500, staleMs: 1_000 })).toBe("ran");
+  });
+
+  it("빈 잠금 파일(내용 없음)은 mtime이 오래되면 회수하고 새 잠금을 잡는다", async () => {
+    const ws = new Workspace(root);
+    await mkdir(ws.dir("pets"), { recursive: true });
+    const lockFile = path.join(ws.dir("pets"), ".lock");
+    await writeFile(lockFile, "");
+    const old = new Date(Date.now() - 60_000);
+    await utimes(lockFile, old, old);
+    let during: string | null = null;
+    expect(await withSystemLock(ws, "pets", async () => { during = await readFile(lockFile, "utf8"); return "ran"; }, { timeoutMs: 500 })).toBe("ran");
+    expect(JSON.parse(during!).pid).toBe(process.pid);
+    await expect(readFile(lockFile)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("심볼릭 링크로 연 작업 공간도 같은 잠금(프로세스 안에서 순서 보장)", async () => {
