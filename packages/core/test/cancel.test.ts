@@ -196,7 +196,7 @@ it("다른 SIGTERM 리스너가 있으면 그룹만 정리하고 종료는 그 �
   expect(r.code).toBe(7);
   expect(r.signal).toBeNull();
   await waitFor(async () => !isAlive(r.grand));
-  expect(await readFile(`${r.pidsFile}.listener`, "utf8")).toBe("ran");
+  expect(await readFile(`${r.pidsFile}.listener`, "utf8")).toBe("x");   // append: 정확히 1번만 실행(재발생 없음)
 });
 
 it("install 실패해도 기존 node_modules는 지우지 않는다", async () => {

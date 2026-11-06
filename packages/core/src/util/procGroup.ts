@@ -27,10 +27,21 @@ function addSignalHandlers(): void {
     const h = () => {
       killAll();
       removeSignalHandlers();
-      if (process.listenerCount(sig) === 0) process.kill(process.pid, sig);
+      if (process.listenerCount(sig) === 0) rethrowSignal(sig);
     };
     handlers.set(sig, h);
     process.on(sig, h);
+  }
+}
+
+const SIGNUM: Record<(typeof SIGNALS)[number], number> = { SIGHUP: 1, SIGINT: 2, SIGTERM: 15 };
+
+/** 같은 신호를 다시 보낸다. Windows는 process.kill로 SIGHUP 등을 못 보내므로 실패하면 128+신호번호로 끝낸다. */
+function rethrowSignal(sig: (typeof SIGNALS)[number]): void {
+  try {
+    process.kill(process.pid, sig);
+  } catch {
+    process.exit(128 + SIGNUM[sig]);
   }
 }
 
