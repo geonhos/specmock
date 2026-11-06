@@ -93,6 +93,7 @@ flowchart LR
 | 분류 | 토큰 | 값 |
 |---|---|---|
 | 배경 | `bg` / `surface-1` / `surface-2` / `surface-3` | `#101013` / `#17171c` / `#202027` / `#2c2c35` |
+| 호버 | `hover` | `#1b1b21` (선택된 항목은 `surface-2`로 구분) |
 | 선 | `line` / `line-strong` | `#26262d` / `#34343d` |
 | 글자 | `text` / `text-2` / `text-3` | `#ffffff` / `#c3c3c6` / `#8b8b92` |
 | 포인트 | `accent` / `accent-ink` / `selected` | `#3182f6` / `#ffffff` / `rgba(49,130,246,.16)` |

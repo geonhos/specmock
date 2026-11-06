@@ -1,5 +1,5 @@
 :root {
-  --bg: #101013; --surface-1: #17171c; --surface-2: #202027; --surface-3: #2c2c35;
+  --bg: #101013; --surface-1: #17171c; --surface-2: #202027; --surface-3: #2c2c35; --hover: #1b1b21;
   --line: #26262d; --line-strong: #34343d;
   --text: #ffffff; --text-2: #c3c3c6; --text-3: #8b8b92;
   --accent: #3182f6; --accent-ink: #ffffff; --selected: rgba(49,130,246,.16);

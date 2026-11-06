@@ -28,7 +28,7 @@ button.step:hover { background: var(--surface-2); }
 
 .side-nav { display: flex; flex-direction: column; overflow: auto; padding-bottom: 6px; }
 .sys { height: var(--h-input); display: flex; align-items: center; gap: 8px; margin: 0 6px; padding: 0 8px; border-radius: var(--radius-sm); color: var(--text-2); font-weight: 600; }
-.sys:hover { background: var(--surface-2); }
+.sys:hover { background: var(--hover); }
 .sys.on { background: var(--surface-2); color: var(--text); }
 .sys-ic { width: 24px; height: 24px; border-radius: var(--radius-sm); display: grid; place-items: center; font-weight: 800; font-size: var(--fs-caption); background: var(--surface-3); color: var(--text); flex: none; }
 .sys-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -73,3 +73,4 @@ dialog h2 { margin: 0 0 8px; font-size: var(--fs-dialog-title); }
 .progress-row { display: flex; align-items: center; gap: 12px; }
 .progress { flex: 1; height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
 .progress-fill { height: 100%; background: var(--accent); transition: width .2s; }
+.action-row { display: flex; align-items: center; gap: 12px; }

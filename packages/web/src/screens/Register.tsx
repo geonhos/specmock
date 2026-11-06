@@ -26,6 +26,7 @@ export function Register({ go, onRegistered }: { go: (path: string) => void; onR
     } finally { setBusy(false); }
   };
   const ready = origin.trim() !== "" && name.trim() !== "" && !busy;
+  const why = busy ? "등록하는 중이에요" : origin.trim() === "" ? "스펙 경로 또는 URL을 입력하면 등록할 수 있어요" : name.trim() === "" ? "시스템 이름을 입력하면 등록할 수 있어요" : null;
   return (
     <form className="form" onSubmit={(e) => { e.preventDefault(); if (ready) void submit(); }}>
       <label className="field">
@@ -38,7 +39,10 @@ export function Register({ go, onRegistered }: { go: (path: string) => void; onR
       </label>
       {error ? <Notice message={error.message} hint={error.hint} /> : null}
       {kind ? <p className="format">형식: {kindLabel(kind)}</p> : null}
-      <div><button type="submit" className="btn-primary" disabled={!ready}>등록</button></div>
+      <div className="action-row">
+        <button type="submit" className="btn-primary" disabled={!ready} aria-describedby={ready ? undefined : "register-why"}>등록</button>
+        {ready || !why ? null : <span id="register-why" className="muted">{why}</span>}
+      </div>
     </form>
   );
 }

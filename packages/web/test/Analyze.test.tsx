@@ -106,23 +106,99 @@ it("새로 고침해도(작업 목록에 running) 진행 표시가 이어진다"
   expect((await screen.findByRole("progressbar")).getAttribute("aria-valuenow")).toBe("2");
 });
 
-it("job-done mode:catalog면 ③으로 이동, incomplete면 이동하지 않고 실패 청크만 다시 추출 버튼", async () => {
-  const api = setup("/systems/pets/analyze", docRoutes({ "POST /api/systems/pets/extract": () => ({ status: 202, body: { ok: true, data: { jobId: "j2" } } }) }));
+const extractAccepted = (jobId: string) => () => ({ status: 202, body: { ok: true, data: { jobId } } });
+
+it("job-done mode:catalog 완료면 ③으로 이동 (우리가 시작한 작업의 jobId 기준, 진행 표시를 못 봐도)", async () => {
+  let phase: "prepared" | "catalog" = "prepared";
+  setup("/systems/pets/analyze", docRoutes({
+    "POST /api/systems/pets/extract": extractAccepted("j1"),
+    "GET /api/systems/pets": () => ({ body: { ok: true, data: phase === "catalog" ? overview("pets", "markdown", "catalog", { done: 3, total: 3 }) : overview("pets", "markdown", "prepared", { done: 0, total: 3 }) } }),
+    "GET /api/systems/pets/chunks": () => ({ body: { ok: true, data: chunkRows(phase === "catalog" ? [true, true, true] : [false, false, false]) } }),
+  }));
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "추출 시작" }));
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "추출 시작" }));
+  await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  phase = "catalog";
+  emit("job-done", job({ state: "done", result: { mode: "catalog", via: "llm", incomplete: false } })); // job-started·progress 없이 바로 끝남
+  await vi.waitFor(() => expect(window.location.pathname).toBe("/systems/pets/select"));
+});
+
+/** 일부 청크가 실패했지만 merge가 catalog를 만든 실제 전이: 작업이 끝나면 overview가 catalog로 바뀐다. */
+function incompleteFlow() {
+  let phase: "prepared" | "partial" | "full" = "prepared";
+  const done = () => (phase === "full" ? [true, true, true] : phase === "partial" ? [true, false, false] : [false, false, false]);
+  const api = setup("/systems/pets/analyze", docRoutes({
+    "POST /api/systems/pets/extract": extractAccepted("j2"),
+    "GET /api/systems/pets": () => {
+      const d = done();
+      const c = { done: d.filter(Boolean).length, total: 3 };
+      return { body: { ok: true, data: phase === "prepared" ? overview("pets", "markdown", "prepared", c) : overview("pets", "markdown", "catalog", c) } };
+    },
+    "GET /api/systems/pets/chunks": () => ({ body: { ok: true, data: chunkRows(done()) } }),
+  }));
+  return { api, set: (p: typeof phase) => { phase = p; } };
+}
+const partialResult = { mode: "catalog", via: "llm", incomplete: true, extract: { total: 3, written: 1, skipped: 0, failed: [{ chunk: 1, error: "x" }, { chunk: 2, error: "y" }] }, merge: { missingChunks: [1, 2] } };
+
+it("일부 청크 실패 + catalog 전이: ②는 불완전 상태로 표·실패·재시도·③ 진행 버튼을 모두 보인다", async () => {
+  const flow = incompleteFlow();
   render(<App />);
   await screen.findByRole("table");
   emit("job-started", job());
-  emit("job-done", job({ state: "done", result: { mode: "catalog", via: "llm", incomplete: true, extract: { total: 3, written: 1, skipped: 0, failed: [{ chunk: 1, error: "x" }, { chunk: 2, error: "y" }] }, merge: { missingChunks: [1, 2] } } }));
+  flow.set("partial"); // merge가 catalog를 써서 overview가 catalog로 바뀐다
+  emit("job-done", job({ state: "done", result: partialResult }));
   const retry = await screen.findByRole("button", { name: "실패한 청크 2개만 다시 추출" });
   expect(window.location.pathname).toBe("/systems/pets/analyze");
-  expect(screen.getAllByText("실패").length).toBeGreaterThan(0);
+  expect(screen.getByRole("table")).toBeTruthy();
+  expect(screen.getAllByText("실패")).toHaveLength(2);
+  expect(screen.getByText(/불완전/)).toBeTruthy();
   fireEvent.click(retry);
-  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "추출 시작" }));
-  await vi.waitFor(() => expect(api.calls).toContain("POST /api/systems/pets/extract"));
-  expect(api.bodies[api.calls.indexOf("POST /api/systems/pets/extract")]).toEqual({ refresh: false });
-
-  emit("job-started", job({ id: "j3" }));
-  emit("job-done", job({ id: "j3", state: "done", result: { mode: "catalog", via: "llm", incomplete: false } }));
+  const dialog = screen.getByRole("dialog");
+  expect(dialog.textContent).toContain("청크 2개를");
+  fireEvent.click(within(dialog).getByRole("button", { name: "추출 시작" }));
+  await vi.waitFor(() => expect(flow.api.calls).toContain("POST /api/systems/pets/extract"));
+  expect(flow.api.bodies[flow.api.calls.indexOf("POST /api/systems/pets/extract")]).toEqual({ refresh: false });
+  flow.set("full");
+  emit("job-started", job({ id: "j2" }));
+  emit("job-done", job({ id: "j2", state: "done", result: { mode: "catalog", via: "llm", incomplete: false } }));
   await vi.waitFor(() => expect(window.location.pathname).toBe("/systems/pets/select"));
+});
+
+it("불완전 상태에서도 '그래도 ③ 기능 선택으로'로 넘어갈 수 있다", async () => {
+  const flow = incompleteFlow();
+  render(<App />);
+  await screen.findByRole("table");
+  emit("job-started", job());
+  flow.set("partial");
+  emit("job-done", job({ state: "done", result: partialResult }));
+  fireEvent.click(await screen.findByRole("button", { name: "그래도 ③ 기능 선택으로" }));
+  expect(window.location.pathname).toBe("/systems/pets/select");
+});
+
+it("새로 고침 뒤에도(작업 결과 없음) 청크가 덜 끝난 catalog는 불완전로 보이고 미완료 수로 재시도한다", async () => {
+  setup("/systems/pets/analyze", {
+    "GET /api/systems": ok([sys("pets", "markdown", true, { done: 1, total: 3 })]),
+    "GET /api/systems/pets": ok(overview("pets", "markdown", "catalog", { done: 1, total: 3 })),
+    "GET /api/systems/pets/chunks": ok(chunkRows([true, false, false])),
+  });
+  render(<App />);
+  const retry = await screen.findByRole("button", { name: "실패한 청크 2개만 다시 추출" });
+  expect(screen.queryAllByText("실패")).toHaveLength(0); // 어떤 청크가 실패했는지 모르면 '대기'로 둔다
+  fireEvent.click(retry);
+  expect(screen.getByRole("dialog").textContent).toContain("청크 2개를");
+  expect(screen.getByRole("button", { name: "그래도 ③ 기능 선택으로" })).toBeTruthy();
+});
+
+it("실패 수는 0이고 merge.missingChunks만 있으면 미완료(total-done) 수로 안내한다", async () => {
+  const flow = incompleteFlow();
+  render(<App />);
+  await screen.findByRole("table");
+  emit("job-started", job());
+  flow.set("partial");
+  emit("job-done", job({ state: "done", result: { mode: "catalog", via: "llm", incomplete: true, extract: { total: 3, written: 3, skipped: 0, failed: [] }, merge: { missingChunks: [1, 2] } } }));
+  fireEvent.click(await screen.findByRole("button", { name: "실패한 청크 2개만 다시 추출" }));
+  expect(screen.getByRole("dialog").textContent).toContain("청크 2개를");
 });
 
 it("claude CLI가 없으면 추출 시작 대신 대화에서 추출 안내", async () => {
@@ -176,4 +252,51 @@ it("이미 분석을 마친 시스템은 기능 수와 ③으로 가는 버튼",
   expect(await screen.findByText(/기능 12개/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "③ 기능 선택으로" }));
   expect(window.location.pathname).toBe("/systems/petstore/select");
+});
+
+it("409 busy 알림은 진행 표시가 나오면 사라진다", async () => {
+  let listed = false;
+  setup("/systems/pets/analyze", docRoutes({
+    "POST /api/systems/pets/extract": () => { listed = true; return { status: 409, body: { ok: false, error: { code: "busy", message: "이 시스템에서 진행 중인 작업이 있어요." }, jobId: "j9" } }; },
+    "GET /api/jobs": () => ({ body: { ok: true, data: { running: listed ? [job({ id: "j9", progress: { message: "x", done: 1, total: 3 } })] : [], recent: [] } } }),
+  }));
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "추출 시작" }));
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "추출 시작" }));
+  await screen.findByRole("progressbar");
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("다른 종류의 작업(생성)이 진행 중이면 그 작업 종류와 진행을 안내한다", async () => {
+  setup("/systems/pets/analyze", docRoutes({
+    "GET /api/jobs": ok({ running: [job({ id: "g1", kind: "generate", cancellable: false, progress: { message: "파일 쓰는 중", done: 2, total: 5 } })], recent: [] }),
+    "POST /api/systems/pets/extract": () => ({ status: 409, body: { ok: false, error: { code: "busy", message: "이 시스템에서 진행 중인 작업이 있어요." }, jobId: "g1" } }),
+  }));
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "추출 시작" }));
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "추출 시작" }));
+  const note = await screen.findByRole("status");
+  expect(note.textContent).toContain("다른 작업(생성)이 진행 중이에요");
+  expect(note.textContent).toContain("파일 쓰는 중");
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("분석 요청을 보내는 동안 비활성인 버튼은 이유를 안내한다 (aria-describedby)", async () => {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((r) => { release = r; });
+  setup("/systems/petstore/analyze", {
+    "GET /api/systems": ok([sys("petstore", "openapi")]),
+    "GET /api/systems/petstore": ok(overview("petstore", "openapi", "none")),
+    "POST /api/systems/petstore/analyze": () => ({ body: { ok: true, data: { mode: "prepared" } } }),
+  });
+  const inner = globalThis.fetch;
+  vi.stubGlobal("fetch", async (input: string | URL, init?: RequestInit) => { if (init?.method === "POST") await gate; return inner(input, init); });
+  render(<App />);
+  const btn = (await screen.findByRole("button", { name: "분석하기" })) as HTMLButtonElement;
+  fireEvent.click(btn);
+  await vi.waitFor(() => expect(btn.disabled).toBe(true));
+  const reason = document.getElementById(btn.getAttribute("aria-describedby") ?? "none");
+  expect(reason?.textContent).toMatch(/보내는 중/);
+  release();
+  await vi.waitFor(() => expect(btn.disabled).toBe(false));
 });

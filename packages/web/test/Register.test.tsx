@@ -45,3 +45,14 @@ it("400 invalid면 alert에 message(와 hint)", async () => {
   expect((await screen.findByRole("alert")).textContent).toContain("파일을 찾을 수 없어요: /nope.yaml");
   expect(go).not.toHaveBeenCalled();
 });
+
+it("등록 버튼이 비활성인 이유를 안내한다 (aria-describedby), 채우면 안내가 사라진다", () => {
+  render(<Register go={() => {}} onRegistered={() => {}} />);
+  const btn = screen.getByRole("button", { name: "등록" }) as HTMLButtonElement;
+  expect(btn.disabled).toBe(true);
+  const reason = document.getElementById(btn.getAttribute("aria-describedby") ?? "none");
+  expect(reason?.textContent).toContain("경로");
+  type("스펙 경로 또는 URL", "/x/docs/petstore.yaml");
+  expect(btn.disabled).toBe(false);
+  expect(btn.getAttribute("aria-describedby")).toBeNull();
+});

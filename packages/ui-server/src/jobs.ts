@@ -40,7 +40,10 @@ export class JobManager {
     const snap = (): Job => ({ ...job, ...(job.progress ? { progress: { ...job.progress } } : {}) });
     this.bus.publish("job-started", snap());
     const onEvent: OnEvent = (e) => {
-      job.progress = { message: e.message, ...(e.done !== undefined ? { done: e.done } : {}), ...(e.total !== undefined ? { total: e.total } : {}) };
+      // done/total이 없는 이벤트(병합 중 등)는 이전 값을 유지한다. 화면 진행 막대가 0으로 되돌아가지 않게 한다.
+      const done = e.done ?? job.progress?.done;
+      const total = e.total ?? job.progress?.total;
+      job.progress = { message: e.message, ...(done !== undefined ? { done } : {}), ...(total !== undefined ? { total } : {}) };
       this.bus.publish("job-progress", snap());
     };
     const task = (async () => {

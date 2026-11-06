@@ -54,6 +54,21 @@ it("진행 이벤트는 job-progress로, 결과는 job-done으로", async () => 
   expect(jobs.list().recent).toHaveLength(1);
 });
 
+it("done/total 없는 진행 이벤트는 이전 done/total을 지우지 않는다", async () => {
+  const bus = new EventBus();
+  const seen: { event: string; data: any }[] = [];
+  bus.subscribe((e) => seen.push(e as { event: string; data: any }));
+  const jobs = new JobManager(bus);
+  jobs.start("pets", "extract", async ({ onEvent }) => {
+    onEvent({ stage: "extract", message: "추출 2/3", done: 2, total: 3 });
+    onEvent({ stage: "merge", message: "병합 중" });
+    return {};
+  });
+  await tick(); await tick();
+  const progress = seen.filter((e) => e.event === "job-progress").map((e) => e.data.progress);
+  expect(progress[1]).toEqual({ message: "병합 중", done: 2, total: 3 });
+});
+
 it("recent는 시스템·종류별 마지막 하나만", async () => {
   const jobs = new JobManager(new EventBus());
   const a = jobs.start("pets", "verify", async () => 1); await tick(); await tick();
