@@ -26,7 +26,7 @@ export function ingestInputError(e: unknown): unknown {
   return e;
 }
 
-export type ErrorCode = "invalid" | "not-found" | "busy" | "overwrite-required" | "cancelled" | "not-cancellable" | "forbidden" | "failed";
+export type ErrorCode = "invalid" | "not-found" | "busy" | "overwrite-required" | "cancelled" | "not-cancellable" | "forbidden" | "failed" | "shutting-down";
 export interface ApiErrorBody { ok: false; error: { code: ErrorCode; message: string; hint?: string } }
 
 const STEP: Record<string, string> = { ingest: "① 등록", analyze: "② 분석", select: "③ 기능 선택", generate: "④ 생성", verify: "⑤ 검증" };
@@ -47,7 +47,7 @@ export function errorBody(code: ErrorCode, message: string, hint?: string): ApiE
   return { ok: false, error: { code, message, ...(hint ? { hint } : {}) } };
 }
 
-export type ApiErrorStatus = 400 | 403 | 404 | 405 | 409 | 499 | 500;
+export type ApiErrorStatus = 400 | 403 | 404 | 405 | 409 | 499 | 500 | 503;
 
 export function toApiError(e: unknown): { status: ApiErrorStatus; body: ApiErrorBody } {
   if (e instanceof LockBusyError) return { status: 409, body: errorBody("busy", e.message, "다른 곳(CLI/대화)에서 작업 중이에요. 끝난 뒤 다시 시도해 주세요.") };

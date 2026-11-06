@@ -27,7 +27,7 @@ export function App() {
   }, []);
   useEffect(() => { reload(); }, [reload]);
 
-  const { connected } = useServerEvents({
+  const { connected, dead } = useServerEvents({
     on: { "workspace-changed": reload, "watch-error": () => setWatchStopped(true) },
     onReconnect: () => { reload(); void api.jobs().catch(() => undefined); },
   });
@@ -47,7 +47,7 @@ export function App() {
       <div className={`body${route.screen === "select" ? " with-detail" : ""}`}>
         <Sidebar systems={systems ?? []} current={route.system} go={go} />
         <main className="panel mid">
-          {!connected ? <Notice message="연결이 끊겼어요" hint="다시 연결하는 중이에요." /> : null}
+          {dead ? <Notice message="서버와 연결이 끊겼어요" hint="새로고침해 주세요." /> : !connected ? <Notice message="연결이 끊겼어요" hint="다시 연결하는 중이에요." /> : null}
           {watchStopped ? <Notice message="변경 감지가 멈췄어요" hint="화면을 새로고침해 주세요." /> : null}
           {error ? <Notice message={error.message} hint={error.hint} /> : null}
           <h1>{TITLES[route.screen]}</h1>

@@ -228,3 +228,16 @@ describe("시스템 개요", () => {
     expect((await c.get("/systems/pets")).body.data.analyze).toBe("prepared");
   });
 });
+
+describe("종료 중", () => {
+  it("jobs.shutdown 뒤 작업 POST는 503 shutting-down", async () => {
+    const { app, jobs } = createApp({ root, webDir: path.join(root, "web"), port: () => 4310 });
+    const post = (p: string, b: unknown = {}) => app.request(`/api${p}`, { method: "POST", headers: HOST, body: JSON.stringify(b) });
+    await post("/systems", { system: "petstore", origins: [PETSTORE] });
+    await post("/systems/petstore/analyze");
+    jobs.shutdown();
+    const r = await post("/systems/petstore/verify");
+    expect(r.status).toBe(503);
+    expect(await r.json()).toMatchObject({ ok: false, error: { code: "shutting-down", message: "서버를 끄는 중이에요" } });
+  });
+});

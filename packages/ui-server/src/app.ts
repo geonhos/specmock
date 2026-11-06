@@ -5,7 +5,7 @@ import path from "node:path";
 import { analyzeSpec, ClaudeCodeAdapter, findFeature, generate, ingestSpec, listFeatures, select, summarizeChunks, verifyMock, Workspace } from "@specmock/core";
 import { streamSSE } from "hono/streaming";
 import { EventBus, pushBounded, type BusEvent } from "./bus.js";
-import { BusyJobError, JobManager, NotCancellableError } from "./jobs.js";
+import { BusyJobError, JobManager, NotCancellableError, ShuttingDownError } from "./jobs.js";
 import { errorBody, ingestInputError, InvalidRequest, NotFound, toApiError } from "./errors.js";
 import { localOnly, methodGuard } from "./security.js";
 import { serveWeb } from "./static.js";
@@ -56,6 +56,7 @@ export function createApp(opts: AppOptions) {
   app.use("/api/*", methodGuard);
   app.onError((e, c) => {
     if (e instanceof BusyJobError) return c.json({ ...errorBody("busy", e.message, "진행 중인 작업이 있어요."), jobId: e.jobId }, 409);
+    if (e instanceof ShuttingDownError) return c.json(errorBody("shutting-down", e.message), 503);
     if (e instanceof NotCancellableError) return c.json(errorBody("not-cancellable", e.message), 409);
     const r = toApiError(e); return c.json(r.body, r.status as ContentfulStatusCode);
   });

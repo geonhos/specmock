@@ -59,16 +59,17 @@ export function watchWorkspace(dir: string, emit: (e: WorkspaceChange) => void, 
     if (closed) return;
     if (failures >= retry.attempts) { opts.onError?.(e); return; }
     const delay = retry.baseMs * 2 ** failures++;
-    retryTimer = setTimeout(start, delay);
+    retryTimer = setTimeout(() => start(true), delay);
     if (opts.unref) retryTimer.unref();
   };
-  const start = () => {
+  const start = (retried = false) => {
     if (closed) return;
     try {
       const next = watchFn(dir, { recursive: true }, (_ev, filename) => onChange(filename));
       next.on("error", (e) => { if (next === w) fail(e); });
       if (opts.unref) next.unref();
       w = next;
+      if (retried) { failures = 0; emit({ system: null, files: [] }); } // 감시가 끊긴 사이 놓친 변경을 전체 다시 불러오기로 메운다
     } catch (e) { fail(e instanceof Error ? e : new Error(String(e))); }
   };
   start();

@@ -101,6 +101,7 @@ flowchart LR
 | 반경 | `radius-sm` / `radius-lg` | `8px` / `14px` |
 | 글꼴 | `font` / `mono` | Pretendard → Apple SD Gothic Neo → 시스템 / JetBrains Mono → SF Mono → Menlo |
 | 글자 크기 | 본문 / 화면 제목 / 상세 경로 / 경로·코드 / 메서드·숫자 | `14px` / `24px` / `22px` / `13.5px` / `12px` |
+| 글자 크기(추가) | 로고 / 카드 제목 / 버튼 / 확인 창 제목 / 보조 글자 | `17px` / `15px` / `15px` / `18px` / `12px` (`--fs-logo` `--fs-panel-title` `--fs-button` `--fs-dialog-title` `--fs-caption`) |
 | 높이 | 표 행 / 그룹 행 / 입력·탭 / 주 버튼 / 상단 바 | `32px` / `36px` / `38px` / `42px` / `56px` |
 | 폭 | 사이드바 / 상세 패널 / 카드 간격 | `232px` / `392px` / `8px` |
 

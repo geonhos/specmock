@@ -9,6 +9,7 @@
   --font: Pretendard, "Apple SD Gothic Neo", system-ui, sans-serif;
   --mono: "JetBrains Mono", "SF Mono", Menlo, monospace;
   --fs-body: 14px; --fs-title: 24px; --fs-detail-path: 22px; --fs-code: 13.5px; --fs-num: 12px;
+  --fs-logo: 17px; --fs-panel-title: 15px; --fs-button: 15px; --fs-dialog-title: 18px; --fs-caption: 12px;
   --h-row: 32px; --h-group: 36px; --h-input: 38px; --h-button: 42px; --h-top: 56px;
   --w-sidebar: 232px; --w-detail: 392px; --gap: 8px;
   color-scheme: dark;

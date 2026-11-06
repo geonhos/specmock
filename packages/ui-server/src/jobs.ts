@@ -12,6 +12,10 @@ export class NotCancellableError extends Error {
   readonly code = "not-cancellable" as const;
   constructor() { super("이 작업은 취소할 수 없어요"); this.name = "NotCancellableError"; }
 }
+export class ShuttingDownError extends Error {
+  readonly code = "shutting-down" as const;
+  constructor() { super("서버를 끄는 중이에요"); this.name = "ShuttingDownError"; }
+}
 /** generate는 도중에 멈출 수 없다(파일을 쓰는 중). 나머지는 signal을 따른다. */
 const CANCELLABLE: Record<JobKind, boolean> = { extract: true, verify: true, generate: false };
 export interface JobContext { signal: AbortSignal; onEvent: OnEvent }
@@ -22,9 +26,11 @@ export class JobManager {
   private controllers = new Map<string, AbortController>();
   private running = new Map<string, string>(); // system → jobId
   private settled = new Set<Promise<void>>();
+  private closing = false;
   constructor(private readonly bus: EventBus) {}
 
   start(system: string, kind: JobKind, run: (ctx: JobContext) => Promise<unknown>): Job {
+    if (this.closing) throw new ShuttingDownError();
     const busy = this.running.get(system);
     if (busy) throw new BusyJobError(busy);
     const job: Job = { id: randomUUID(), system, kind, state: "running", cancellable: CANCELLABLE[kind], startedAt: new Date().toISOString() };
@@ -82,4 +88,6 @@ export class JobManager {
   }
   /** 서버 종료 시 진행 중인 작업을 모두 취소한다. */
   cancelAll(): void { for (const ac of this.controllers.values()) ac.abort(); }
+  /** 새 작업을 더 받지 않고(503) 진행 중인 작업을 모두 취소한다. */
+  shutdown(): void { this.closing = true; this.cancelAll(); }
 }

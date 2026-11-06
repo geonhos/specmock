@@ -44,7 +44,7 @@ export async function startUiServer(opts: StartUiServerOptions): Promise<UiServe
     port,
     close: async () => {
       watcher.close();
-      jobs.cancelAll();
+      jobs.shutdown(); // 이후 작업 POST는 503. 진행 중인 작업은 취소
       await jobs.whenIdle(CLOSE_WAIT_MS); // 자식 프로세스·파일 쓰기가 정리될 시간을 준다
       await new Promise<void>((resolve) => { server.close(() => resolve()); (server as { closeAllConnections?: () => void }).closeAllConnections?.(); });
     },

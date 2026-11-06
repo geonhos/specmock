@@ -55,23 +55,42 @@ it("연속 쓰기 중에도 maxWaitMs마다 알린다", async () => {
   } finally { w.close(); }
 });
 
-it("감시자 오류 → 백오프로 재감시, 계속 실패하면 onError", async () => {
+it("감시자 오류 → 백오프로 재감시, 재감시도 계속 실패하면 onError", async () => {
+  const dir = path.join(root, ".specmock");
+  await mkdir(dir, { recursive: true });
+  const calls: FSWatcher[] = [];
+  let attempts = 0;
+  const watchFn = (() => {
+    if (++attempts > 1) throw new Error(`watch 실패 ${attempts}`); // 처음만 성공, 재감시는 계속 실패
+    const w = new EventEmitter() as FSWatcher; (w as any).close = () => {}; (w as any).unref = () => w; calls.push(w); return w;
+  }) as unknown as typeof watch;
+  const errors: Error[] = [];
+  const w = watchWorkspace(dir, () => {}, { watchFn, retry: { attempts: 2, baseMs: 10 }, onError: (e) => errors.push(e) });
+  expect(attempts).toBe(1);
+  calls[0]!.emit("error", new Error("boom"));
+  await expect.poll(() => errors.length, { timeout: 1000 }).toBe(1);
+  expect(attempts).toBe(3); // 처음 1 + 재시도 2
+  expect(errors[0]!.message).toBe("watch 실패 3");
+  await new Promise((r) => setTimeout(r, 100));
+  expect(attempts).toBe(3);
+  w.close();
+});
+
+it("재감시에 성공하면 {system:null, files:[]}를 한 번 알리고, 실패 횟수도 0으로 되돌린다", async () => {
   const dir = path.join(root, ".specmock");
   await mkdir(dir, { recursive: true });
   const calls: FSWatcher[] = [];
   const watchFn = (() => { const w = new EventEmitter() as FSWatcher; (w as any).close = () => {}; (w as any).unref = () => w; calls.push(w); return w; }) as unknown as typeof watch;
+  const got: { system: string | null; files: string[] }[] = [];
   const errors: Error[] = [];
-  const w = watchWorkspace(dir, () => {}, { watchFn, retry: { attempts: 2, baseMs: 10 }, onError: (e) => errors.push(e) });
-  expect(calls).toHaveLength(1);
+  const w = watchWorkspace(dir, (e) => got.push(e), { watchFn, retry: { attempts: 1, baseMs: 10 }, onError: (e) => errors.push(e) });
+  expect(got).toEqual([]); // 처음 감시 시작은 알리지 않는다
   calls[0]!.emit("error", new Error("boom"));
-  await expect.poll(() => calls.length, { timeout: 1000 }).toBe(2); // 재감시
-  expect(errors).toEqual([]);
-  calls[1]!.emit("error", new Error("boom2"));
+  await expect.poll(() => calls.length, { timeout: 1000 }).toBe(2);
+  expect(got).toEqual([{ system: null, files: [] }]);
+  calls[1]!.emit("error", new Error("boom2")); // 재감시가 성공했으니 다시 재시도 기회가 있다
   await expect.poll(() => calls.length, { timeout: 1000 }).toBe(3);
-  calls[2]!.emit("error", new Error("boom3"));
-  await expect.poll(() => errors.length, { timeout: 1000 }).toBe(1);
-  expect(errors[0]!.message).toBe("boom3");
-  await new Promise((r) => setTimeout(r, 100));
-  expect(calls).toHaveLength(3);
+  expect(errors).toEqual([]);
+  expect(got).toHaveLength(2);
   w.close();
 });

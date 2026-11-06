@@ -8,7 +8,9 @@ export const STEP_SCREENS = ["new", "analyze", "select", "generate", "verify"] a
 export function parseRoute(pathname: string): Route {
   if (pathname === "/new") return { screen: "new" };
   const m = /^\/systems\/([^/]+)\/(analyze|select|generate|verify)$/.exec(pathname);
-  if (m) return { screen: m[2] as Screen, system: decodeURIComponent(m[1]!) };
+  if (m) {
+    try { return { screen: m[2] as Screen, system: decodeURIComponent(m[1]!) }; } catch { /* 잘못된 % 인코딩 */ }
+  }
   return { screen: "home" };
 }
 

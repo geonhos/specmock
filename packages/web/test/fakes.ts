@@ -22,18 +22,22 @@ export function fakeApi(routes: Record<string, Route>) {
 /** 가짜 EventSource. emit으로 서버 이벤트를, fail로 연결 끊김을 흉내 낸다. */
 export class FakeEventSource {
   static last: FakeEventSource | undefined;
+  static all: FakeEventSource[] = [];
+  static readonly CLOSED = 2;
+  readyState = 0;
   onerror: ((e: Event) => void) | null = null;
   closed = false;
   private listeners = new Map<string, Set<(e: MessageEvent) => void>>();
-  constructor(readonly url: string) { FakeEventSource.last = this; }
+  constructor(readonly url: string) { FakeEventSource.last = this; FakeEventSource.all.push(this); }
   addEventListener(name: string, fn: (e: MessageEvent) => void) {
     const set = this.listeners.get(name) ?? new Set();
     set.add(fn); this.listeners.set(name, set);
   }
   removeEventListener(name: string, fn: (e: MessageEvent) => void) { this.listeners.get(name)?.delete(fn); }
-  close() { this.closed = true; }
+  close() { this.closed = true; this.readyState = 2; }
   emit(name: string, data: unknown) {
     for (const fn of this.listeners.get(name) ?? []) fn(new MessageEvent(name, { data: JSON.stringify(data) }));
   }
-  fail() { this.onerror?.(new Event("error")); }
+  /** 연결 끊김. permanent면 브라우저가 재연결을 포기한 상태(readyState CLOSED, 비 200 응답 등). */
+  fail(permanent = false) { this.readyState = permanent ? 2 : 0; this.onerror?.(new Event("error")); }
 }

@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { App } from "../src/App";
 import { FakeEventSource, fakeApi } from "./fakes";
@@ -74,4 +74,31 @@ it("watch-error가 오면 새로고침 안내 알림", async () => {
   await screen.findByRole("link", { name: /petstore/ });
   FakeEventSource.last!.emit("watch-error", { message: "boom" });
   expect((await screen.findByRole("alert")).textContent).toContain("변경 감지가 멈췄어요");
+});
+
+it("언마운트하면 EventSource를 닫는다", async () => {
+  fakeApi(base());
+  const { unmount } = render(<App />);
+  await screen.findByRole("link", { name: /petstore/ });
+  const es = FakeEventSource.last!;
+  expect(es.closed).toBe(false);
+  unmount();
+  expect(es.closed).toBe(true);
+  cleanup();
+});
+
+it("SSE가 영구히 끊겨 포기하면 새로고침 안내", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    fakeApi(base());
+    render(<App />);
+    await screen.findByRole("link", { name: /petstore/ });
+    for (let i = 0; i < 10; i++) {
+      FakeEventSource.last!.fail(true);
+      await vi.advanceTimersByTimeAsync(60_000);
+    }
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("서버와 연결이 끊겼어요");
+    expect(alert.textContent).toContain("새로고침해 주세요");
+  } finally { vi.useRealTimers(); }
 });

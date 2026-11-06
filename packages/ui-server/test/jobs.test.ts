@@ -109,3 +109,12 @@ it("whenIdle은 진행 중 작업이 끝나면 true, 시간이 지나면 false",
   expect(await jobs.whenIdle(1000)).toBe(true);
   expect(await jobs.whenIdle(10)).toBe(true);
 });
+
+it("shutdown 뒤에는 새 작업을 ShuttingDownError로 거부하고 진행 중인 작업은 취소한다", async () => {
+  const jobs = new JobManager(new EventBus());
+  const a = jobs.start("a", "extract", ({ signal }) => new Promise((_, rej) => signal.addEventListener("abort", () => rej(signal.reason))));
+  jobs.shutdown();
+  expect(() => jobs.start("b", "verify", async () => {})).toThrowError(expect.objectContaining({ code: "shutting-down" }));
+  await tick(); await tick();
+  expect(jobs.get(a.id)!.state).toBe("cancelled");
+});
