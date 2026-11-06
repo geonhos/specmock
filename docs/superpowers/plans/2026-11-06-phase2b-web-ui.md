@@ -2353,7 +2353,7 @@ git commit -m "test(e2e): 화면 E2E(OpenAPI 전 과정, 가짜 claude 문서 �
 |---|---|---|---|
 | 1 core 동시성 | 출발점 40 files / 309 tests(계획의 308과 1 차이). 기존 `service.test.ts:139`가 알 수 없는 그룹의 예외를 기대해 "수정 없이 통과" 가정이 틀렸고, 새 동작(빈 rows)에 맞게 그 한 줄을 고침. 반복 5회 모두 통과 | | |
 | 2 취소 신호 | 리뷰 FAIL 수정: 취소 시 프로세스 그룹 SIGKILL(detached), npm install 완료 마커(`node_modules/.specmock-installed`), 취소 경합 처리. 499 판정은 오류 이름 대신 ui-server의 `signal.aborted`로 확정(Task 5에서 반영) | | |
-| 3 ui-server 골격 | | | |
+| 3 ui-server 골격 | A3 확인: `serve` 콜백 인자(`info.port`)와 `error` 이벤트(EADDRINUSE)가 계획대로 동작해 `createServer` 대체 불필요. 499는 `ContentfulStatusCode`에 없어 `app.onError`에서 캐스트(계획이 예고한 위치). `toApiError` 반환 타입에 405를 추가하고 405 가드는 `security.ts`의 `methodGuard`로 분리(`GET·HEAD·POST` 외 전부 405). 루트 `test`는 `pnpm build && vitest run`(소요 약 42초). 루트 devDependencies에 이미 있던 hono·node-server는 그대로 둠. 테스트 45 files / 359 tests | | |
 | 4 API | | | |
 | 5 작업·SSE·감시 | | | |
 | 6 web 골격 | | | |
