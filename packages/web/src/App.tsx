@@ -1,8 +1,10 @@
-import type { SystemSummary } from "@specmock/ui-server/api-types";
+import type { EnvInfo, Job, SystemSummary } from "@specmock/ui-server/api-types";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "./api";
 import { Notice } from "./components/Notice";
 import { nextScreen, Sidebar } from "./components/Sidebar";
+import { Analyze } from "./screens/Analyze";
+import { Register } from "./screens/Register";
 import { StepBar } from "./components/StepBar";
 import { useServerEvents } from "./events";
 import { pathFor, useRoute, type Screen } from "./route";
@@ -21,15 +23,32 @@ export function App() {
   const [systems, setSystems] = useState<SystemSummary[] | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [watchStopped, setWatchStopped] = useState(false);
+  const [env, setEnv] = useState<EnvInfo | null>(null);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [tick, setTick] = useState(0);
 
   const reload = useCallback(() => {
     api.systems().then((s) => { setSystems(s); setError(null); }).catch((e: unknown) => setError(e instanceof ApiError ? e : new ApiError(0, "failed", String(e))));
   }, []);
   useEffect(() => { reload(); }, [reload]);
+  useEffect(() => { api.env().then(setEnv).catch(() => undefined); }, []);
+
+  const upsert = useCallback((j: Job) => setJobs((all) => (all.some((x) => x.id === j.id) ? all.map((x) => (x.id === j.id ? j : x)) : [...all, j])), []);
+  const refreshJobs = useCallback(() => {
+    api.jobs().then((l) => setJobs((all) => {
+      const fresh = [...l.recent, ...l.running];
+      return [...all.filter((x) => !fresh.some((f) => f.id === x.id)), ...fresh];
+    })).catch(() => undefined);
+  }, []);
+  useEffect(() => { refreshJobs(); }, [refreshJobs]);
 
   const { connected, dead } = useServerEvents({
-    on: { "workspace-changed": reload, "watch-error": () => setWatchStopped(true) },
-    onReconnect: () => { reload(); void api.jobs().catch(() => undefined); },
+    on: {
+      "workspace-changed": () => { reload(); setTick((t) => t + 1); },
+      "job-started": upsert, "job-progress": upsert, "job-done": upsert, "job-failed": upsert,
+      "watch-error": () => setWatchStopped(true),
+    },
+    onReconnect: () => { reload(); setTick((t) => t + 1); refreshJobs(); },
   });
 
   // "/"는 첫 시스템의 다음 단계, 없으면 등록 화면으로 보낸다.
@@ -51,6 +70,10 @@ export function App() {
           {watchStopped ? <Notice message="변경 감지가 멈췄어요" hint="화면을 새로고침해 주세요." /> : null}
           {error ? <Notice message={error.message} hint={error.hint} /> : null}
           <h1>{TITLES[route.screen]}</h1>
+          {route.screen === "new" ? <Register go={go} onRegistered={reload} /> : null}
+          {route.screen === "analyze" && route.system ? (
+            <Analyze key={route.system} system={route.system} claude={env?.claude} jobs={jobs} tick={tick} go={go} refreshJobs={refreshJobs} onChanged={reload} />
+          ) : null}
         </main>
         {route.screen === "select" ? <aside className="panel det" aria-label="상세" /> : null}
       </div>

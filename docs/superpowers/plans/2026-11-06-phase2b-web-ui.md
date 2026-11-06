@@ -2357,7 +2357,7 @@ git commit -m "test(e2e): 화면 E2E(OpenAPI 전 과정, 가짜 claude 문서 �
 | 4 API | 리뷰 FAIL 수정(별도 커밋): 등록 입력의 errno(ENOENT·EISDIR·ENOTDIR·EACCES)와 URL `요청 실패`는 400 invalid(`ingestInputError`), 없는 기능 id 상세는 404(`NotFound`), 상대 origin은 root 기준 절대 경로로 저장, 빈 `?group=`은 필터 없음, 작업 공간 파일 손상(`형식 오류`·`JSON 파싱 실패`)은 500 | | |
 | 5 작업·SSE·감시 | A4 확인: `app.request`로 받은 SSE body를 조각 단위로 읽을 수 있음(소켓 불필요). `stream.aborted`·`onAbort` 이름은 hono 4.13 그대로. 계획과 다른 점: 작업 시작 라우트가 먼저 `assertRegistered`로 없는 시스템을 404로 막음(비동기 실패 방지), 본문 없는 POST 허용, `outDir`·`dir` 상대 경로는 root 기준, `EventBus.size` 추가, `createApp`에 `unref` 옵션, `fs.watch`는 macOS가 보내는 감시 루트 자신의 이벤트(`.specmock`)를 무시, 취소 시 `job-failed` 이벤트(state=cancelled) 발행 | | |
 | 6 web 골격 | | | |
-| 7 ① 등록 ② 분석 | | | |
+| 7 ① 등록 ② 분석 | 계획과 다른 점: App이 `env`·`jobs`(SSE job 이벤트와 `/api/jobs`로 갱신)를 들고 있고 분석 화면은 props로 받음. 등록은 결과 문구를 세팅한 직후 바로 ②로 이동(형식은 ②에도 표시). 끝난 작업은 이 화면이 running을 본 경우에만 ③으로 이동. `workspace-changed`는 `tick`으로 개요·청크 재조회. 추가 파일 `name.ts`·`format.ts` | | |
 | 8 ③ 기능 선택 | | | |
 | 9 ④ 생성 ⑤ 검증 | | | |
 | 10 진입점 | | | |

@@ -57,3 +57,19 @@ dialog h2 { margin: 0 0 8px; font-size: var(--fs-dialog-title); }
 .btn-primary { background: var(--accent); color: var(--accent-ink); }
 .btn-ghost { background: var(--surface-3); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ① 등록 · ② 분석 */
+.form, .analyze { display: flex; flex-direction: column; gap: 12px; max-width: 640px; }
+.field { display: flex; flex-direction: column; gap: 6px; color: var(--text-2); font-weight: 600; }
+.field input { height: var(--h-input); padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-1); color: var(--text); font: inherit; }
+.format, .muted { margin: 0; color: var(--text-2); }
+.btn-primary:disabled { opacity: .45; }
+.chunks { width: 100%; border-collapse: collapse; }
+.chunks th { height: var(--h-row); text-align: left; color: var(--text-3); font-size: var(--fs-caption); font-weight: 600; border-bottom: 1px solid var(--line); }
+.chunks td { height: var(--h-row); border-bottom: 1px solid var(--line); }
+.chunks .num { text-align: right; font-family: var(--mono); font-size: var(--fs-num); padding-right: 16px; width: 96px; }
+.st { width: 56px; font-weight: 600; }
+.st-done { color: var(--ok); } .st-failed { color: var(--danger); } .st-pending { color: var(--text-3); }
+.progress-row { display: flex; align-items: center; gap: 12px; }
+.progress { flex: 1; height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
+.progress-fill { height: 100%; background: var(--accent); transition: width .2s; }
