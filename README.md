@@ -335,7 +335,7 @@ pnpm typecheck     # src와 test 모두
 pnpm test:e2e      # 브라우저 E2E(별도). 처음 한 번 `pnpm exec playwright install chromium`
 ```
 
-변경 후 위 두 명령이 통과하면 PR을 엽니다. 설계 의도는 [설계 문서](docs/superpowers/specs/2026-11-04-specmock-design.md)에, 단계별 작업 단위는 [구현 계획](docs/superpowers/plans/)(1A, 1B, 2A)에 있습니다. 설계와 다르게 구현한 지점은 설계 문서 12장 "구현 중 변경"에 이유와 함께 적습니다.
+변경 후 위 명령이 통과하면 PR을 엽니다. 설계 의도는 [설계 문서](docs/superpowers/specs/2026-11-04-specmock-design.md)에, 단계별 작업 단위는 [구현 계획](docs/superpowers/plans/)(1A, 1B, 2A, 2B)에 있습니다. 설계와 다르게 구현한 지점은 설계 문서 12장 "구현 중 변경"에 이유와 함께 적습니다.
 
 ## 로드맵
 

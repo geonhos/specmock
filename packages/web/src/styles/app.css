@@ -98,7 +98,8 @@ dialog h2 { margin: 0 0 8px; font-size: var(--fs-dialog-title); }
 .ft-method { font: 700 var(--fs-num) var(--mono); }
 .ft-open { text-align: left; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-num) var(--mono); }
 .ft-path { font-family: var(--mono); font-size: var(--fs-num); }
-.ft-id, .ft-meta { font: var(--fs-num) var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ft-id { font: var(--fs-num) var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ft-meta { font: var(--fs-num) var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ft-meta { text-align: right; }
 .cb { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--text-3); display: grid; place-items: center; flex: none; cursor: pointer; }
 .cb.on, .cb.part { background: var(--accent); border-color: var(--accent); }
