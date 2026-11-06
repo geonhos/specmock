@@ -2,6 +2,7 @@
 # 취소 테스트용 가짜 npm: 손자(sleep)를 하나 띄우고 둘 다 pid를 남긴 뒤 기다린다.
 # 호출 인자가 "ok"이면 아니라 PID_FILE이 이미 있으면(두 번째 호출) 즉시 node_modules를 만들고 성공한다.
 if [ -n "${INSTALL_LOG:-}" ]; then echo run >> "$INSTALL_LOG"; fi
+if [ -n "${FAIL:-}" ]; then echo "boom" >&2; exit 1; fi
 if [ -n "${FAST:-}" ]; then mkdir -p node_modules/dummy; exit 0; fi
 mkdir -p node_modules/partial
 sleep 30 &

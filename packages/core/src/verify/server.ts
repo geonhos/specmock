@@ -1,4 +1,4 @@
-import { access, rm, writeFile } from "node:fs/promises";
+import { access, writeFile } from "node:fs/promises";
 import path from "node:path";
 import getPort from "get-port";
 import type { Lock } from "../generate/lock.js";
@@ -65,7 +65,7 @@ async function isInstalled(dir: string): Promise<boolean> {
 /**
  * 마커가 없으면 npm install을 먼저 실행한다. 없이 `npx tsx`를 부르면 npx가 설치 여부를 묻다가 멈춘다.
  * 마커 도입 전에 만든 mock(마커 없는 node_modules)은 한 번 다시 설치한다. npm은 이미 있는 패키지를 빠르게 확인만 하므로 비용이 작다.
- * 취소·실패하면 node_modules를 지워 다음 호출이 처음부터 설치하게 한다.
+ * 취소·실패해도 node_modules는 지우지 않는다(오프라인 첫 verify가 기존 설치를 날리면 안 된다). 마커가 없으니 다음 호출이 다시 설치한다.
  */
 export async function ensureInstalled(dir: string, opts: { onLog?: (message: string) => void; signal?: AbortSignal } = {}): Promise<void> {
   opts.signal?.throwIfAborted();
@@ -86,11 +86,16 @@ export async function ensureInstalled(dir: string, opts: { onLog?: (message: str
     opts.signal?.throwIfAborted();
     await writeFile(path.join(dir, "node_modules", INSTALLED_MARKER), new Date().toISOString());
   } catch (e) {
-    await rm(path.join(dir, "node_modules"), { recursive: true, force: true }).catch(() => {});
     throw e;
   } finally {
     opts.signal?.removeEventListener("abort", onAbort);
   }
+}
+
+function groupAlive(child: { pid?: number; exitCode: number | null; signalCode: NodeJS.Signals | null }): boolean {
+  if (child.pid === undefined) return false;
+  if (process.platform === "win32") return child.exitCode === null && child.signalCode === null;
+  try { process.kill(-child.pid, 0); return true; } catch { return false; }
 }
 
 function abortReason(signal: AbortSignal): Error {
@@ -111,13 +116,14 @@ export async function startMock(dir: string, lock: Lock, opts: StartMockOptions 
   child.stdout?.on("data", () => { /* 로그는 버린다 */ });
   child.once("error", (e) => { spawnError = e; });
 
-  const stop = () =>
-    new Promise<void>((resolve) => {
-      if (spawnError || child.exitCode !== null) return resolve();
-      child.once("exit", () => resolve());
-      killGroup(child, "SIGTERM");
-      setTimeout(() => { if (child.exitCode === null) killGroup(child, "SIGKILL"); }, 3000).unref();
-    });
+  const stop = async () => {
+    if (spawnError || child.pid === undefined) return;
+    killGroup(child, "SIGTERM");
+    // 리더가 먼저 죽어도 손자가 남을 수 있으므로, 유예 동안 그룹 생존 여부를 보고 남았으면 그룹째 SIGKILL한다.
+    const deadline = Date.now() + 3000;
+    while (groupAlive(child) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+    if (groupAlive(child)) killGroup(child, "SIGKILL");
+  };
 
   try {
     await waitForHealth(
