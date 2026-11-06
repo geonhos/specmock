@@ -29,11 +29,11 @@ export class JobManager {
   private closing = false;
   constructor(private readonly bus: EventBus) {}
 
-  start(system: string, kind: JobKind, run: (ctx: JobContext) => Promise<unknown>): Job {
+  start(system: string, kind: JobKind, run: (ctx: JobContext) => Promise<unknown>, input?: Job["input"]): Job {
     if (this.closing) throw new ShuttingDownError();
     const busy = this.running.get(system);
     if (busy) throw new BusyJobError(busy);
-    const job: Job = { id: randomUUID(), system, kind, state: "running", cancellable: CANCELLABLE[kind], startedAt: new Date().toISOString() };
+    const job: Job = { id: randomUUID(), system, kind, state: "running", cancellable: CANCELLABLE[kind], startedAt: new Date().toISOString(), ...(input ? { input } : {}) };
     const ac = new AbortController();
     this.jobs.set(job.id, job); this.controllers.set(job.id, ac); this.running.set(system, job.id);
     // SSE 루프는 큐에서 꺼낼 때 직렬화하므로, 그때의 객체가 아니라 발행 시점의 사본을 보낸다.

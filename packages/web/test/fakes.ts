@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 
-type Route = (body?: unknown) => { status?: number; body: unknown };
+type Route = (body?: unknown) => { status?: number; body: unknown; /** 이 Promise가 풀릴 때까지 응답을 늦춘다(늦게 도착한 응답 경합 재현). */ wait?: Promise<unknown> };
 
 /** 가짜 fetch. 키는 "GET /api/systems" 형식이고 호출은 calls에 쌓인다. */
 export function fakeApi(routes: Record<string, Route>) {
@@ -14,6 +14,7 @@ export function fakeApi(routes: Record<string, Route>) {
     const route = routes[key];
     if (!route) return new Response(JSON.stringify({ ok: false, error: { code: "not-found", message: `가짜 API에 없는 요청: ${key}` } }), { status: 404 });
     const r = route(body);
+    if (r.wait) await r.wait;
     return new Response(JSON.stringify(r.body), { status: r.status ?? 200, headers: { "content-type": "application/json" } });
   });
   return { calls, bodies };

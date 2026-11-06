@@ -37,6 +37,8 @@ export type Job = {
   cancellable: boolean;
   startedAt: string; endedAt?: string;
   progress?: { message: string; done?: number; total?: number };
+  /** 작업을 시작할 때의 입력(화면이 다른 화면에서 시작한 작업도 설명할 수 있게). generate는 outDir. */
+  input?: { outDir?: string };
   result?: unknown; error?: ApiErrorBody["error"];
 };
 export type JobList = { running: Job[]; recent: Job[] };

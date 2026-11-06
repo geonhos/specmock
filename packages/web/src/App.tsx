@@ -21,6 +21,14 @@ const TITLES: Record<Screen, string> = {
   verify: "mock 검증",
 };
 
+/**
+ * 작업 상태는 되돌아가지 않는다. 목록 스냅숏(GET /api/jobs)은 작업 중에 찍혀 SSE의 끝남 이벤트보다 늦게 올 수 있으므로,
+ * 이미 끝난(done/failed/cancelled) 로컬 상태를 같은 jobId의 running으로 되돌리지 않는다.
+ */
+function mergeJob(local: Job, incoming: Job): Job {
+  return local.state !== "running" && incoming.state === "running" ? local : incoming;
+}
+
 export function App() {
   const route = useRoute();
   const [systems, setSystems] = useState<SystemSummary[] | null>(null);
@@ -37,11 +45,11 @@ export function App() {
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => { api.env().then(setEnv).catch(() => undefined); }, []);
 
-  const upsert = useCallback((j: Job) => setJobs((all) => (all.some((x) => x.id === j.id) ? all.map((x) => (x.id === j.id ? j : x)) : [...all, j])), []);
+  const upsert = useCallback((j: Job) => setJobs((all) => (all.some((x) => x.id === j.id) ? all.map((x) => (x.id === j.id ? mergeJob(x, j) : x)) : [...all, j])), []);
   const refreshJobs = useCallback(() => {
     api.jobs().then((l) => setJobs((all) => {
       const fresh = [...l.recent, ...l.running];
-      return [...all.filter((x) => !fresh.some((f) => f.id === x.id)), ...fresh];
+      return [...all.map((x) => { const f = fresh.find((y) => y.id === x.id); return f ? mergeJob(x, f) : x; }), ...fresh.filter((f) => !all.some((x) => x.id === f.id))];
     })).catch(() => undefined);
   }, []);
   useEffect(() => { refreshJobs(); }, [refreshJobs]);

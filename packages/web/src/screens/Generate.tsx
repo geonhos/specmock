@@ -20,6 +20,7 @@ export function Generate({ system, jobs, tick, go, refreshJobs }: Props) {
   const [busy, setBusy] = useState(false);
   // 확인 창은 실패한 작업 하나에 한 번만 연다(취소한 뒤 같은 작업으로 다시 열리지 않게 id를 기억).
   const [ask, setAsk] = useState<{ id: string; dir: string; message: string } | null>(null);
+  const [declined, setDeclined] = useState(false); // 덮어쓰기를 취소했다: 이전 결과를 남기고 안내한다
   const asked = useRef(new Set<string>());
   const sent = useRef<string>("");
   const { last, running, seen, watch } = useJob(jobs, system, "generate");
@@ -33,11 +34,11 @@ export function Generate({ system, jobs, tick, go, refreshJobs }: Props) {
   useEffect(() => {
     if (!failedId || asked.current.has(failedId)) return;
     asked.current.add(failedId);
-    setAsk({ id: failedId, dir: sent.current, message: seen?.error?.message ?? "" });
+    setAsk({ id: failedId, dir: seen?.input?.outDir ?? sent.current, message: seen?.error?.message ?? "" });
   }, [failedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const start = async (dir: string, force: boolean) => {
-    setBusy(true); setError(null); sent.current = dir;
+    setBusy(true); setError(null); setDeclined(false); sent.current = dir;
     try { const r = await api.generate(system, dir, force); watch(r.jobId); refreshJobs(); } catch (e) {
       const err = asError(e);
       if (err.code === "busy" && err.jobId) watch(err.jobId);
@@ -48,13 +49,15 @@ export function Generate({ system, jobs, tick, go, refreshJobs }: Props) {
   if (!overview || outDir === null) return error ? <Notice message={error.message} hint={error.hint} /> : <p className="muted">불러오는 중이에요</p>;
 
   const other = jobs.find((j) => j.system === system && j.kind !== "generate" && j.state === "running");
-  const done = last?.state === "done" ? (last.result as GenerateReport | undefined) : undefined;
+  const prevDone = last?.state === "done" ? last : declined ? [...jobs].reverse().find((j) => j.system === system && j.kind === "generate" && j.state === "done") : undefined;
+  const done = prevDone?.result as GenerateReport | undefined;
   const failed = seen?.state === "failed" && !failedId ? seen : undefined;
   const locked = busy || !!running || !outDir.trim();
   return (
     <div className="analyze">
       {error ? <Notice message={error.message} hint={error.hint} /> : null}
       {failed ? <Notice message={failed.error?.message ?? "생성에 실패했어요"} hint={failed.error?.hint} /> : null}
+      {declined ? <p role="status" className="muted">덮어쓰지 않았어요. 기존 파일은 그대로예요.</p> : null}
       {other ? <p role="status" className="muted">다른 작업({jobKindLabel(other.kind)})이 진행 중이에요. 끝나면 이어서 할 수 있어요.</p> : null}
       <label className="field">출력 디렉터리
         <input value={outDir} onChange={(e) => setOutDir(e.target.value)} spellCheck={false} />
@@ -74,7 +77,7 @@ export function Generate({ system, jobs, tick, go, refreshJobs }: Props) {
           <div><button type="button" className="btn-primary" onClick={() => go(pathFor("verify", system))}>⑤ 검증으로 →</button></div>
         </section>
       ) : null}
-      <ConfirmDialog open={!!ask} title="덮어쓸까요?" confirmLabel="덮어쓰기" onCancel={() => setAsk(null)} onConfirm={() => { const a = ask!; setAsk(null); void start(a.dir, true); }}>
+      <ConfirmDialog open={!!ask} title="덮어쓸까요?" confirmLabel="덮어쓰기" onCancel={() => { setAsk(null); setDeclined(true); }} onConfirm={() => { const a = ask!; setAsk(null); void start(a.dir, true); }}>
         <p><code>{ask?.dir}</code></p>
         <p>{ask?.message}</p>
       </ConfirmDialog>

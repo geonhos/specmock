@@ -101,3 +101,53 @@ it("그 밖의 실패는 alert로 보인다", async () => {
   expect((await screen.findByRole("alert")).textContent).toContain("선택된 기능이 없어요");
   expect(screen.queryByRole("dialog")).toBeNull();
 });
+
+it("늦게 도착한 작업 목록 스냅숏(running)이 SSE로 끝난 작업을 되돌리지 않는다(상태 단조 증가)", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  let jobCalls = 0;
+  const api = setup({
+    "GET /api/jobs": () => (++jobCalls === 1 ? { body: { ok: true, data: { running: [], recent: [] } } } : { body: { ok: true, data: { running: [job()], recent: [] } }, wait: gate }),
+    "POST /api/systems/petstore/generate": accepted,
+  });
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "생성" }));
+  await vi.waitFor(() => expect(jobCalls).toBe(2)); // POST 직후 refreshJobs의 스냅숏 요청(응답은 보류)
+  emit("job-started", job());
+  emit("job-done", job({ state: "done", endedAt: "t2", result: { outDir: "/r/mock/petstore", written: ["package.json"], preserved: [], orphaned: [] } }));
+  expect(await screen.findByRole("region", { name: "생성 결과" })).toBeTruthy();
+  await act(async () => { release(); await gate; await new Promise((r) => setTimeout(r, 20)); });
+  expect(api.calls.filter((c) => c === "GET /api/jobs")).toHaveLength(2);
+  expect(screen.getByRole("region", { name: "생성 결과" })).toBeTruthy();
+  expect(screen.queryByText(/생성 중이에요/)).toBeNull();
+  expect((screen.getByRole("button", { name: "생성" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("덮어쓰기를 취소하면 이전 생성 결과를 그대로 두고 '덮어쓰지 않았어요'를 안내한다", async () => {
+  const api = setup({ "POST /api/systems/petstore/generate": accepted });
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "생성" }));
+  await vi.waitFor(() => expect(api.calls).toContain("POST /api/systems/petstore/generate"));
+  emit("job-started", job());
+  emit("job-done", job({ state: "done", endedAt: "t1", result: { outDir: "/r/mock/petstore", written: ["package.json"], preserved: [], orphaned: [] } }));
+  expect(await screen.findByRole("region", { name: "생성 결과" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "생성" }));
+  await vi.waitFor(() => expect(api.calls.filter((c) => c === "POST /api/systems/petstore/generate")).toHaveLength(2));
+  emit("job-started", job({ id: "j2", input: { outDir: "/r/mock/petstore" } }));
+  emit("job-failed", job({ id: "j2", state: "failed", input: { outDir: "/r/mock/petstore" }, error: { code: "overwrite-required", message: "비어 있지 않아요" } }));
+  fireEvent.click(within(await screen.findByRole("dialog", { name: "덮어쓸까요?" })).getByRole("button", { name: "취소" }));
+  expect(screen.getByRole("region", { name: "생성 결과" })).toBeTruthy();
+  expect(screen.getByText(/덮어쓰지 않았어요/)).toBeTruthy();
+});
+
+it("다른 화면에서 시작한 작업이 overwrite-required로 끝나도 창에 작업의 출력 경로가 보인다", async () => {
+  setup();
+  render(<App />);
+  await screen.findByLabelText("출력 디렉터리");
+  const j = job({ id: "x1", input: { outDir: "/elsewhere/out" } });
+  emit("job-started", j);
+  emit("job-failed", { ...j, state: "failed", error: { code: "overwrite-required", message: "비어 있어요" } });
+  const dialog = await screen.findByRole("dialog", { name: "덮어쓸까요?" });
+  expect(dialog.textContent).toContain("/elsewhere/out");
+  fireEvent.click(within(dialog).getByRole("button", { name: "덮어쓰기" }));
+});

@@ -149,3 +149,15 @@ dialog h2 { margin: 0 0 8px; font-size: var(--fs-dialog-title); }
 .results .why td { background: var(--surface-2); height: auto; padding: 4px 12px; }
 .results .why ul { margin: 4px 0; padding-left: 18px; }
 .link { color: var(--accent); font-weight: 600; text-decoration: underline; }
+
+/* ⑤ 커버리지 카드 */
+.coverage-cards { display: flex; flex-direction: column; gap: 12px; }
+.cov-top { display: flex; gap: 12px; }
+.cov-card { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; min-width: 140px; background: var(--surface-2); border-radius: var(--radius-sm); }
+.cov-label { font-size: var(--fs-caption); color: var(--text-3); }
+.cov-num { font-size: var(--fs-panel-title); font-variant-numeric: tabular-nums; }
+.cov-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.cov-bar { display: block; width: 100%; min-width: 60px; height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.cov-bar > span { display: block; height: 100%; background: var(--accent); }
+.cov-h { margin: 0 0 4px; font-size: var(--fs-caption); color: var(--text-3); font-weight: 600; }
+.cov-list { margin: 0; padding-left: 18px; }

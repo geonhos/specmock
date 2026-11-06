@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -242,5 +242,32 @@ describe("종료 중", () => {
     const r = await post("/systems/petstore/verify");
     expect(r.status).toBe(503);
     expect(await r.json()).toMatchObject({ ok: false, error: { code: "shutting-down", message: "서버를 끄는 중이에요" } });
+  });
+});
+
+describe("Task 9 리뷰 수정", () => {
+  it("행 설명은 summary || title || id (상세와 같은 규칙)", async () => {
+    const c = client();
+    await c.post("/systems", { system: "petstore", origins: [PETSTORE] });
+    await c.post("/systems/petstore/analyze");
+    const file = path.join(root, ".specmock", "petstore", "catalog.json");
+    const cat = JSON.parse(await readFile(file, "utf8"));
+    cat.features[0].summary = ""; cat.features[0].title = "제목만 있어요";
+    cat.features[1].summary = ""; cat.features[1].title = "";
+    await writeFile(file, JSON.stringify(cat));
+    const rows = (await c.get("/systems/petstore/features")).body.data.rows as { id: string; summary: string }[];
+    expect(rows.find((r) => r.id === cat.features[0].id)!.summary).toBe("제목만 있어요");
+    expect(rows.find((r) => r.id === cat.features[1].id)!.summary).toBe(cat.features[1].id);
+  });
+
+  it("generate 작업은 입력(outDir)을 job에 싣는다", async () => {
+    const c = client();
+    await c.post("/systems", { system: "petstore", origins: [PETSTORE] });
+    await c.post("/systems/petstore/analyze");
+    const out = path.join(root, "out-x");
+    const r = await c.post("/systems/petstore/generate", { outDir: out });
+    const list = (await c.get("/jobs")).body.data as { running: { id: string; input?: unknown }[]; recent: { id: string; input?: unknown }[] };
+    const j = [...list.running, ...list.recent].find((x) => x.id === r.body.data.jobId)!;
+    expect(j.input).toEqual({ outDir: out });
   });
 });

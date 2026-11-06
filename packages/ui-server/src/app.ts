@@ -81,7 +81,7 @@ export function createApp(opts: AppOptions) {
     const all = group === undefined ? r : await listFeatures(ws, c.req.param("s"));
     const catalog = await ws.read(c.req.param("s"), "catalog.json", CatalogSchema);
     const byId = new Map(catalog.features.map((f) => [f.id, f]));
-    const rows = r.rows.map((row) => ({ ...row, summary: byId.get(row.id)?.summary ?? "", codes: Object.keys(byId.get(row.id)?.responses ?? {}) }));
+    const rows = r.rows.map((row) => ({ ...row, summary: byId.get(row.id)?.summary || byId.get(row.id)?.title || row.id, codes: Object.keys(byId.get(row.id)?.responses ?? {}) }));
     return ok(c, { total: r.total, rows, groups: [...new Set(all.rows.map((x) => x.group))] });
   });
   app.get("/api/systems/:s/features/:id", async (c) => {
@@ -110,7 +110,7 @@ export function createApp(opts: AppOptions) {
     const b = await optionalBody(c, GenerateBody);
     await assertRegistered(ws, system);
     const outDir = resolveFromRoot(b.outDir) ?? (await defaultOutDir(ws, opts.root, system));
-    return accepted(c, jobs.start(system, "generate", () => generate(ws, system, { outDir, force: b.force })).id);
+    return accepted(c, jobs.start(system, "generate", () => generate(ws, system, { outDir, force: b.force }), { outDir }).id);
   });
   app.post("/api/systems/:s/verify", async (c) => {
     const system = c.req.param("s");
