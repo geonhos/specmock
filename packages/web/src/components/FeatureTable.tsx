@@ -1,4 +1,4 @@
-import type { FeatureRow } from "@specmock/ui-server/api-types";
+import type { FeatureListRow } from "@specmock/ui-server/api-types";
 import { groupState, splitPathVars, toggleGroup } from "../selection";
 import { TriCheckbox } from "./TriCheckbox";
 
@@ -10,8 +10,9 @@ export function PathText({ path, dim }: { path: string; dim: boolean }) {
   );
 }
 
-export function FeatureTable({ rows, selected, collapsed, openId, onSelect, onToggleCollapse, onOpen }: {
-  rows: FeatureRow[]; selected: ReadonlySet<string>; collapsed: ReadonlySet<string>; openId: string | null;
+export function FeatureTable({ rows, totals, selected, collapsed, openId, onSelect, onToggleCollapse, onOpen }: {
+  /** 필터로 보이는 행. totals는 그룹별 전체 행 수(필터 전). */
+  rows: FeatureListRow[]; totals: ReadonlyMap<string, number>; selected: ReadonlySet<string>; collapsed: ReadonlySet<string>; openId: string | null;
   onSelect: (next: Set<string>) => void; onToggleCollapse: (group: string) => void; onOpen: (id: string) => void;
 }) {
   const groups = [...new Set(rows.map((r) => r.group))];
@@ -28,7 +29,7 @@ export function FeatureTable({ rows, selected, collapsed, openId, onSelect, onTo
               <button type="button" className="ft-g-name" aria-expanded={open}>
                 <span className="ft-caret" aria-hidden="true">{open ? "▾" : "▸"}</span>{g}
               </button>
-              <span className="ft-g-count">{n}/{members.length}</span>
+              <span className="ft-g-count">{n}/{members.length}{(totals.get(g) ?? members.length) !== members.length ? ` (전체 ${totals.get(g)})` : ""}</span>
             </div>
             {open ? members.map((r) => {
               const on = selected.has(r.id);
@@ -38,8 +39,8 @@ export function FeatureTable({ rows, selected, collapsed, openId, onSelect, onTo
                   <TriCheckbox state={on ? "all" : "none"} label={`${r.method} ${r.path} 선택`} onToggle={toggle} />
                   <span className="ft-method" style={{ color: `var(--${r.method.toLowerCase()})` }}>{r.method}</span>
                   <button type="button" className="ft-open" aria-current={openId === r.id ? "true" : undefined}><PathText path={r.path} dim={!on} /></button>
-                  <span className="ft-id text-3">{r.id}</span>
-                  <span className="ft-meta text-3">{r.warnings.length ? `⚠ ${r.warnings.length}` : r.provenance}</span>
+                  <span className="ft-id text-3">{r.summary || r.id}</span>
+                  <span className="ft-meta text-3">{[r.warnings.length ? `⚠ ${r.warnings.length}` : "", r.codes.join(" ")].filter(Boolean).join("  ")}</span>
                 </div>
               );
             }) : null}

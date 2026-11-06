@@ -24,7 +24,9 @@ export type SystemOverview = {
   coverage: string | null;
   defaultOutDir: string;
 };
-export type FeatureList = { total: number; rows: FeatureRow[]; groups: string[] };
+/** 화면 목록용 행: core FeatureRow에 한 줄 설명(summary)과 응답 코드(codes)를 더한다. MCP 응답 형식은 그대로다. */
+export type FeatureListRow = FeatureRow & { summary: string; codes: string[] };
+export type FeatureList = { total: number; rows: FeatureListRow[]; groups: string[] };
 export type { AnalyzeSpecResult, ChunkSummary, Feature, FeatureRow, GenerateInfo, IngestSpecResult, Selection, SelectResult, SourceInput } from "@specmock/core";
 
 export type JobKind = "extract" | "generate" | "verify";

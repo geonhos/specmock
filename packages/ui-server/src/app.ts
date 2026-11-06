@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import path from "node:path";
-import { analyzeSpec, ClaudeCodeAdapter, findFeature, generate, ingestSpec, listFeatures, select, summarizeChunks, verifyMock, Workspace } from "@specmock/core";
+import { analyzeSpec, CatalogSchema, ClaudeCodeAdapter, findFeature, generate, ingestSpec, listFeatures, select, summarizeChunks, verifyMock, Workspace } from "@specmock/core";
 import { streamSSE } from "hono/streaming";
 import { EventBus, pushBounded, type BusEvent } from "./bus.js";
 import { BusyJobError, JobManager, NotCancellableError, ShuttingDownError } from "./jobs.js";
@@ -79,7 +79,10 @@ export function createApp(opts: AppOptions) {
     const group = c.req.query("group") || undefined; // 빈 문자열은 필터 없음
     const r = await listFeatures(ws, c.req.param("s"), { group });
     const all = group === undefined ? r : await listFeatures(ws, c.req.param("s"));
-    return ok(c, { total: r.total, rows: r.rows, groups: [...new Set(all.rows.map((x) => x.group))] });
+    const catalog = await ws.read(c.req.param("s"), "catalog.json", CatalogSchema);
+    const byId = new Map(catalog.features.map((f) => [f.id, f]));
+    const rows = r.rows.map((row) => ({ ...row, summary: byId.get(row.id)?.summary ?? "", codes: Object.keys(byId.get(row.id)?.responses ?? {}) }));
+    return ok(c, { total: r.total, rows, groups: [...new Set(all.rows.map((x) => x.group))] });
   });
   app.get("/api/systems/:s/features/:id", async (c) => {
     try { return ok(c, await findFeature(ws, c.req.param("s"), c.req.param("id"))); } catch (e) {

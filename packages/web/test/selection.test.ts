@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { filterRows, groupState, splitPathVars, toggleGroup } from "../src/selection";
+import { filterRows, groupState, splitPathVars, toggleAll, toggleGroup } from "../src/selection";
 
 const rows = [
   { id: "pets.list", group: "pets", method: "GET", path: "/pets", summary: "목록" },
@@ -36,4 +36,10 @@ it("경로 변수 나누기", () => {
     { text: "/pets/", v: false }, { text: "{petId}", v: true }, { text: "/photos", v: false },
   ]);
   expect(splitPathVars("/pets")).toEqual([{ text: "/pets", v: false }]);
+});
+it("전체 토글: 보이는 행이 모두 선택이면 해제, 아니면 모두 선택, 보이지 않는 행은 그대로", () => {
+  const visible = filterRows(rows, { method: "GET" });
+  expect([...toggleAll(visible, new Set(["pets.create"]))].sort()).toEqual(["pets.create", "pets.list", "store.inv"]);
+  expect([...toggleAll(visible, new Set(["pets.create", "pets.list", "store.inv"]))]).toEqual(["pets.create"]);
+  expect([...toggleAll([], new Set(["a"]))]).toEqual(["a"]);
 });

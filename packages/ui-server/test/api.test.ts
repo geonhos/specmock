@@ -34,6 +34,9 @@ describe("OpenAPI 경로", () => {
     const list = await c.get("/systems/petstore/features");
     expect(list.body.data.rows.length).toBeGreaterThan(0);
     expect(list.body.data.groups.length).toBeGreaterThan(0);
+    // 행에는 화면용 summary(문자열)와 응답 코드 목록이 붙는다.
+    for (const r of list.body.data.rows) { expect(typeof r.summary).toBe("string"); expect(Array.isArray(r.codes)).toBe(true); }
+    expect(list.body.data.rows.some((r: { codes: string[] }) => r.codes.includes("200"))).toBe(true);
     const id = list.body.data.rows[0].id;
     expect((await c.get(`/systems/petstore/features/${encodeURIComponent(id)}`)).body.data.id).toBe(id);
     const sel = await c.post("/systems/petstore/selection", { ids: [id] });

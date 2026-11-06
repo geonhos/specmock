@@ -109,6 +109,7 @@ dialog h2 { margin: 0 0 8px; font-size: var(--fs-dialog-title); }
 .ft-cnt span { font-size: var(--fs-caption); font-weight: 400; color: var(--text-3); }
 .ft-why { font-size: var(--fs-caption); }
 .ft-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--surface-3); font-weight: 600; }
+.ft-banner-btns { display: flex; gap: 6px; flex-shrink: 0; }
 .ft-banner .btn-ghost { height: var(--h-input); background: var(--surface-1); color: var(--accent); padding: 0 14px; }
 
 .det { overflow: auto; }
@@ -116,6 +117,11 @@ dialog h2 { margin: 0 0 8px; font-size: var(--fs-dialog-title); }
 .fd { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
 .fd-head { display: flex; flex-direction: column; gap: 4px; }
 .fd-path { margin: 0; font: 700 var(--fs-detail-path)/1.25 var(--mono); word-break: break-all; }
+.fd-path .ft-path { font-size: inherit; }
+.fd-label { margin: 0; display: flex; gap: 8px; font: 700 var(--fs-num) var(--mono); }
+.fd-schema summary { cursor: pointer; color: var(--text-2); font: var(--fs-num) var(--mono); }
+.ft-filter .btn-ghost { height: var(--h-input); padding: 0 12px; background: var(--surface-2); white-space: nowrap; }
+.sel-sub { margin: -4px 0 0; }
 .fd-sum { margin: 0; color: var(--text-2); }
 .fd-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 0; }
 .fd-facts div { background: var(--surface-2); border-radius: var(--radius-sm); padding: 8px 10px; }

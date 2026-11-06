@@ -18,6 +18,14 @@ export function toggleGroup(rows: readonly RowLike[], group: string, selected: R
   return next;
 }
 
+/** 보이는 행 전체: 모두 선택돼 있으면 해제, 아니면 모두 선택. toggleGroup과 같은 규칙이고 보이지 않는 행은 건드리지 않는다. */
+export function toggleAll(rows: readonly RowLike[], selected: ReadonlySet<string>): Set<string> {
+  const next = new Set(selected);
+  const all = rows.length > 0 && rows.every((r) => selected.has(r.id));
+  for (const r of rows) { if (all) next.delete(r.id); else next.add(r.id); }
+  return next;
+}
+
 export function filterRows<T extends RowLike>(rows: readonly T[], f: RowFilter): T[] {
   const q = f.q?.trim().toLowerCase();
   return rows.filter((r) => {

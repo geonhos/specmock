@@ -7,6 +7,12 @@ const typeOf = (s: Schema): string => {
   return typeof t === "string" ? t : Array.isArray(t) ? t.join("|") : s ? "object" : "any";
 };
 const json = (v: unknown) => JSON.stringify(v, null, 2);
+/** `object · code, message`: 예시 없는 스키마를 접었을 때 보이는 한 줄. */
+export function schemaSummary(s: Schema): string {
+  const props = s?.["properties"];
+  const names = props && typeof props === "object" ? Object.keys(props) : [];
+  return names.length ? `${typeOf(s)} · ${names.join(", ")}` : typeOf(s);
+}
 
 /** 요청 필드 표 한 줄씩: 경로·쿼리·헤더 + 본문 최상위 속성. */
 export function requestFields(f: Feature): { name: string; where: string; type: string; required: boolean }[] {
@@ -29,7 +35,7 @@ export function FeatureDetail({ feature }: { feature: Feature }) {
   return (
     <div className="fd">
       <div className="fd-head">
-        <span className="ft-method" style={{ color: `var(--${feature.method.toLowerCase()})` }}>{feature.method}</span>
+        <p className="fd-label"><span className="ft-method" style={{ color: `var(--${feature.method.toLowerCase()})` }}>{feature.method}</span> <span className="text-3">{feature.id}</span></p>
         <h2 className="fd-path"><PathText path={feature.path} dim={false} /></h2>
         <p className="fd-sum">{feature.summary || feature.title}</p>
       </div>
@@ -57,7 +63,9 @@ export function FeatureDetail({ feature }: { feature: Feature }) {
           return (
             <div key={c}>
               <p className="fd-code">{c}{ex ? ` · ${ex.source === "spec-example" ? "스펙 예시" : "문서 예시"}` : r.schema ? " · 스키마" : ""}</p>
-              {ex || r.schema ? <pre>{json(ex ? ex.body : r.schema)}</pre> : <p className="fd-none">예시가 없어요.</p>}
+              {ex ? <pre>{json(ex.body)}</pre> : r.schema ? (
+                <details className="fd-schema"><summary>{schemaSummary(r.schema)}</summary><pre>{json(r.schema)}</pre></details>
+              ) : <p className="fd-none">예시가 없어요.</p>}
             </div>
           );
         }) : <p className="fd-none">응답 정보가 없어요.</p>}
