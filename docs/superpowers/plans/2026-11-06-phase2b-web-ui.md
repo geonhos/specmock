@@ -2361,7 +2361,7 @@ git commit -m "test(e2e): 화면 E2E(OpenAPI 전 과정, 가짜 claude 문서 �
 | 8 ③ 기능 선택 | 리뷰 FAIL 수정(별도 커밋): 1초 무시 규칙 대신 `lastSaved`와 GET 비교로 메아리 판정, 배너 중 자동 저장 중지("내 선택 유지"/"다시 불러오기"), 저장 실패 시 ④ 이동 막기, 언마운트 flush. `/features` 응답에만 `summary`·`codes` 추가(core·MCP 그대로) | | |
 | 9 ④ 생성 ⑤ 검증 | 계획과 다른 점: 생성 결과 필드는 계획의 `{dir, files}`가 아니라 core `GenerateReport {outDir, written, preserved, orphaned}`. `useJob(jobs, system, kind)`는 App이 든 `jobs`를 받음(Task 7 구조 유지), Analyze도 이 훅으로 교체. "/"가 ④로 가게 돼 App.test에 개요 경로 추가. 커버리지 요약은 작업 결과의 `coverageMarkdown`(없으면 overview `coverage`)에서 `## contract test` 앞부분 | | |
 | 10 진입점 | 계획과 다른 점: CLI의 신호 처리는 `process.once`가 아니라 `process.on` + `stopping` 가드(procGroup 훅은 리스너가 0일 때만 신호를 다시 보내는데, once는 호출 직전에 걷혀 그 사이 훅이 "리스너 없음"으로 판단하기 때문). cli의 ui-server는 다른 명령의 시작을 늦추지 않도록 `import()`로 지연 로드하고, cli ui 테스트는 빌드된 dist를 실행. 리뷰 FAIL 수정(별도 커밋): core `killGroup`이 좀비만 남은 그룹의 EPERM도 무시, MCP는 stdin end/close 때 화면 서버 `close()`(작업 취소) 후 종료, `--port` 숫자 검사 | | |
-| 11 E2E·문서 | | | |
+| 11 E2E·문서 | A5 확인: Playwright 1.64.1이 Node 22.19와 이 기기의 chromium에서 동작(두 시나리오 약 6초, 연속 3회 모두 통과). 계획과 다른 점: 화면 실제 문구에 맞춰 라벨 "스펙 경로 또는 URL", 버튼 `exact` 지정("등록"·"생성"이 단계 막대 버튼과 겹침), 등록 직후 ②로 가고 OpenAPI는 분석하기 뒤 ③으로 자동 이동하므로 "③으로" 클릭 없음, 선택은 그룹 체크박스 + 저장 응답 대기 + "mock 만들기", 문서 시나리오는 `/pets/{petId}` 체크박스 확인. `playwright.config.ts`는 chromium이 없으면 한국어 안내(`playwright install chromium`)를 던짐. `.gitignore`에 `test-results/`·`playwright-report/` 추가. 문서 Mermaid 14개를 `mmdc`로 전부 파싱 확인 | | |
 | 최종 | | | |
 
 ---
@@ -2373,4 +2373,7 @@ git commit -m "test(e2e): 화면 E2E(OpenAPI 전 과정, 가짜 claude 문서 �
 - 잠금 대기 화면 피드백: 현재는 15초를 넘기면 409 busy로 끝난다. 잠금을 기다리는 동안 "다른 곳에서 작업 중" 진행 표시를 줄지 검토한다.
 - 3단계: 실행 중인 mock 서버 조작·요청 콘솔은 이 계획 밖이다. ui-server의 작업 관리(`JobManager`)와 SSE를 재사용할 수 있다.
 - jsdom 30+로 올리기: Node 엔진 하한을 `^22.22.2`로 올릴 때 함께 한다.
+- E2E 확장: 현재는 두 경로만 본다. 외부 변경 배너(MCP·CLI가 selection을 바꿀 때)와 추출 실패 후 재시도 경로는 단위 테스트로만 확인했다.
+- 화면 서버 실제 `claude` 추출: E2E는 가짜 `claude`만 쓴다. 실제 구독으로 한 번 손으로 확인한다.
+- 마켓플레이스 설치에는 `packages/`(화면 빌드 포함)가 따라가지 않는다. 2A 제약과 같다.
 - 2A 후속 과제 중 이 계획에서 뺀 나머지(프롬프트 재전송 비용 등)는 2A 계획의 후속 과제 절을 그대로 이어 간다.

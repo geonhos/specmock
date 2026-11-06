@@ -524,13 +524,14 @@ specmock/
 | 2 | MCP 서버 + Web UI | 브라우저 화면에서 같은 흐름 수행(스펙 입력 → 진행 로그 → 기능 체크리스트 → 언어 선택 → 결과·리포트). MCP로 Claude Code에서 도구 호출 |
 | 3 | 다른 언어 생성, Proxy/녹화, API 키 어댑터 | 검증된 MockSpec + TS 참조 구현을 보고 Claude가 임의 언어로 생성, 같은 verify 통과. 키 있을 때 실제 시스템 전달 및 응답 녹화 |
 
-2단계 인터페이스 경계: 2A(서비스 층 + MCP)와 2B(Web UI)로 나눈다. MCP 도구는 10개다.
+2단계 인터페이스 경계: 2A(서비스 층 + MCP)와 2B(Web UI)로 나눈다. 2A는 완료, 2B도 완료(`specmock ui`, MCP `open_ui`, Playwright E2E)했다. MCP 도구는 2A에서 10개, 2B의 `open_ui`로 11개다.
 - CLI 대응: `ingest_spec`, `analyze_spec`, `list_features`, `show_feature`, `select_features`, `generate_mock`, `verify_mock`.
 - 문서 추출: `get_chunk`, `submit_extraction`, `merge_extractions`.
+- 화면: `open_ui`(같은 프로젝트 루트의 화면 서버를 띄우고 URL을 돌려준다. 이미 떠 있으면 같은 URL).
 - `run` 도구는 없다(중간에 사용자 선택이 필요하다).
 - CLI·MCP·Web UI는 `core/src/service/`를 호출한다.
 - Web UI 서버는 LLM으로 `ClaudeCodeAdapter`를 쓴다.
-- 상세: [2026-11-05-phase2a-mcp-design.md](2026-11-05-phase2a-mcp-design.md).
+- 상세: [2026-11-05-phase2a-mcp-design.md](2026-11-05-phase2a-mcp-design.md), 2B는 [2026-11-06-phase2b-web-ui.md](../plans/2026-11-06-phase2b-web-ui.md) 계획과 실행 기록.
 
 3단계 인터페이스 경계: `Generator` 인터페이스(`generate(mockspec, outDir)`)에 `TsHonoGenerator`(템플릿)와 `LlmGenerator`(언어 인자 + MockSpec + 참조 구현을 프롬프트로)를 둔다. verify는 lock 파일의 기동 명령만 알면 된다.
 

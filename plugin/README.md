@@ -15,7 +15,7 @@ claude --plugin-dir ./plugin
 pnpm install && pnpm build
 ```
 
-MCP 서버는 Claude Code를 실행한 디렉터리를 프로젝트 루트로 쓴다. 상태는 `.specmock/`, mock은 `mock/` 아래에 생긴다. `/mcp`에서 specmock 서버와 도구 10개를 확인할 수 있다. 도구가 보이지 않으면 스킬은 CLI 흐름으로 진행한다.
+MCP 서버는 Claude Code를 실행한 디렉터리를 프로젝트 루트로 쓴다. 상태는 `.specmock/`, mock은 `mock/` 아래에 생긴다. `/mcp`에서 specmock 서버와 도구 11개를 확인할 수 있다. 도구가 보이지 않으면 스킬은 CLI 흐름으로 진행한다.
 
 CLI는 PATH에 `specmock`이 있거나(`pnpm build && npm link packages/cli`) 저장소 루트에서 `pnpm specmock`으로 실행돼야 한다.
 

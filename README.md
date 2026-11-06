@@ -63,6 +63,7 @@ specmock generate <system> [--lang ts] [--out dir] [--force] [--json]   # ./mock
 specmock verify   <system> [--dir d] [--report p] [--json]              # mock 기동 → contract test → coverage.md
 specmock run      <system> <origins...> [--select 표현식] [--lang ts] [--out dir] [--no-verify]
                                           [--llm claude-code] [--model m] [--refresh] [--json]   # 위 과정을 한 번에
+specmock ui       [--port n] [--no-open]             # 브라우저 화면으로 등록부터 검증까지 (아래 Web UI 절)
 ```
 
 이 저장소 안에서는 `pnpm specmock <command>`로 실행합니다. 옵션이 헷갈리면 `specmock <command> --help`가 기준입니다. `verify`는 mock 디렉터리에 `node_modules`가 없으면 `npm install`을 먼저 수행합니다.
@@ -105,7 +106,7 @@ pnpm install && pnpm build
 claude --plugin-dir ./plugin
 ```
 
-Claude Code에서 `/mcp`를 열어 `specmock` 서버와 도구 10개가 보이면 준비된 것입니다. 서버가 안 보이면 `packages/mcp/dist/server.js`가 있는지(`pnpm build`를 했는지) 확인하세요.
+Claude Code에서 `/mcp`를 열어 `specmock` 서버와 도구 11개가 보이면 준비된 것입니다. 서버가 안 보이면 `packages/mcp/dist/server.js`가 있는지(`pnpm build`를 했는지) 확인하세요.
 
 | 도구 | 하는 일 |
 |---|---|
@@ -119,6 +120,7 @@ Claude Code에서 `/mcp`를 열어 `specmock` 서버와 도구 10개가 보이�
 | `select_features` | 선택 표현식으로 고르기 (`mode`: set/add/remove) |
 | `generate_mock` | mock 서버 생성 |
 | `verify_mock` | contract test + 커버리지 |
+| `open_ui` | 브라우저 화면 서버를 띄우고 URL 돌려주기 (아래 Web UI 절) |
 
 대화는 이런 식으로 흐릅니다(예시 흐름이며 실제 출력은 매번 다릅니다).
 
@@ -137,9 +139,27 @@ Claude: (select_features → generate_mock → verify_mock) mock을 만들고 co
 - `ingest_spec`의 웹 수확과 `verify_mock`의 첫 실행(mock의 `npm install`)은 몇 분 걸릴 수 있습니다. 서버는 그동안 진행 알림을 보내고, Claude Code(2.1.318 기준)는 진행 알림이 오는 동안 유휴 제한(기본 30분)을 연장합니다. 보통 따로 설정할 필요가 없습니다. 값은 Claude Code 버전에 따라 다를 수 있습니다.
 - 커스텀 드롭다운 같은 수동 수확은 여전히 스킬의 파일 절차([수동 수확](plugin/skills/specmock/references/manual-harvest.md))로 합니다. 도구가 아닙니다.
 
-### Web UI (Phase 2B, 예정)
+### Web UI
 
-로컬에서 실행해 브라우저에서 스펙 입력 → 기능 체크 → 생성까지 진행합니다.
+브라우저에서 ① 등록 → ② 분석 → ③ 기능 선택 → ④ 생성 → ⑤ 검증을 차례로 진행합니다. 화면 서버는 내 컴퓨터(127.0.0.1)에서만 열리고, 인증이나 원격 접속은 없습니다.
+
+```bash
+pnpm install && pnpm build     # 화면 빌드(packages/web/dist)가 필요합니다
+pnpm specmock ui               # 브라우저가 열립니다. --port 4517 로 포트 지정, --no-open 으로 자동 열기 끄기
+```
+
+끝내려면 터미널에서 Ctrl+C를 누릅니다. 진행 중인 작업은 취소되고 자식 프로세스도 함께 정리됩니다.
+
+Claude Code 대화에서는 "화면으로 하고 싶어"라고 하면 Claude가 `open_ui` 도구로 같은 화면을 띄우고 URL을 알려 줍니다. 이 화면은 대화와 같은 프로젝트 루트·`.specmock/`를 씁니다. 화면에서 한 선택은 CLI·대화와 같은 파일(`selection.json`)에 저장되고, 대화에서 제출한 추출 결과나 선택 변경은 화면에 바로 반영됩니다.
+
+- 문서(Markdown·PDF·웹) 추출은 `claude` CLI가 있으면 화면에서 바로 시작할 수 있습니다. 없으면 화면이 안내하는 대로 Claude Code 대화에서 추출하세요.
+- 화면 서버와 MCP 서버, CLI가 같은 작업 공간에 동시에 써도 파일 잠금으로 보호됩니다.
+- E2E: Playwright로 화면 두 경로(OpenAPI 등록부터 검증까지, 가짜 `claude`로 문서 추출)를 확인합니다. 기본 `pnpm test`에는 들어 있지 않습니다.
+
+  ```bash
+  pnpm exec playwright install chromium   # 처음 한 번
+  pnpm test:e2e
+  ```
 
 ## 입력 형식
 
@@ -312,6 +332,7 @@ mock/<system>/
 pnpm install
 pnpm test          # core 빌드 → vitest (생성된 mock을 실제로 띄우는 테스트 포함)
 pnpm typecheck     # src와 test 모두
+pnpm test:e2e      # 브라우저 E2E(별도). 처음 한 번 `pnpm exec playwright install chromium`
 ```
 
 변경 후 위 두 명령이 통과하면 PR을 엽니다. 설계 의도는 [설계 문서](docs/superpowers/specs/2026-11-04-specmock-design.md)에, 단계별 작업 단위는 [구현 계획](docs/superpowers/plans/)(1A, 1B, 2A)에 있습니다. 설계와 다르게 구현한 지점은 설계 문서 12장 "구현 중 변경"에 이유와 함께 적습니다.
@@ -322,6 +343,6 @@ pnpm typecheck     # src와 test 모두
 |---|---|
 | 1A | core + CLI (OpenAPI) — 완료 |
 | 1B | 웹 문서·PDF 분석, LLM 어댑터, ego-browser 수확, Claude Code 스킬, `select --interactive` — 완료 |
-| 2A | 공용 서비스 층, MCP 서버(도구 10개), 스킬 MCP 우선 흐름 ← 현재 |
-| 2B | Web UI |
+| 2A | 공용 서비스 층, MCP 서버(도구 10개), 스킬 MCP 우선 흐름 — 완료 |
+| 2B | Web UI(`specmock ui`, MCP `open_ui`로 11개), 파일 잠금, Playwright E2E ← 현재 |
 | 3 | 다른 언어 생성(LLM), Proxy/녹화, API 키 어댑터 |
