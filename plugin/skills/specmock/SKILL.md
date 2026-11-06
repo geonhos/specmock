@@ -1,11 +1,52 @@
 ---
 name: specmock
-description: Use when the user wants a mock server for an external API from a spec, docs URL, PDF or Markdown — "이 API mock 만들어줘", "스펙 분석해서 필요한 것만", "연동 테스트용 가짜 서버". Walks ingest → analyze → feature list → user selection → generate → verify with the specmock CLI, doing the LLM extraction in-session for unstructured docs.
+description: Use when the user wants a mock server for an external API from a spec, docs URL, PDF or Markdown — "이 API mock 만들어줘", "스펙 분석해서 필요한 것만", "연동 테스트용 가짜 서버". Walks ingest → analyze → feature list → user selection → generate → verify with the specmock MCP tools (or the specmock CLI when the tools are not available), doing the LLM extraction in-session for unstructured docs.
 ---
 
 # specmock
 
 스펙에서 **기능 목록을 먼저 보여주고, 사용자가 고른 것만** mock으로 만든다. 모든 상태는 `.specmock/<system>/` 파일이다. 아래 단계를 순서대로 밟고, 각 단계의 출력을 요약해 보여준다.
+
+## MCP 도구가 있으면 도구로 진행한다
+
+specmock 플러그인을 로드하면 specmock MCP 서버의 도구 10개가 함께 켜진다. 이 도구들이 보이면 **셸 명령 대신 도구를 쓴다**. 권한 확인 창이 없고 결과가 구조화되어 돌아온다. 보이지 않으면 아래 0~5의 CLI 흐름을 쓴다.
+
+도구가 안 보이면 `packages/mcp/dist/server.js`가 없는 경우(저장소에서 `pnpm build`를 안 함)가 흔하다. 사용자에게 `pnpm build` 후 Claude Code에서 `/mcp`로 specmock 서버가 연결됐는지 확인하게 하고, 그래도 없으면 CLI 흐름으로 간다. 실제 도구 이름은 `mcp__plugin_specmock_specmock__<이름>` 형태다.
+
+| 도구 | 하는 일 |
+|---|---|
+| `ingest_spec` | 파일/URL을 읽어 source.json으로 (`origins`, `harvest`, `refresh`) |
+| `analyze_spec` | OpenAPI면 카탈로그. 문서면 추출 프롬프트 · 스키마 · 청크 목록(본문 없음) |
+| `get_chunk` | 청크 하나의 본문 |
+| `submit_extraction` | 청크 하나의 추출 결과 제출. 검증 실패면 `ok: false`와 오류 위치 |
+| `merge_extractions` | 제출된 결과를 합쳐 카탈로그 |
+| `list_features` | 기능 표(그대로 보여 줄 것) + 행 데이터 |
+| `show_feature` | 기능 하나의 스키마 · 샘플 · 근거 |
+| `select_features` | 선택 표현식으로 선택 (`mode`: set/add/remove) |
+| `generate_mock` | mock 서버 생성 (`./mock/<system>/`) |
+| `verify_mock` | contract test + coverage.md |
+
+흐름:
+
+1. `ingest_spec` → `analyze_spec`.
+2. `mode: "needs-extraction"`이면 `done: false`인 청크마다 **하나씩** `get_chunk` → `prompt` 규칙대로 `schema`에 맞는 `{ "endpoints": [...] }`를 만든다 → `submit_extraction`(`contentHash`는 `get_chunk`가 준 값 그대로).
+   - 응답의 `remaining`(아직 제출하지 않은 청크 번호)으로 진행을 추적한다. 비면 모두 끝난 것이다.
+   - `ok: false, reason: "invalid"`면 `errors`의 경로를 보고 고쳐 같은 청크를 다시 제출한다.
+   - `reason: "stale-chunk"`면 문서가 다시 분석된 것이므로 `analyze_spec`부터 다시 한다.
+   - `reason: "unknown-chunk"`면 청크 번호가 현재 목록에 없는 것이므로 `analyze_spec`을 다시 불러 청크 목록을 갱신한다.
+   - 모든 청크가 끝나면 `merge_extractions`. `missingChunks`가 남으면 사용자에게 알린다.
+   - 청크가 20개를 넘으면 수를 먼저 알리고 진행할지 묻는다.
+3. `list_features`의 `table`을 그대로 보여 주고 선택을 받는다(아래 3절의 설명과 규칙이 같다).
+4. `select_features` → `generate_mock` → `verify_mock`. `failed > 0`이면 `failures`를 옮겨 적는다(CLI의 종료 코드 2와 같은 상황).
+5. 도구가 `isError`로 답하면 메시지의 다음 단계 안내(예: "먼저 `analyze_spec`")를 따른다. 사용자 입력 오류(잘못된 표현식, 없는 id)는 사용자에게 다시 묻는다.
+
+안전 규칙:
+
+- `generate_mock`이 "specmock이 만든 디렉터리가 아닙니다"로 실패하면, `force: true`로 다시 부르기 **전에** 사용자에게 대상 경로와 덮어쓸 내용(`package.json`·`src` 등이 교체되고 `routes`·`contracts`가 정리된다)을 알리고 확인받는다. 확인 없이 `force: true`를 쓰지 않는다.
+- `outDir`은 사용자가 위치를 지정했을 때만 준다. 아니면 생략해 기본 `mock/<system>`을 쓴다.
+- `submit_extraction`의 `ok: false`는 실패가 아니라 고쳐서 다시 내라는 뜻이다. `errors`를 읽고 같은 청크를 고쳐 제출한다.
+
+추출 규칙(근거 인용은 원문 그대로, 청크에 없는 엔드포인트를 보태지 않음)은 CLI 흐름과 같다. [extraction.md](references/extraction.md).
 
 ## 0. 준비
 
@@ -80,3 +121,4 @@ verify 결과(`contract: 통과 N / 실패 M`)와 `coverage.md` 상단 요약(fi
 - 추출할 때 청크에 없는 엔드포인트를 상식으로 보태지 않는다. 없으면 빈 배열.
 - `extracted/NNN.json`을 손으로 "정리"하지 않는다. merge가 검증한다. `extracted/manifest.json`은 편집 금지.
 - 사용자 동의 없이 `--llm claude-code`(구독 호출)를 쓰지 않는다.
+- MCP 도구가 있는데 셸로 `specmock` CLI를 돌리지 않는다. 도구 흐름에서 `extracted/` 파일을 직접 쓰지 않는다(`submit_extraction`이 검증과 manifest를 맡는다).

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -27,6 +27,25 @@ beforeEach(async () => {
   await select(ws, "petstore", ["getPet", "createPet", "deletePet"]);
 });
 afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
+
+describe("generate(ts-hono) output directory guard", () => {
+  it("refuses a non-empty directory without specmock.lock.json unless force", async () => {
+    await mkdir(out, { recursive: true });
+    await writeFile(path.join(out, "package.json"), "{\"name\":\"mine\"}");
+    await expect(generate(ws, "petstore", { outDir: out })).rejects.toThrow(/specmock이 만든 디렉터리가 아닙니다.*specmock\.lock\.json 없음.*--force/);
+    expect(await readFile(path.join(out, "package.json"), "utf8")).toBe("{\"name\":\"mine\"}");
+    await generate(ws, "petstore", { outDir: out, force: true });
+    expect(await exists(path.join(out, "specmock.lock.json"))).toBe(true);
+  });
+  it("proceeds for a missing dir, an empty dir and an existing specmock dir", async () => {
+    await generate(ws, "petstore", { outDir: out });
+    await generate(ws, "petstore", { outDir: out });
+    const empty = path.join(dir, "empty");
+    await mkdir(empty);
+    await generate(ws, "petstore", { outDir: empty });
+    expect(await exists(path.join(empty, "specmock.lock.json"))).toBe(true);
+  });
+});
 
 describe("generate(ts-hono)", () => {
   it("renders the project layout, fixtures, contracts and lock", async () => {

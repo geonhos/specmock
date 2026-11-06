@@ -1,6 +1,5 @@
-import { analyze, CatalogSchema, formatCatalog, generate, ingest, MockSpecSchema, renderCoverage, select, verify, type ExtractResult, type MergeResult, type VerifyResult } from "@specmock/core";
+import { formatCatalog, runPipeline } from "@specmock/core";
 import type { Command } from "commander";
-import { runLlmAnalyze } from "../llmFlow.js";
 import { fail, formatDiff, formatGenerate, formatMerge, formatVerify, SYSTEM_ARG_HELP, workspaceFrom } from "../context.js";
 
 interface Opts { select: string; lang: string; out?: string; verify: boolean; llm?: string; model?: string; refresh: boolean; json: boolean }
@@ -26,44 +25,29 @@ export function registerRun(program: Command): void {
       const ws = workspaceFrom(cmd);
       // --json이면 중간 stdout을 모두 막고 마지막에 JSON 하나만 낸다.
       const out = (s: string) => { if (!opts.json) process.stdout.write(s); };
-      await ingest(ws, system, origins, { onLog: (m) => process.stderr.write(m + "\n") });
-      const outcome = await analyze(ws, system);
-      let extractResult: ExtractResult | null = null;
-      let mergeResult: MergeResult | null = null;
-      if (outcome.mode === "needs-llm") {
-        if (opts.llm !== "claude-code") fail("문서 입력은 run에서 --llm claude-code 가 필요합니다. 세션 모드는 specmock analyze <system> 으로 단계별로 진행하세요.");
-        const flow = await runLlmAnalyze(ws, system, { model: opts.model, refresh: opts.refresh, log: (m) => process.stderr.write(m + "\n") });
-        extractResult = flow.extract;
-        mergeResult = flow.merge;
-        if (flow.extract.written + flow.extract.skipped === 0 || flow.merge.features === 0) {
-          fail(`LLM 추출이 모두 실패했습니다: ${flow.extract.failed[0]?.error ?? "추출된 기능이 없습니다"}. claude 로그인/모델을 확인한 뒤 다시 실행하세요.`);
-        }
-        if (flow.extract.failed.length) process.exitCode = 2;
-      }
-      const catalog = await ws.read(system, "catalog.json", CatalogSchema);
-      out(formatCatalog(catalog) + "\n");
-      const diff = mergeResult ? (mergeResult as MergeResult).diff : outcome.diff;
-      for (const line of [diff ? formatDiff(diff) : "", mergeResult ? formatMerge(mergeResult) : ""]) if (line) out(line + "\n");
-      out("\n");
-      const sel = await select(ws, system, [opts.select]);
-      out(`선택 ${sel.resolved.length}개\n`);
-      const report = await generate(ws, system, { outDir: opts.out });
-      out(formatGenerate(report) + "\n");
-
-      let result: VerifyResult | null = null;
-      let coverage: string | null = null;
-      if (!opts.verify) {
-        out(`verify 생략. 실행: cd ${report.outDir} && npm install && npm start\n`);
-      } else {
-        result = await verify(report.outDir, { onLog: (m) => process.stderr.write(m + "\n") });
-        const spec = await ws.read(system, "mockspec.json", MockSpecSchema);
-        coverage = await ws.writeText(system, "coverage.md", renderCoverage(spec, result));
-        out(formatVerify(result, coverage) + "\n");
-      }
+      const r = await runPipeline(ws, system, origins, {
+        select: opts.select, outDir: opts.out, verify: opts.verify,
+        llm: opts.llm as "claude-code" | undefined, model: opts.model, refresh: opts.refresh,
+        onEvent: (e) => process.stderr.write(e.message + "\n"),
+        onStage: (s) => {
+          if (s.stage === "catalog") {
+            out(formatCatalog(s.catalog) + "\n");
+            for (const line of [s.diff ? formatDiff(s.diff) : "", s.merge ? formatMerge(s.merge) : ""]) if (line) out(line + "\n");
+            out("\n");
+          } else if (s.stage === "select") {
+            out(`선택 ${s.selection.resolved.length}개\n`);
+          } else if (s.stage === "generate") {
+            out(formatGenerate(s.report) + "\n");
+            if (!opts.verify) out(`verify 생략. 실행: cd ${s.report.outDir} && npm install && npm start\n`);
+          } else {
+            out(formatVerify(s.result, s.coverageFile) + "\n");
+          }
+        },
+      });
       if (opts.json) {
-        process.stdout.write(JSON.stringify({ system, catalog: { features: catalog.features.length }, selected: sel.resolved, generate: report, verify: result, coverage, extract: extractResult, merge: mergeResult }, null, 2) + "\n");
+        process.stdout.write(JSON.stringify({ system, catalog: { features: r.catalog.features.length }, selected: r.selection.resolved, generate: r.generate, verify: r.verify, coverage: r.coverageFile, extract: r.extract, merge: r.merge }, null, 2) + "\n");
       }
       // process.exit는 파이프로 흘러가는 stdout을 잘라먹을 수 있으므로 exitCode만 설정하고 자연 종료한다.
-      if (result && result.failed > 0) process.exitCode = 2;
+      if (r.extractFailed || (r.verify && r.verify.failed > 0)) process.exitCode = 2;
     });
 }
