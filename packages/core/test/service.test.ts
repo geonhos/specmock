@@ -136,7 +136,7 @@ describe("features", () => {
     expect(l.table).toContain("petstore — 5개 기능");
     expect(l.rows).toHaveLength(5);
     expect(l.rows[0]).toEqual(expect.objectContaining({ index: 1, id: expect.any(String), provenance: "openapi", warnings: expect.any(Array) }));
-    await expect(listFeatures(ws, "petstore", { group: "nope" })).rejects.toThrow(/알 수 없는 그룹/);
+    await expect(listFeatures(ws, "petstore", { group: "nope" })).resolves.toMatchObject({ rows: [], group: "nope" });
   });
 });
 

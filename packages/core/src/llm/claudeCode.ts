@@ -1,7 +1,8 @@
-import { spawn } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { killGroup, spawnGroup } from "../util/procGroup.js";
 import type { ExtractRequest, LlmAdapter } from "./adapter.js";
 
 export interface ClaudeCodeOptions {
@@ -29,6 +30,7 @@ export class ClaudeCodeAdapter implements LlmAdapter {
   constructor(private readonly opts: ClaudeCodeOptions = {}) {}
 
   async extract(req: ExtractRequest): Promise<unknown> {
+    req.signal?.throwIfAborted();
     const args = ["--print", "--output-format", "json", "--json-schema", JSON.stringify(req.schema), "--no-session-persistence"];
     if (this.opts.model) args.push("--model", this.opts.model);
     args.push("--tools", "");   // 마지막 고정 플래그. 뒤에는 extraArgs 옵션만 온다.
@@ -39,16 +41,20 @@ export class ClaudeCodeAdapter implements LlmAdapter {
     const ownCwd = this.opts.cwd === undefined;
     const cwd = this.opts.cwd ?? (await mkdtemp(path.join(os.tmpdir(), "specmock-claude-")));
     const stdout = await new Promise<string>((resolve, reject) => {
-      const child = spawn(command, args, { cwd, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, ...this.opts.env } });
+      const child = spawnGroup(command, args, { cwd, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, ...this.opts.env } }) as ChildProcessWithoutNullStreams;
       let out = "", err = "";
-      const timer = setTimeout(() => { child.kill("SIGKILL"); reject(new Error(`claude 호출 시간 초과 (${timeoutMs}ms)`)); }, timeoutMs);
-      child.on("error", (e) => { clearTimeout(timer); reject(new Error(`claude CLI를 실행할 수 없습니다 (${command}): ${e.message}. Claude Code가 설치돼 있고 PATH에 있는지 확인하세요.`)); });
+      const onAbort = () => { clearTimeout(timer); killGroup(child, "SIGKILL"); reject(req.signal!.reason instanceof Error ? req.signal!.reason : abortError()); };
+      const timer = setTimeout(() => { killGroup(child, "SIGKILL"); reject(new Error(`claude 호출 시간 초과 (${timeoutMs}ms)`)); }, timeoutMs);
+      req.signal?.addEventListener("abort", onAbort, { once: true });
+      if (req.signal?.aborted) onAbort();   // 리스너를 달기 전에 이미 취소된 경우
+      child.on("error", (e) => { req.signal?.removeEventListener("abort", onAbort); clearTimeout(timer); reject(new Error(`claude CLI를 실행할 수 없습니다 (${command}): ${e.message}. Claude Code가 설치돼 있고 PATH에 있는지 확인하세요.`)); });
       // 멀티바이트 문자가 파이프 읽기 경계에서 쪼개져도 깨지지 않도록 스트림이 디코딩하게 한다.
       child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
       child.stdout.on("data", (d) => { out += d; });
       child.stderr.on("data", (d) => { err += d; });
       child.on("close", (code, signal) => {
+        req.signal?.removeEventListener("abort", onAbort);
         clearTimeout(timer);
         if (code === 0) return resolve(out);
         // 실패해도 JSON 봉투를 내는 경우가 있으므로 메시지를 뽑아 본다.
@@ -71,6 +77,8 @@ export class ClaudeCodeAdapter implements LlmAdapter {
     return envelope.structured_output;
   }
 }
+
+const abortError = () => new DOMException("작업이 취소되었습니다", "AbortError");
 
 function tryParse(text: string): ResultEnvelope | null {
   try { return JSON.parse(text) as ResultEnvelope; } catch { return null; }

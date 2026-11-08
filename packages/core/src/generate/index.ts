@@ -2,6 +2,7 @@ import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { GenerateInfoSchema, MockSpecSchema } from "../types.js";
 import type { Workspace } from "../workspace.js";
+import { withSystemLock } from "../workspaceLock.js";
 import { LOCK_FILE } from "./lock.js";
 import { renderTsHono, type GenerateReport } from "./tsHono.js";
 
@@ -23,6 +24,10 @@ async function assertSafeOutDir(outDir: string): Promise<void> {
 }
 
 export async function generate(ws: Workspace, system: string, opts: GenerateOptions = {}): Promise<GenerateReport> {
+  return withSystemLock(ws, system, () => generateUnlocked(ws, system, opts));
+}
+
+async function generateUnlocked(ws: Workspace, system: string, opts: GenerateOptions): Promise<GenerateReport> {
   const spec = await ws.read(system, "mockspec.json", MockSpecSchema);
   const outDir = path.resolve(opts.outDir ?? defaultMockDir(system));
   if (!opts.force) await assertSafeOutDir(outDir);

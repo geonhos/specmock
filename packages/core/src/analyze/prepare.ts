@@ -10,6 +10,7 @@ import {
   type SourceInput,
 } from "../types.js";
 import type { Workspace } from "../workspace.js";
+import { withSystemLock } from "../workspaceLock.js";
 import { DEFAULT_CHUNK, splitIntoChunks, type ChunkOptions } from "./chunk.js";
 import { analyzeOpenApiDocument } from "./openapi.js";
 import { EXTRACTION_PROMPT } from "./prompt.js";
@@ -138,6 +139,10 @@ export async function writeFileAtomic(file: string, content: string): Promise<vo
 
 /** 현재 request의 청크 수보다 큰 번호의 extracted 파일과 매니페스트 항목은 이전 prepare의 잔재다. 지운다. */
 export async function pruneExtracted(ws: Workspace, system: string, chunkCount: number): Promise<string[]> {
+  return withSystemLock(ws, system, () => pruneExtractedUnlocked(ws, system, chunkCount));
+}
+
+async function pruneExtractedUnlocked(ws: Workspace, system: string, chunkCount: number): Promise<string[]> {
   const dir = ws.file(system, EXTRACTED_DIR);
   let names: string[];
   try {

@@ -9,7 +9,7 @@ description: Use when the user wants a mock server for an external API from a sp
 
 ## MCP 도구가 있으면 도구로 진행한다
 
-specmock 플러그인을 로드하면 specmock MCP 서버의 도구 10개가 함께 켜진다. 이 도구들이 보이면 **셸 명령 대신 도구를 쓴다**. 권한 확인 창이 없고 결과가 구조화되어 돌아온다. 보이지 않으면 아래 0~5의 CLI 흐름을 쓴다.
+specmock 플러그인을 로드하면 specmock MCP 서버의 도구 11개가 함께 켜진다. 이 도구들이 보이면 **셸 명령 대신 도구를 쓴다**. 권한 확인 창이 없고 결과가 구조화되어 돌아온다. 보이지 않으면 아래 0~5의 CLI 흐름을 쓴다.
 
 도구가 안 보이면 `packages/mcp/dist/server.js`가 없는 경우(저장소에서 `pnpm build`를 안 함)가 흔하다. 사용자에게 `pnpm build` 후 Claude Code에서 `/mcp`로 specmock 서버가 연결됐는지 확인하게 하고, 그래도 없으면 CLI 흐름으로 간다. 실제 도구 이름은 `mcp__plugin_specmock_specmock__<이름>` 형태다.
 
@@ -25,6 +25,7 @@ specmock 플러그인을 로드하면 specmock MCP 서버의 도구 10개가 함
 | `select_features` | 선택 표현식으로 선택 (`mode`: set/add/remove) |
 | `generate_mock` | mock 서버 생성 (`./mock/<system>/`) |
 | `verify_mock` | contract test + coverage.md |
+| `open_ui` | 브라우저 화면 서버를 띄우고 URL만 돌려줌(두 번 불러도 같은 URL) |
 
 흐름:
 
@@ -38,6 +39,7 @@ specmock 플러그인을 로드하면 specmock MCP 서버의 도구 10개가 함
    - 청크가 20개를 넘으면 수를 먼저 알리고 진행할지 묻는다.
 3. `list_features`의 `table`을 그대로 보여 주고 선택을 받는다(아래 3절의 설명과 규칙이 같다).
 4. `select_features` → `generate_mock` → `verify_mock`. `failed > 0`이면 `failures`를 옮겨 적는다(CLI의 종료 코드 2와 같은 상황).
+   - 사용자가 "화면으로 고르고 싶다"고 하면 `open_ui`를 불러 URL을 알려 주고 열어 달라고 안내한다. 화면에서 끝낸 뒤 돌아오면 `list_features`로 선택 상태를 다시 읽는다.
 5. 도구가 `isError`로 답하면 메시지의 다음 단계 안내(예: "먼저 `analyze_spec`")를 따른다. 사용자 입력 오류(잘못된 표현식, 없는 id)는 사용자에게 다시 묻는다.
 
 안전 규칙:

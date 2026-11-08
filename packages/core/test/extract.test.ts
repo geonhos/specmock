@@ -27,6 +27,18 @@ function fakeAdapter(calls: string[]): LlmAdapter {
 }
 
 describe("extract", () => {
+  it("낡은 결과의 manifest 키는 재추출이 실패해도 디스크에서 지워진다", async () => {
+    await extract(ws, "pets", fakeAdapter([]));
+    const manifestFile = path.join(dir, "pets", "extracted", "manifest.json");
+    const m = JSON.parse(await readFile(manifestFile, "utf8")) as Record<string, string>;
+    m["000"] = "outdated-hash";
+    await writeFile(manifestFile, JSON.stringify(m));
+    const failing: LlmAdapter = { name: "claude-code", async extract() { throw new Error("boom"); } };
+    const r = await extract(ws, "pets", failing);
+    expect(r.failed.some((f) => f.chunk === 0)).toBe(true);
+    expect(JSON.parse(await readFile(manifestFile, "utf8"))["000"]).toBeUndefined();
+  });
+
   it("writes one extracted/NNN.json per chunk and reports progress", async () => {
     const calls: string[] = []; const progress: string[] = [];
     const result = await extract(ws, "pets", fakeAdapter(calls), { onProgress: (p) => progress.push(`${p.done}/${p.total}`) });

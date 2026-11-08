@@ -1,6 +1,7 @@
 import { CatalogSchema, MockSpecSchema, SelectionSchema, SourceSchema, type Contract, type MockFeature, type MockSpec } from "../types.js";
 import { hashJson } from "../util/hash.js";
 import type { Workspace } from "../workspace.js";
+import { withSystemLock } from "../workspaceLock.js";
 import { orderFeatures } from "../catalog/order.js";
 import { buildContracts } from "./contracts.js";
 import { resolveSelection } from "./expression.js";
@@ -25,6 +26,10 @@ export interface SelectResult {
 }
 
 export async function select(ws: Workspace, system: string, exprs: string[], opts: SelectOptions = {}): Promise<SelectResult> {
+  return withSystemLock(ws, system, () => selectUnlocked(ws, system, exprs, opts));
+}
+
+async function selectUnlocked(ws: Workspace, system: string, exprs: string[], opts: SelectOptions): Promise<SelectResult> {
   if (opts.add && opts.remove) throw new Error("--add와 --remove는 함께 쓸 수 없습니다.");
   const catalog = await ws.read(system, "catalog.json", CatalogSchema);
   const catalogHash = hashJson(catalog.features);

@@ -51,10 +51,37 @@ flowchart TB
 ```mermaid
 flowchart LR
     CLI["packages/cli"] --> SVC["core/src/service<br/>ingestSpec · analyzeSpec · summarizeChunks/getChunk<br/>listFeatures/findFeature · verifyMock · runPipeline"]
-    MCP["packages/mcp<br/>stdio · 도구 10개"] --> SVC
+    MCP["packages/mcp<br/>stdio · 도구 11개"] --> SVC
+    CLI --> UIS["packages/ui-server<br/>Hono · HTTP/SSE · 작업 관리 · 파일 감시"]
+    MCP --> UIS
+    UIS --> SVC
+    UIS -. 실행 중 읽기 .-> WEBD["packages/web/dist<br/>(React 화면 빌드)"]
+    WEB["packages/web<br/>React + Vite"] -. 타입만 .-> UIS
+    WEB -. 빌드 .-> WEBD
     SVC --> CORE["core 단계 함수<br/>ingest · prepare · submitExtraction · merge · select · generate · verify"]
     PLUGIN["plugin.json mcpServers"] -. node 실행 .-> MCP
 ```
+
+`specmock ui`(CLI)와 `open_ui`(MCP)가 같은 `ui-server`를 띄운다. 화면 서버는 `core` 서비스 층을 그대로 호출하므로 화면에서 한 일은 CLI·대화와 같은 `.specmock/` 파일로 남는다.
+
+### 화면의 데이터 흐름
+
+```mermaid
+sequenceDiagram
+    participant B as 브라우저(web)
+    participant S as ui-server
+    participant C as core 서비스 층
+    participant F as .specmock/ (파일 잠금)
+    B->>S: HTTP 요청 (등록 · 선택 · 생성 · 검증 · 추출)
+    S->>C: 서비스 함수 호출 (오래 걸리면 작업으로 등록)
+    C->>F: 시스템별 잠금을 잡고 읽기·쓰기
+    S-->>B: 작업 진행·완료 (SSE job 이벤트)
+    F-->>S: 파일 변경 감시 (fs.watch, 시스템별 디바운스)
+    S-->>B: workspace-changed (SSE)
+    Note over B,F: MCP·CLI가 같은 파일을 바꿔도 화면이 다시 읽는다
+```
+
+화면 서버는 127.0.0.1에만 열리고(Host·Origin 검사), 시스템당 한 번에 하나의 작업만 받는다. 서버가 끝나면 진행 중인 작업을 취소하고 자식 프로세스를 정리한다. MCP 안에서 띄운 화면 서버도 stdio가 닫히면 함께 끝난다.
 
 ## 상태 파일 (파일이 인터페이스)
 

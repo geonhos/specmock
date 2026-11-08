@@ -7,6 +7,7 @@ import { registerIngest } from "./commands/ingest.js";
 import { registerList } from "./commands/list.js";
 import { registerRun } from "./commands/run.js";
 import { registerSelect } from "./commands/select.js";
+import { registerUi } from "./commands/ui.js";
 import { registerShow } from "./commands/show.js";
 import { registerVerify } from "./commands/verify.js";
 
@@ -25,6 +26,7 @@ registerSelect(program);
 registerGenerate(program);
 registerVerify(program);
 registerRun(program);
+registerUi(program);
 
 program.parseAsync(process.argv).catch((e: Error) => {
   process.stderr.write(`오류: ${e.message}\n`);

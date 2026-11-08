@@ -1,8 +1,9 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { AnalyzeRequestSchema, ExtractedEndpointSchema, ExtractedParamSchema, ExtractedResponseSchema, ExtractionResultSchema, type AnalyzeRequest } from "../types.js";
 import type { Workspace } from "../workspace.js";
+import { withSystemLock } from "../workspaceLock.js";
 import { EXTRACTED_DIR, extractedFileName, hashText, readManifest, writeFileAtomic, writeManifest, type ExtractManifest } from "./prepare.js";
 
 export interface SubmitExtractionInput {
@@ -21,7 +22,7 @@ export type SubmitExtractionResult =
 export interface SubmitExtractionOptions {
   /** 이미 읽은 analyze-request.json (extract 루프용). */
   request?: AnalyzeRequest;
-  /** 메모리의 manifest를 갱신해 그대로 쓴다 (extract 루프용). 없으면 디스크에서 읽는다. */
+  /** 넘기면 기록한 키를 여기에도 반영한다(호출자 메모리 동기화용). 쓰기는 항상 디스크 manifest 기준. */
   manifest?: ExtractManifest;
   /** true면 알 수 없는 키를 버린다(claude-code 어댑터 경로의 기존 동작). 기본은 거부. */
   lenient?: boolean;
@@ -40,19 +41,6 @@ const StrictEndpoint = ExtractedEndpointSchema.extend({
   inferred: z.strictObject({ method: z.boolean().default(false), path: z.boolean().default(false) }).default({ method: false, path: false }),
 }).strict();
 const StrictExtractionSchema = z.strictObject({ endpoints: z.array(StrictEndpoint) });
-
-/**
- * 워크스페이스+system 단위 프로세스 내 직렬화(Promise 체인). manifest 읽기-수정-쓰기 경합을 막는다.
- * 범위: 한 프로세스 안. 서로 다른 프로세스 간 동시 쓰기는 보호하지 않는다.
- */
-const manifestLocks = new Map<string, Promise<unknown>>();
-async function withManifestLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-  const prev = manifestLocks.get(key) ?? Promise.resolve();
-  const run = prev.then(fn, fn);
-  const tail = run.catch(() => undefined);
-  manifestLocks.set(key, tail);
-  try { return await run; } finally { if (manifestLocks.get(key) === tail) manifestLocks.delete(key); }
-}
 
 /**
  * 청크 하나의 추출 결과를 검증해 extracted/NNN.json에 원자적으로 쓰고 manifest에 청크 해시를 기록한다.
@@ -89,14 +77,21 @@ export async function submitExtraction(
   }
   const rel = path.posix.join(EXTRACTED_DIR, extractedFileName(chunk.index));
   const file = ws.file(system, rel);
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFileAtomic(file, JSON.stringify({ endpoints: parsed.data.endpoints }, null, 2) + "\n");
   const key = extractedFileName(chunk.index).replace(/\.json$/, "");
-  await withManifestLock(`${ws.file(system, EXTRACTED_DIR)}`, async () => {
-    // 잠금 안에서 다시 읽어 다른 제출의 항목을 덮어쓰지 않는다. extract()의 메모리 manifest는 같은 잠금 안에서 갱신해 쓴다.
-    const manifest = opts.manifest ?? (await readManifest(ws, system));
-    manifest[key] = actual;
-    await writeManifest(ws, system, manifest);
+  await mkdir(path.dirname(file), { recursive: true });
+  await withSystemLock(ws, system, async () => {
+    await writeFileAtomic(file, JSON.stringify({ endpoints: parsed.data.endpoints }, null, 2) + "\n");
+    try {
+      // 잠금 안에서 디스크 manifest를 다시 읽는다. 다른 프로세스가 기록한 항목을 덮어쓰지 않기 위해서다.
+      const manifest = await readManifest(ws, system);
+      manifest[key] = actual;
+      await writeManifest(ws, system, manifest);
+    } catch (e) {
+      // manifest에 오르지 못한 NNN.json은 extract()가 '손으로 쓴 것'으로 오인하므로 지운다.
+      await rm(file, { force: true });
+      throw e;
+    }
+    if (opts.manifest) opts.manifest[key] = actual;
   });
   return { ok: true, file };
 }
