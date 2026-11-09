@@ -18,10 +18,10 @@ async function copySample(): Promise<{ pets: string; recorded: unknown }> {
 }
 
 describe("tool registry", () => {
-  it("registers exactly TOOL_NAMES (11 tools, no leftovers)", async () => {
+  it("registers exactly TOOL_NAMES (12 tools, no leftovers)", async () => {
     const { tools } = await s.client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([...TOOL_NAMES].sort());
-    expect(TOOL_NAMES).toHaveLength(11);
+    expect(TOOL_NAMES).toHaveLength(12);
   });
 });
 
@@ -204,13 +204,13 @@ describe("errors", () => {
     const t = await s.err("list_features", { system: "nosuch" });
     expect(t).toContain("analyze_spec");
     expect(t).not.toContain("specmock analyze");
-    expect((await s.client.listTools()).tools.length).toBe(11);
+    expect((await s.client.listTools()).tools.length).toBe(12);
   });
 
   it("invalid system name and missing required args are tool errors", async () => {
     expect(await s.err("list_features", { system: "../x" })).toMatch(/시스템 이름이 올바르지 않습니다/);
     await s.err("list_features", {});
-    expect((await s.client.listTools()).tools.length).toBe(11);
+    expect((await s.client.listTools()).tools.length).toBe(12);
   });
 
   it("bad selection expression and unknown feature id → isError", async () => {
@@ -260,5 +260,31 @@ describe("empty document", () => {
     const a = await s.ok("analyze_spec", { system: "empty" });
     expect(a.chunks).toEqual([]);
     expect(await s.text("analyze_spec", { system: "empty" })).toMatch(/청크를 만들지 못했습니다/);
+  });
+});
+
+describe("generation tools", () => {
+  it("finalize_generation without a request → ok:false no-request (not isError)", async () => {
+    await s.ok("ingest_spec", { system: "petstore", origins: [PETSTORE] });
+    await s.ok("analyze_spec", { system: "petstore" });
+    await s.ok("select_features", { system: "petstore", exprs: ["getPet"] });
+    const r = await s.ok("finalize_generation", { system: "petstore" });
+    expect(r).toMatchObject({ ok: false, reason: "no-request" });
+  });
+
+  it("generate_mock with an unknown language is a tool error listing supported languages", async () => {
+    await s.ok("ingest_spec", { system: "petstore", origins: [PETSTORE] });
+    await s.ok("analyze_spec", { system: "petstore" });
+    await s.ok("select_features", { system: "petstore", exprs: ["getPet"] });
+    expect(await s.err("generate_mock", { system: "petstore", language: "cobol" })).toMatch(/'cobol' 언어는 지원하지 않습니다\. 지원 언어: ts/);
+  });
+
+  it("generate_mock(ts) reports mode generated and the launch hint", async () => {
+    await s.ok("ingest_spec", { system: "petstore", origins: [PETSTORE] });
+    await s.ok("analyze_spec", { system: "petstore" });
+    await s.ok("select_features", { system: "petstore", exprs: ["getPet"] });
+    const g = await s.ok("generate_mock", { system: "petstore", language: "ts" });
+    expect(g).toMatchObject({ mode: "generated", language: "ts", outDir: path.join(dir, "mock", "petstore") });
+    expect(g.launch).toBe(`cd ${path.join(dir, "mock", "petstore")} && npm install && npm start`);
   });
 });

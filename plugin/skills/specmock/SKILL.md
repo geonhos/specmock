@@ -9,7 +9,7 @@ description: Use when the user wants a mock server for an external API from a sp
 
 ## MCP 도구가 있으면 도구로 진행한다
 
-specmock 플러그인을 로드하면 specmock MCP 서버의 도구 11개가 함께 켜진다. 이 도구들이 보이면 **셸 명령 대신 도구를 쓴다**. 권한 확인 창이 없고 결과가 구조화되어 돌아온다. 보이지 않으면 아래 0~5의 CLI 흐름을 쓴다.
+specmock 플러그인을 로드하면 specmock MCP 서버의 도구 12개가 함께 켜진다. 이 도구들이 보이면 **셸 명령 대신 도구를 쓴다**. 권한 확인 창이 없고 결과가 구조화되어 돌아온다. 보이지 않으면 아래 0~5의 CLI 흐름을 쓴다.
 
 도구가 안 보이면 `packages/mcp/dist/server.js`가 없는 경우(저장소에서 `pnpm build`를 안 함)가 흔하다. 사용자에게 `pnpm build` 후 Claude Code에서 `/mcp`로 specmock 서버가 연결됐는지 확인하게 하고, 그래도 없으면 CLI 흐름으로 간다. 실제 도구 이름은 `mcp__plugin_specmock_specmock__<이름>` 형태다.
 
@@ -23,7 +23,8 @@ specmock 플러그인을 로드하면 specmock MCP 서버의 도구 11개가 함
 | `list_features` | 기능 표(그대로 보여 줄 것) + 행 데이터 |
 | `show_feature` | 기능 하나의 스키마 · 샘플 · 근거 |
 | `select_features` | 선택 표현식으로 선택 (`mode`: set/add/remove) |
-| `generate_mock` | mock 서버 생성 (`./mock/<system>/`) |
+| `generate_mock` | mock 서버 생성 (`./mock/<system>/`). `language`(ts·java). java는 지시서를 쓰고 멈춤(`mode: "session"`) |
+| `finalize_generation` | 세션에서 쓴 파일 확정(보호 경로·범위 검사, fixtures·contracts·lock 작성). 실패면 `ok: false`와 `reason` |
 | `verify_mock` | contract test + coverage.md |
 | `open_ui` | 브라우저 화면 서버를 띄우고 URL만 돌려줌(두 번 불러도 같은 URL) |
 
@@ -39,12 +40,18 @@ specmock 플러그인을 로드하면 specmock MCP 서버의 도구 11개가 함
    - 청크가 20개를 넘으면 수를 먼저 알리고 진행할지 묻는다.
 3. `list_features`의 `table`을 그대로 보여 주고 선택을 받는다(아래 3절의 설명과 규칙이 같다).
 4. `select_features` → `generate_mock` → `verify_mock`. `failed > 0`이면 `failures`를 옮겨 적는다(CLI의 종료 코드 2와 같은 상황).
+   - 사용자가 TypeScript가 아닌 언어(예: Java)를 원하면 `generate_mock(language: "java")`. `mode: "session"`이 오면 **당신이 직접** 작성한다:
+     1. `requestPath`의 지시서(`generate-request.json`)에서 `prompt`를 읽는다. 런타임 계약·TS 참조 구현·Java 규칙·참조 예시가 들어 있다.
+     2. `outDir` 아래 `sourceGlobs`(Java: `pom.xml`, `src/**`) 범위에만 파일을 쓴다. `protectedPaths`(fixtures·contracts·lock·`mvnw*`·`.mvn/**`)는 건드리지 않는다.
+     3. `outDir`에서 `./mvnw -q -DskipTests package`로 컴파일을 확인하고 오류를 고친다(JDK 17 이상, 첫 실행은 Maven 다운로드로 오래 걸린다).
+     4. `finalize_generation` → `verify_mock`. 실패하면 소스를 고치고 `finalize_generation` → `verify_mock`을 다시 한다. `reason: "stale-request"`면 선택이 바뀐 것이므로 `generate_mock`부터 다시.
    - 사용자가 "화면으로 고르고 싶다"고 하면 `open_ui`를 불러 URL을 알려 주고 열어 달라고 안내한다. 화면에서 끝낸 뒤 돌아오면 `list_features`로 선택 상태를 다시 읽는다.
 5. 도구가 `isError`로 답하면 메시지의 다음 단계 안내(예: "먼저 `analyze_spec`")를 따른다. 사용자 입력 오류(잘못된 표현식, 없는 id)는 사용자에게 다시 묻는다.
 
 안전 규칙:
 
 - `generate_mock`이 "specmock이 만든 디렉터리가 아닙니다"로 실패하면, `force: true`로 다시 부르기 **전에** 사용자에게 대상 경로와 덮어쓸 내용(`package.json`·`src` 등이 교체되고 `routes`·`contracts`가 정리된다)을 알리고 확인받는다. 확인 없이 `force: true`를 쓰지 않는다.
+- `generate_mock`이 "이 디렉터리는 ts로 생성됐습니다"로 실패하면 언어를 바꾸려는 것이다. `force: true`는 fixtures·contracts 밖의 기존 소스를 지운다고 알리고 확인받은 뒤에만 쓴다. 아니면 `outDir`을 다른 곳으로 준다.
 - `outDir`은 사용자가 위치를 지정했을 때만 준다. 아니면 생략해 기본 `mock/<system>`을 쓴다.
 - `submit_extraction`의 `ok: false`는 실패가 아니라 고쳐서 다시 내라는 뜻이다. `errors`를 읽고 같은 청크를 고쳐 제출한다.
 
