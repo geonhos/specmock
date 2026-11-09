@@ -153,7 +153,7 @@ specmock record <system> [--allow-mutating] [--feature id...] [--refresh] [--no-
 | `--feature <id>` | 지정 기능만. 반복 가능. 없는 id는 즉시 오류 |
 | `--refresh` | 대상 기능의 기존 녹화를 버리고 다시 녹화(중단되면 유지). 건너뜀(변경 요청) 기능의 옛 녹화는 지우지 않는다 |
 | `--no-apply` | 녹화·drift만. select/generate 건너뜀 |
-| `--json` | `RecordResult`를 JSON으로 |
+| `--json` | `RecordResult`에 `notes`(반영 실패·generate 안내)를 더해 JSON으로 |
 
 종료 코드: 0 전부 일치 · **2 drift 있음**(스펙과 다름 또는 상태 불일치가 1건 이상. verify의 2와 같은 의미) · 1 오류(target.json 없음/잘못됨, 환경변수 없음, 첫 요청 연결 실패, mockspec 없음). "실패"가 있어도 나머지 결과로 끝내며 종료 코드는 2(실패도 불일치로 본다).
 
@@ -289,7 +289,9 @@ sequenceDiagram
 | Web coverage 반영 | 완료 시 coverage 다시 읽기 | 카드는 "coverage에 반영하려면 verify를 다시 실행하세요"를 안내. coverage는 verify가 다시 돌아야 바뀜 | record는 coverage를 계산하지 않음 |
 | 마스킹 범위 | 헤더·쿼리 | 비2xx 응답 본문과 `raw`(비JSON) 본문도 마스킹, `maskHeaders`에 `auth`·`session` 포함 | 오류 응답·평문 본문에 토큰이 실려 올 수 있음 |
 | apply의 선택 재실행 | `selection.selected`를 표현식으로 다시 해석 | 모든 항목이 현재 카탈로그 id와 정확히 일치하면 `literalIds: true` | UI·`--interactive`가 저장한 `all`·`3` 같은 id가 다른 집합이 되는 것을 막음 |
-| apply 오류 | 던져서 결과 버림 | 녹화·drift.md는 남기고 `notes`에 `반영 실패: …`, `applied: null`로 결과 반환. CLI 종료 코드 2 | 이미 쓴 녹화 결과를 잃지 않음 |
+| 선택 방식 저장 | (없음, 휴리스틱) | `selection.json`에 선택 필드 `literal`(`literalIds`로 저장하면 true, 표현식이면 false). apply는 `literal`이 있으면 그 값, 없으면(옛 파일) 위 휴리스틱 | 카탈로그에 id `all`이 있어도 표현식 `all` 선택이 apply 뒤 유지됨 |
+| `--json` notes | `RecordResult`만 | `{ ...result, notes }`. `반영 실패:`와 "generate를 실행하면 반영됩니다"를 JSON에서도 구분 | 종료 코드 2의 원인이 반영 실패인지 JSON만으로 알 수 있게 |
+| apply 오류 | 던져서 결과 버림 | 녹화·drift.md는 남기고 `notes`에 `반영 실패: …`, `applied: null`로 결과 반환. CLI 종료 코드 2. `Error`가 아니거나 `TypeError`·`RangeError`는 다시 던짐. select 뒤 generate가 실패하면 "mockspec은 갱신됐고 mock은 아직" 안내. MCP는 성공 + notes, 텍스트 첫 줄에 반영 실패 | 이미 쓴 녹화 결과를 잃지 않음 |
 | generate 생략 판단 | mockspec 해시가 다르면 다시 생성 | `inputHash`(fixture 본문·출처·assumptions 제외)가 같으면 scaffold만 다시 씀(D4·D5), 다르거나 옛 lock이면 apply는 LLM을 부르지 않고 안내만 | 녹화는 fixture만 바꾸므로 LLM 비용을 쓰지 않음 |
 | `generate.json` 없음 | 녹화 후 오류 | select까지만 하고 "generate를 실행하면 반영됩니다"(D17) | mock을 만든 적 없어도 녹화·drift는 유용 |
 | `GET target` | 파일 내용 | `example`(TARGET_EXAMPLE)·`error` 포함(D18) | Web UI가 만드는 법과 읽기 실패를 보여 줌 |

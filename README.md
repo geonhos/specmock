@@ -344,7 +344,7 @@ mock/<system>/
 - 비밀 값은 `${환경변수}`로만 적습니다. 값은 실행한 셸의 환경변수에서 읽고 파일·로그·drift.md에 남기지 않습니다. 그래도 이 파일은 커밋하지 마세요(`.specmock/`를 `.gitignore`에 두세요).
 - `specmock record <system>`은 GET·HEAD만 보냅니다. 생성·삭제 요청까지 보내려면 `--allow-mutating`(실제 데이터가 바뀝니다). `--feature <id>`로 일부만, `--refresh`로 대상 기능의 기존 녹화를 버리고 다시(중단되면 유지), `--no-apply`로 mock 반영 없이 녹화만 합니다.
 - 결과: `.specmock/<system>/recorded/<기능>.json`, 스펙과의 차이는 `drift.md`("스펙과 다름" = 응답이 스키마와 다름, "상태 불일치" = 기대한 상태 코드가 아님. 404면 `params`로 실제 id를 지정). 녹화 응답은 fixture 출처 `recorded`로 들어가고, 이미 생성한 mock은 LLM 호출 없이 fixture만 바뀝니다. 직접 고친 fixture는 보존됩니다.
-- 종료 코드: 0 전부 일치 · 2 drift 있음 · 1 오류. 동작 확인: `pnpm record:check`(공개 Petstore v3, 네트워크 필요).
+- 종료 코드: 0 전부 일치 · 2 스펙과 다름·상태 불일치·실패·반영 실패 중 하나라도 있음 · 1 오류. `--json`은 결과에 `notes`(반영 실패·generate 안내)를 함께 담습니다. 동작 확인: `pnpm record:check`(공개 Petstore v3, 네트워크 필요).
 
 ## 제한 사항
 
@@ -386,7 +386,7 @@ pnpm test:e2e      # 브라우저 E2E(별도). 처음 한 번 `pnpm exec playwri
 
 실제 claude 호출 확인은 `pnpm llm:check`, Java 생성·verify까지는 `pnpm llm:check --java`입니다(JDK 17, 수 분, 구독 호출). 실제 네트워크 녹화 확인은 `pnpm record:check`입니다.
 
-변경 후 위 명령이 통과하면 PR을 엽니다. 설계 의도는 [설계 문서](docs/superpowers/specs/2026-11-04-specmock-design.md)에, 단계별 작업 단위는 [구현 계획](docs/superpowers/plans/)(1A, 1B, 2A, 2B, 3A)에 있습니다. 설계와 다르게 구현한 지점은 설계 문서 12장 "구현 중 변경"에 이유와 함께 적습니다.
+변경 후 위 명령이 통과하면 PR을 엽니다. 설계 의도는 [설계 문서](docs/superpowers/specs/2026-11-04-specmock-design.md)에, 단계별 작업 단위는 [구현 계획](docs/superpowers/plans/)(1A, 1B, 2A, 2B, 3A, 3B)에 있습니다. 설계와 다르게 구현한 지점은 설계 문서 12장 "구현 중 변경"에 이유와 함께 적습니다.
 
 ## 로드맵
 
