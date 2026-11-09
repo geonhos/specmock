@@ -105,7 +105,7 @@ flowchart LR
 }
 ```
 
-- `request.headers`: **target에서 온 헤더는 이름은 남기고 값은 이름과 무관하게 전부 `***`**, contract에서 온 헤더(content-type 등)만 값을 유지한다(그 뒤 `maskHeaders`도 적용. 재현용 기록이지 재전송용이 아니다). 추가로 `${ENV}`로 치환된 값(`Target.secrets`)은 `redactSecrets`(정확한 문자열 일치. 4자 미만 값은 오탐이 커서 가리지 않음)로 `request.path`·`request.query`·**모든 응답 바디(2xx JSON 포함)**·실패 사유·drift.md·진행 이벤트·`RecordResult`·서비스 notes에서 `***`로 바꾼다. 패턴 기반 `maskSecrets`는 그 위에 그대로 적용한다. `request.path`에는 `params` 적용 뒤 실제 보낸 경로를 적는다.
+- `request.headers`: **target에서 온 헤더는 이름은 남기고 값은 이름과 무관하게 전부 `***`**, contract에서 온 헤더(content-type 등)만 값을 유지한다(그 뒤 `maskHeaders`도 적용. 재현용 기록이지 재전송용이 아니다). 추가로 `${ENV}`로 치환된 값(`Target.secrets`)은 `redactSecrets`(정확한 문자열 일치. 4자 미만 값은 오탐이 커서 가리지 않음)로 `request.path`·`request.query`·**모든 응답 바디(2xx JSON 포함)**·실패 사유·drift.md·진행 이벤트·`RecordResult`·서비스 notes에서 `***`로 바꾼다(URL 인코딩·form 인코딩·소문자 hex 변형과 JSON 이스케이프 형태 포함. JSON 바디는 파싱된 문자열 값에만, `RecordResult`는 요청·응답에서 온 텍스트 필드에만 적용). 패턴 기반 `maskSecrets`는 그 위에 그대로 적용한다. `request.path`에는 `params` 적용 뒤 실제 보낸 경로를 적는다.
 - `response.headers`는 `content-type`·`content-length`만 남긴다. `set-cookie` 등은 버린다.
 - `response.body`: JSON으로 파싱되면 값 그대로, 아니면 `{ "raw": "...", "contentType": "..." }`. 1MB(1,048,576바이트) 초과는 저장하지 않고 `"truncated": true, "bytes": n`만 적는다(fixture로도 쓰지 않는다).
 - `mockspecHash`는 녹화 시점의 `featureInputHash`(그 기능 + 그 기능의 contract, fixture는 status만; 전체 mockspec 해시가 아님). select가 현재 값과 다르면 "낡은 녹화" 경고를 assumptions에 적되 **사용은 한다**(기능 id가 같으면 의미가 같다고 본다). `--refresh`로 대상 기능을 다시 녹화한다.
@@ -300,3 +300,4 @@ sequenceDiagram
 | 비밀 마스킹 기준 | 헤더 이름 기반(`maskHeaders`)과 패턴 기반(`maskSecrets`) | **출처 기반 추가**: target의 `${ENV}` 치환 값 집합(`Target.secrets`, headers·params)을 `redactSecrets`로 녹화 파일·drift.md·이벤트·`RecordResult`·notes 전부에서 가림. target에서 온 요청 헤더는 이름과 무관하게 값 전부 `***`(이름 유지) | `X-Signature`처럼 이름에 걸리지 않는 비밀이 평문으로 저장되는 것을 막음 |
 | apply의 LLM 금지 | 해시가 같을 때만 generate 호출(잠금 밖 검사) | `generate`에 항상 `forbiddenLlmAdapter()`를 넘김. 호출되면 `LlmForbiddenError`(재시도 없이 전파), 서비스는 "generate를 실행하면 반영됩니다(LLM 재생성 필요)" 메모로 바꿈 | 검사와 잠금 안 generate 사이에 mockspec이 바뀌어도 기본 `ClaudeCodeAdapter`로 떨어지지 않음(TOCTOU) |
 | `mockspecHash` 의미 (D6) | 녹화 시점 mockspec.json 전체의 sha256 | `featureInputHash`: 그 기능 + 그 contract, fixture는 status만 | 다른 기능 선택·녹화가 바뀌어도 낡은 녹화 경고가 오탐되지 않음 |
+| 비밀 변형 마스킹 | 치환된 원문만 찾음 | `Target.secrets`에 원문·`encodeURIComponent`·form 인코딩·소문자 hex 변형을 함께 담고(4자 미만은 변형 안 함), JSON 바디는 파싱된 문자열 값에만, `RecordResult`는 `failed.reason`·`statusMismatch.hint`·`drifted.errors`에만 적용 | `fillPath`·query 표시가 값을 인코딩해 원문 일치를 피해 감. 숫자 비밀이 JSON을 깨거나 featureId가 망가지는 과잉 마스킹도 방지 |

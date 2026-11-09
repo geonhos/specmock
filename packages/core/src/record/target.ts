@@ -38,7 +38,7 @@ export interface Target {
   /** `${ENV}` 치환을 마친 값. */
   params: Record<string, string>;
   timeoutMs: number;
-  /** `${ENV}`로 치환된 모든 값(빈 문자열 제외). 출처 기반 마스킹에 쓴다. 화면·로그·파일에 싣지 않는다. */
+  /** `${ENV}`로 치환된 모든 값(빈 문자열 제외)과 그 URL·form 인코딩 변형. 출처 기반 마스킹에 쓴다. 화면·로그·파일에 싣지 않는다. */
   secrets: string[];
 }
 
@@ -54,11 +54,20 @@ export function substituteEnv(value: string, env: Record<string, string | undefi
   });
 }
 
+/** 비밀 값의 변형본: 원문, URL 인코딩(`%20`), form 인코딩(`+`), 두 인코딩의 소문자 hex(`%2f`). 4자 미만 값은 변형하지 않는다. */
+export function secretVariants(v: string): string[] {
+  if (v.length < 4) return [v];
+  const uri = encodeURIComponent(v);
+  const form = new URLSearchParams([["k", v]]).toString().slice(2);
+  const lower = (s: string) => s.replace(/%[0-9A-F]{2}/g, (m) => m.toLowerCase());
+  return [...new Set([v, uri, form, lower(uri), lower(form)])];
+}
+
 /** `${ENV}` 치환 + 치환된 값을 secrets에 모은다. */
 function substituteCollect(value: string, env: Record<string, string | undefined>, secrets: Set<string>): string {
   for (const m of value.matchAll(ENV_REF)) {
     const v = env[m[1]];
-    if (v) secrets.add(v);
+    if (v) for (const x of secretVariants(v)) secrets.add(x);
   }
   return substituteEnv(value, env);
 }

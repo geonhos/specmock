@@ -44,15 +44,22 @@ export interface RecordResult {
 
 export interface RecordRun { result: RecordResult; driftMarkdown: string }
 
-/** 바디 텍스트에 비밀이 섞였을 수 있을 때: JSON이면 문자열화→마스킹→재파싱, 실패하면 raw로. */
-function maskBody(kind: "json" | "raw" | "empty" | "truncated", body: unknown, contentType: string, mask: (s: string) => string): { kind: "json" | "raw"; body: unknown } | null {
+/** 파싱된 JSON 값의 문자열 값(과 키 아닌 값)에만 마스킹을 적용한다. 숫자·불리언·null은 그대로 둔다. */
+function maskValues(v: unknown, mask: (s: string) => string): unknown {
+  if (typeof v === "string") return mask(v);
+  if (Array.isArray(v)) return v.map((x) => maskValues(x, mask));
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, maskValues(x, mask)]));
+  return v;
+}
+
+/** 바디에 비밀이 섞였을 수 있을 때: raw는 텍스트에, JSON은 문자열 값에만 적용한다(JSON 이스케이프·숫자 보존). */
+function maskBody(kind: "json" | "raw" | "empty" | "truncated", body: unknown, mask: (s: string) => string): { kind: "json" | "raw"; body: unknown } | null {
   if (kind === "raw") {
     const b = body as { raw: string; contentType: string };
     return { kind: "raw", body: { raw: mask(b.raw), contentType: b.contentType } };
   }
   if (kind !== "json") return null;
-  const masked = mask(JSON.stringify(body));
-  try { return { kind: "json", body: JSON.parse(masked) }; } catch { return { kind: "raw", body: { raw: masked, contentType } }; }
+  return { kind: "json", body: maskValues(body, mask) };
 }
 
 /** 표시용 경로. query는 이름 기반(token·key 등)으로 값을 가린다. */
@@ -71,12 +78,14 @@ function recordedHeaders(contractHeaders: Record<string, string>, target: Target
   return maskHeaders(mergeHeaders(redactValues(contractHeaders, target.secrets), fromTarget));
 }
 
-/** 문자열 안의 비밀을 출처 기반(target 치환 값) + 패턴 기반으로 가린다. */
-function deepRedact<T>(v: T, red: (s: string) => string): T {
-  if (typeof v === "string") return red(v) as T;
-  if (Array.isArray(v)) return v.map((x) => deepRedact(x, red)) as T;
-  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deepRedact(x, red)])) as T;
-  return v;
+/** 요청·응답에서 온 텍스트 필드만 가린다. featureId·driftPath·baseUrl·system·recorded·matched는 건드리지 않는다. */
+function redactResult(r: RecordResult, red: (s: string) => string): RecordResult {
+  return {
+    ...r,
+    drifted: r.drifted.map((d) => ({ ...d, errors: d.errors.map(red) })),
+    statusMismatch: r.statusMismatch.map((m) => (m.hint ? { ...m, hint: red(m.hint) } : m)),
+    failed: r.failed.map((f) => ({ ...f, reason: red(f.reason) })),
+  };
 }
 
 /** mockspec의 정상 요청 contract를 target에 순서대로 보내 녹화하고 drift.md를 쓴다. 잠금은 잡지 않는다. */
@@ -130,8 +139,8 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
     const statusMatch = r.status === c.expect.status;
     // 출처 기반 마스킹은 모든 바디에, 패턴 기반은 비2xx·raw에만(정상 JSON 바디의 오탐 방지).
     const patterned = r.kind === "raw" || !statusMatch;
-    const masked = maskBody(r.kind, r.body, r.headers["content-type"] ?? "", (t) => (patterned ? maskSecrets(redactSecrets(t, target.secrets)) : redactSecrets(t, target.secrets)));
-    const kind = masked?.kind ?? r.kind;
+    const masked = maskBody(r.kind, r.body, (t) => (patterned ? maskSecrets(redactSecrets(t, target.secrets)) : redactSecrets(t, target.secrets)));
+    const kind = r.kind;   // 마스킹은 kind를 바꾸지 않는다(JSON은 문자열 값만 치환)
     const body = masked ? masked.body : r.body;
     await ws.write(system, recordedName(featureId), RecordedSchema, {
       featureId,
@@ -172,7 +181,7 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
   }
   const driftMarkdown = red(renderDrift(system, target.baseUrl, now(), entries));
   await ws.writeText(system, DRIFT_FILE, driftMarkdown);
-  return { result: deepRedact(result, red), driftMarkdown };
+  return { result: redactResult(result, red), driftMarkdown };
 }
 
 export { DRIFT_FILE } from "./drift.js";

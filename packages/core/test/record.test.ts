@@ -1,11 +1,11 @@
 // packages/core/test/record.test.ts
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { analyze } from "../src/analyze/index.js";
 import { ingest } from "../src/ingest/index.js";
-import { record } from "../src/record/index.js";
+import { readTarget, record } from "../src/record/index.js";
 import type { Target } from "../src/record/target.js";
 import { select } from "../src/select/index.js";
 import type { ServiceEvent } from "../src/service/events.js";
@@ -303,5 +303,46 @@ describe("record", () => {
     await record(ws, SYS, withToken, target(t.url), { features: ["listPets"], onEvent: (e) => events.push(e) });
     expect(events[0].message).toContain("token=***");
     expect(events[0].message).not.toContain("abcdefghijkl");
+  });
+
+  describe("변형된 비밀(URL 인코딩·JSON 이스케이프)", () => {
+    const enc = (v: string) => [v, encodeURIComponent(v), new URLSearchParams([["k", v]]).toString().slice(2)];
+    async function run(secrets: Record<string, string>, params: Record<string, string>, headers: Record<string, string>, resp: (q: FakeReq) => FakeRes, sp: MockSpec = spec, features = ["listPets", "getPet"]) {
+      t = await startFakeTarget(strip(resp));
+      await writeFile(ws.file(SYS, "target.json"), JSON.stringify({ baseUrl: t.url, headers, params }));
+      const tg = await readTarget(ws, SYS, secrets);
+      const events: ServiceEvent[] = [];
+      const { result, driftMarkdown } = await record(ws, SYS, sp, tg, { features, onEvent: (e) => events.push(e) });
+      const out = [driftMarkdown, JSON.stringify(result), JSON.stringify(events), await readFile(ws.file(SYS, "drift.md"), "utf8")];
+      for (const f of features) out.push(await readFile(ws.file(SYS, `recorded/${f}.json`), "utf8"));
+      return { out, result };
+    }
+
+    it.each(["ak y&z+1/=", "비밀값한글"])("path·query 비밀 %s는 원문·URL 인코딩·form 인코딩 어느 형태로도 남지 않는다", async (SEC) => {
+      const { out } = await run({ SEC }, { limit: "${SEC}", petId: "${SEC}" }, {}, () => ({ status: 401 }));
+      expect(t!.requests.some((r) => r.path.includes(encodeURIComponent(SEC)) || Object.values(r.query).includes(SEC))).toBe(true);   // 실제로는 보냈다
+      for (const o of out) for (const v of enc(SEC)) expect(o.includes(v)).toBe(false);
+      for (const o of out) expect(o.toLowerCase().includes(encodeURIComponent(SEC).toLowerCase())).toBe(false);
+    });
+
+    it("JSON 이스케이프되는 비밀(\" 따옴표·역슬래시)은 문자열 값에서만 ***로, 숫자 필드는 그대로", async () => {
+      const SIG = 'sig "q\\9';
+      const { out } = await run({ SIG, N: "1234" }, {}, { "X-Sig": "${SIG}", "X-N": "${N}" }, () => ({ status: 200, body: { echo: SIG, nested: [SIG, 1234], id: 1234 } }), spec, ["listPets"]);
+      for (const o of out) { expect(o.includes(SIG)).toBe(false); expect(o.includes(JSON.stringify(SIG).slice(1, -1))).toBe(false); }
+      const rec = await ws.read(SYS, "recorded/listPets.json", RecordedSchema);
+      expect(rec.response.kind).toBe("json");
+      expect(rec.response.body).toEqual({ echo: "***", nested: ["***", 1234], id: 1234 });
+    });
+
+    it("featureId에 비밀이 부분 문자열로 들어 있어도 result.featureId는 원형을 유지한다", async () => {
+      const SEC = "pets";
+      t = await startFakeTarget(strip(() => ({ status: 500 })));
+      await writeFile(ws.file(SYS, "target.json"), JSON.stringify({ baseUrl: t.url, headers: { "X-K": "${SEC}" } }));
+      const tg = await readTarget(ws, SYS, { SEC });
+      const { result } = await record(ws, SYS, spec, tg, { features: ["listPets"] });
+      expect(result.statusMismatch[0].featureId).toBe("listPets");
+      expect(result.recorded).toEqual(["listPets"]);
+      expect(result.driftPath).toBe(ws.file(SYS, "drift.md"));
+    });
   });
 });
