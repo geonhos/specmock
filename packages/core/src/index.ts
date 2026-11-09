@@ -4,7 +4,7 @@ export * from "./types.js";
 export { Workspace } from "./workspace.js";
 export { hashJson, hashText } from "./util/hash.js";
 export { ingest, ingestOne, detectKind, type IngestOptions, type IngestResult } from "./ingest/index.js";
-export { maskSecrets } from "./ingest/mask.js";
+export { maskHeaders, maskSecrets } from "./ingest/mask.js";
 export { analyze, writeCatalogWithDiff, type AnalyzeOutcome } from "./analyze/index.js";
 export { analyzeOpenApiDocument } from "./analyze/openapi.js";
 export { prepare, pruneExtracted, documentText, needsLlm, CHUNKS_DIR, EXTRACTED_DIR, chunkFileName, extractedFileName } from "./analyze/prepare.js";

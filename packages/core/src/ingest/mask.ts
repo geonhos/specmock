@@ -6,9 +6,21 @@
 const PATTERNS: Array<[RegExp, string]> = [
   [/(Bearer\s+)[A-Za-z0-9\-_.=]{16,}/g, "$1***"],
   [/\b(sk|pk|rk)_(live|test)_[A-Za-z0-9]{8,}/g, "$1_$2_***"],
-  [/(["']?(?:api[_-]?key|access[_-]?token|secret|password|authorization)["']?\s*[:=]\s*["']?)[^"'\s,}]{8,}/gi, "$1***"],
+  [/(["']?(?:api[_-]?key|access[_-]?token|secret|password|authorization)["']?\s*[:=]\s*["']?)[^"'\s,}&]{8,}/gi, "$1***"],
 ];
 
 export function maskSecrets(text: string): string {
   return PATTERNS.reduce((t, [re, rep]) => t.replace(re, rep), text);
+}
+
+const SECRET_HEADER_EXACT = new Set(["authorization", "cookie", "set-cookie"]);
+const SECRET_HEADER_PART = ["key", "token", "secret", "password"];
+
+/** 헤더 이름만 보고 값 전체를 가린다(값 길이·모양은 보지 않는다). 키 대소문자는 그대로 둔다. */
+export function maskHeaders(headers: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(headers).map(([k, v]) => {
+    const lower = k.toLowerCase();
+    const secret = SECRET_HEADER_EXACT.has(lower) || SECRET_HEADER_PART.some((p) => lower.includes(p));
+    return [k, secret ? "***" : v];
+  }));
 }
