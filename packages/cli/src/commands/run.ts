@@ -1,8 +1,8 @@
-import { formatCatalog, runPipeline, verifyFailed } from "@specmock/core";
+import { assertLanguage, formatCatalog, runPipeline, verifyFailed } from "@specmock/core";
 import type { Command } from "commander";
-import { fail, formatDiff, formatGenerate, formatMerge, formatVerify, SYSTEM_ARG_HELP, workspaceFrom } from "../context.js";
+import { fail, formatDiff, formatGenerate, formatMerge, formatVerify, parseAttempts, SYSTEM_ARG_HELP, workspaceFrom } from "../context.js";
 
-interface Opts { select: string; lang: string; out?: string; verify: boolean; llm?: string; model?: string; refresh: boolean; json: boolean }
+interface Opts { select: string; lang?: string; out?: string; verify: boolean; llm?: string; model?: string; maxAttempts?: string; refresh: boolean; json: boolean }
 
 export function registerRun(program: Command): void {
   program
@@ -11,15 +11,17 @@ export function registerRun(program: Command): void {
     .argument("<system>", SYSTEM_ARG_HELP)
     .argument("<origins...>", "파일 경로 또는 URL")
     .option("--select <expr>", "선택 표현식", "all")
-    .option("--lang <lang>", "생성 언어", "ts")
+    .option("--lang <lang>", "생성 언어 (ts | java). 생략하면 기존 디렉터리의 언어, 없으면 ts. java는 claude-code로 생성한다")
+    .option("--max-attempts <n>", "LLM 생성의 최대 시도 횟수 (기본 3)")
     .option("--out <dir>", "출력 디렉터리")
     .option("--no-verify", "contract test를 건너뛴다")
-    .option("--llm <adapter>", "문서 입력일 때 LLM 어댑터 (claude-code만 가능. 세션 모드는 run 대신 analyze로 단계별 진행)")
+    .option("--llm <adapter>", "문서 입력의 추출과 ts가 아닌 언어의 생성에 쓰는 LLM 어댑터 (claude-code만 가능. 세션 모드는 run 대신 analyze·generate로 단계별 진행)")
     .option("--model <model>", "claude-code 어댑터의 모델 (예: sonnet, opus)")
     .option("--refresh", "이미 있는 extracted/*.json을 무시하고 다시 추출한다", false)
     .option("--json", "마지막에 JSON 하나만 출력 (진행 상황은 stderr)", false)
     .action(async (system: string, origins: string[], opts: Opts, cmd: Command) => {
-      if (opts.lang !== "ts") fail(`'${opts.lang}' 언어는 아직 지원하지 않습니다. (ts만 가능)`);
+      if (opts.lang !== undefined) assertLanguage(opts.lang);
+      const maxAttempts = parseAttempts(opts.maxAttempts);
       if (opts.llm === "session") fail("run은 세션 모드를 지원하지 않습니다. specmock analyze <system> 으로 단계별로 진행하거나 --llm claude-code 를 쓰세요.");
       if (opts.llm !== undefined && opts.llm !== "claude-code") fail(`알 수 없는 LLM 어댑터: ${opts.llm} (claude-code)`);
       const ws = workspaceFrom(cmd);
@@ -28,7 +30,9 @@ export function registerRun(program: Command): void {
       const r = await runPipeline(ws, system, origins, {
         select: opts.select, outDir: opts.out, verify: opts.verify,
         llm: opts.llm as "claude-code" | undefined, model: opts.model, refresh: opts.refresh,
+        language: opts.lang, maxAttempts,
         onEvent: (e) => process.stderr.write(e.message + "\n"),
+        onProgress: (e) => process.stderr.write(e.message + "\n"),
         onStage: (s) => {
           if (s.stage === "catalog") {
             out(formatCatalog(s.catalog) + "\n");

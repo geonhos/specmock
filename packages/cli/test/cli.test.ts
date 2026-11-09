@@ -237,3 +237,68 @@ describe("Phase 1B CLI", () => {
     await expect(specmock("select", "petstore")).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining("--interactive를 쓰세요") });
   });
 });
+
+describe("Phase 3A CLI", () => {
+  const withClaude = async (script: string) => {
+    const bin = path.join(dir, "fakebin");
+    await mkdir(bin, { recursive: true });
+    await symlink(path.join(FAKE_BIN, script), path.join(bin, "claude"));
+    return { cwd: dir, env: { ...process.env, NO_COLOR: "1", PATH: `${bin}:${process.env.PATH}` } };
+  };
+  async function selected() {
+    await specmock("ingest", "petstore", PETSTORE);
+    await specmock("analyze", "petstore");
+    await specmock("select", "petstore", "getPet,createPet");
+  }
+
+  it("generate --lang cobol은 지원 언어 목록과 함께 종료 코드 1", async () => {
+    await selected();
+    await expect(specmock("generate", "petstore", "--lang", "cobol")).rejects.toMatchObject({
+      code: 1, stderr: expect.stringContaining("'cobol' 언어는 지원하지 않습니다. 지원 언어: ts, java"),
+    });
+  });
+
+  it("generate는 모르는 --llm과 잘못된 --max-attempts를 거부한다", async () => {
+    await selected();
+    await expect(specmock("generate", "petstore", "--lang", "java", "--llm", "gpt")).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining("알 수 없는 LLM 어댑터: gpt (claude-code, session)") });
+    await expect(specmock("generate", "petstore", "--lang", "java", "--max-attempts", "0")).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining("--max-attempts는 1 이상의 정수") });
+  });
+
+  it("generate --lang java가 maxAttempts 안에 통과하지 못하면 종료 코드 5와 attempt 위치를 알린다", async () => {
+    await selected();
+    const env = await withClaude("claude-fail");
+    await expect(run(TSX, [CLI, "generate", "petstore", "--lang", "java", "--max-attempts", "2"], env)).rejects.toMatchObject({
+      code: 5,
+      stderr: expect.stringMatching(/코드 생성 중 \(1\/2\)[\s\S]*코드 생성 중 \(2\/2\)[\s\S]*2번 시도했지만 검증을 통과하는 mock을 만들지 못했습니다\. 마지막 시도: .*\.specmock-attempt/),
+    });
+    await expect(readFile(path.join(dir, "mock", "petstore", "specmock.lock.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("generate --lang java --llm session은 지시서를 쓰고 다음 단계를 안내한다. --json은 같은 정보", async () => {
+    await selected();
+    const { stdout } = await specmock("generate", "petstore", "--lang", "java", "--llm", "session");
+    expect(stdout).toContain(path.join(dir, ".specmock", "petstore", "generate-request.json"));
+    expect(stdout).toContain("specmock generate petstore --finalize");
+    const j = JSON.parse((await specmock("generate", "petstore", "--lang", "java", "--llm", "session", "--json")).stdout);
+    expect(j).toMatchObject({ mode: "session", language: "java", reused: true, outDir: path.join(dir, "mock", "petstore") });
+  });
+
+  it("generate --finalize는 지시서가 없으면 reason과 함께 종료 코드 1", async () => {
+    await selected();
+    await expect(specmock("generate", "petstore", "--finalize")).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining("확정 거부(no-request)") });
+  });
+
+  it("generate(ts) --json은 attempts·notes·userModified·skipped·launch를 싣는다. ts는 같은 mockspec이어도 건너뛰지 않는다", async () => {
+    await selected();
+    const first = JSON.parse((await specmock("generate", "petstore", "--json")).stdout);
+    expect(first).toMatchObject({ language: "ts", attempts: 0, notes: [], userModified: [], skipped: false, launch: `cd ${path.join(dir, "mock", "petstore")} && npm install && npm start` });
+    const { stdout } = await specmock("generate", "petstore");
+    expect(stdout).toContain("생성 완료");
+    expect(stdout).not.toContain("변경 없음");
+  });
+
+  it("run --lang cobol은 파이프라인 전에 종료 코드 1", async () => {
+    await expect(specmock("run", "petstore", PETSTORE, "--lang", "cobol", "--no-verify")).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining("지원 언어: ts, java") });
+    await expect(readdir(path.join(dir, ".specmock"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});

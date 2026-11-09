@@ -20,11 +20,23 @@ export function fail(message: string): never {
   process.exit(1);
 }
 
-/** generate 결과의 공통 출력: 생성 위치·파일 수와 보존/고아 fixture 안내. */
+/** --max-attempts 값. 1 이상의 정수가 아니면 종료 코드 1. */
+export function parseAttempts(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) fail(`--max-attempts는 1 이상의 정수여야 합니다: ${raw}`);
+  return n;
+}
+
+/** generate 결과의 공통 출력: 생성 위치·파일 수, 보존/고아 fixture, LLM 시도·사용자 수정·notes. */
 export function formatGenerate(report: GenerateReport): string {
+  if (report.skipped) return `변경 없음: ${report.outDir} (mockspec이 마지막 생성과 같습니다. 다시 만들려면 --force)`;
   const lines = [`생성 완료: ${report.outDir} (${report.written.length}개 파일)`];
   if (report.preserved.length) lines.push(`보존된 fixture ${report.preserved.length}개 (수정 흔적 있음): ${report.preserved.join(", ")}`);
   if (report.orphaned.length) lines.push(`고아 fixture ${report.orphaned.length}개 (선택 해제됐지만 수정 흔적이 있어 남김): ${report.orphaned.join(", ")}`);
+  if (report.attempts > 0) lines.push(`LLM 시도 ${report.attempts}회`);
+  if (report.userModified.length) lines.push(`사용자가 고친 파일 중 이번 생성이 바꾼 것 ${report.userModified.length}개 (확인하세요): ${report.userModified.join(", ")}`);
+  for (const n of report.notes) lines.push(`참고: ${n}`);
   return lines.join("\n");
 }
 

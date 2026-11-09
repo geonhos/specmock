@@ -109,6 +109,9 @@ specmock analyze <system>
 ```bash
 specmock select <system> <표현식>...
 specmock generate <system>          # ./mock/<system>/
+specmock generate <system> --lang java --llm claude-code [--model sonnet] [--max-attempts 3]   # Java: 생성·빌드·검증 통과분만 반영. 실패하면 종료 코드 5
+specmock generate <system> --lang java --llm session    # 지시서만 쓴다. 대화에서 pom.xml·src/** 작성 후
+specmock generate <system> --finalize                    # 확정 → specmock verify <system>
 specmock verify <system>            # mock 기동 → contract test → coverage.md
 ```
 
@@ -116,7 +119,7 @@ verify 결과(`contract: 통과 N / 실패 M`)와 `coverage.md` 상단 요약(fi
 
 **`verify` 종료 코드 2** = contract 실패. `run`의 종료 코드 2는 contract 실패 **또는** 일부 청크 추출 실패. 실패한 contract의 오류를 옮겨 적고, 보통 원인(문서 샘플이 스키마와 불일치 등)과 함께 사용자에게 알린다. mock 자체는 생성되어 있다. 고치는 방법은 `mock/<system>/fixtures/<id>/<status>.json` 편집이다. 종료 코드 1은 오류(예: mock 기동 실패)이므로 메시지를 전달한다.
 
-한 번에 돌리고 싶다는 요청이면 `specmock run <system> <origins...> [--select <expr>] [--llm claude-code]`가 ingest → verify까지 이어서 실행한다. 문서 입력에는 `--llm claude-code`가 필요하고(세션 모드는 `run`에서 지원하지 않는다) 구독 호출이 나가므로, 기능 선택을 보여주는 단계별 진행을 우선 권한다.
+한 번에 돌리고 싶다는 요청이면 `specmock run <system> <origins...> [--select <expr>] [--llm claude-code]`가 ingest → verify까지 이어서 실행한다. 문서 입력에는 `--llm claude-code`가 필요하고(세션 모드는 `run`에서 지원하지 않는다) 구독 호출이 나가므로, 기능 선택을 보여주는 단계별 진행을 우선 권한다. Java는 `specmock run <system> <origins...> --lang java --llm claude-code`. 스킬 환경에서는 MCP `generate_mock(language)`의 세션 모드를 우선한다.
 
 ## 5. 마무리와 추가
 
