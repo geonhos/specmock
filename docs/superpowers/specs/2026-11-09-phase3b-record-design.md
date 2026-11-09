@@ -105,7 +105,7 @@ flowchart LR
 }
 ```
 
-- `request.headers`: **target에서 온 헤더는 이름은 남기고 값은 이름과 무관하게 전부 `***`**, contract에서 온 헤더(content-type 등)만 값을 유지한다(그 뒤 `maskHeaders`도 적용. 재현용 기록이지 재전송용이 아니다). 추가로 `${ENV}`로 치환된 값(`Target.secrets`)은 `redactSecrets`(정확한 문자열 일치, 길이 무관)로 `request.path`·`request.query`·실패 사유·drift.md·진행 이벤트·`RecordResult`·서비스 notes에서 `***`로 바꾼다. 패턴 기반 `maskSecrets`는 그 위에 그대로 적용한다. `request.path`에는 `params` 적용 뒤 실제 보낸 경로를 적는다.
+- `request.headers`: **target에서 온 헤더는 이름은 남기고 값은 이름과 무관하게 전부 `***`**, contract에서 온 헤더(content-type 등)만 값을 유지한다(그 뒤 `maskHeaders`도 적용. 재현용 기록이지 재전송용이 아니다). 추가로 `${ENV}`로 치환된 값(`Target.secrets`)은 `redactSecrets`(정확한 문자열 일치. 4자 미만 값은 오탐이 커서 가리지 않음)로 `request.path`·`request.query`·**모든 응답 바디(2xx JSON 포함)**·실패 사유·drift.md·진행 이벤트·`RecordResult`·서비스 notes에서 `***`로 바꾼다. 패턴 기반 `maskSecrets`는 그 위에 그대로 적용한다. `request.path`에는 `params` 적용 뒤 실제 보낸 경로를 적는다.
 - `response.headers`는 `content-type`·`content-length`만 남긴다. `set-cookie` 등은 버린다.
 - `response.body`: JSON으로 파싱되면 값 그대로, 아니면 `{ "raw": "...", "contentType": "..." }`. 1MB(1,048,576바이트) 초과는 저장하지 않고 `"truncated": true, "bytes": n`만 적는다(fixture로도 쓰지 않는다).
 - `mockspecHash`는 녹화 시점의 `featureInputHash`(그 기능 + 그 기능의 contract, fixture는 status만; 전체 mockspec 해시가 아님). select가 현재 값과 다르면 "낡은 녹화" 경고를 assumptions에 적되 **사용은 한다**(기능 id가 같으면 의미가 같다고 본다). `--refresh`로 대상 기능을 다시 녹화한다.

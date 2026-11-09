@@ -45,13 +45,13 @@ export interface RecordResult {
 export interface RecordRun { result: RecordResult; driftMarkdown: string }
 
 /** 바디 텍스트에 비밀이 섞였을 수 있을 때: JSON이면 문자열화→마스킹→재파싱, 실패하면 raw로. */
-function maskBody(kind: "json" | "raw" | "empty" | "truncated", body: unknown, contentType: string): { kind: "json" | "raw"; body: unknown } | null {
+function maskBody(kind: "json" | "raw" | "empty" | "truncated", body: unknown, contentType: string, mask: (s: string) => string): { kind: "json" | "raw"; body: unknown } | null {
   if (kind === "raw") {
     const b = body as { raw: string; contentType: string };
-    return { kind: "raw", body: { raw: maskSecrets(b.raw), contentType: b.contentType } };
+    return { kind: "raw", body: { raw: mask(b.raw), contentType: b.contentType } };
   }
   if (kind !== "json") return null;
-  const masked = maskSecrets(JSON.stringify(body));
+  const masked = mask(JSON.stringify(body));
   try { return { kind: "json", body: JSON.parse(masked) }; } catch { return { kind: "raw", body: { raw: masked, contentType } }; }
 }
 
@@ -128,7 +128,9 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
       continue;
     }
     const statusMatch = r.status === c.expect.status;
-    const masked = r.kind === "raw" || !statusMatch ? maskBody(r.kind, r.body, r.headers["content-type"] ?? "") : null;
+    // 출처 기반 마스킹은 모든 바디에, 패턴 기반은 비2xx·raw에만(정상 JSON 바디의 오탐 방지).
+    const patterned = r.kind === "raw" || !statusMatch;
+    const masked = maskBody(r.kind, r.body, r.headers["content-type"] ?? "", (t) => (patterned ? maskSecrets(redactSecrets(t, target.secrets)) : redactSecrets(t, target.secrets)));
     const kind = masked?.kind ?? r.kind;
     const body = masked ? masked.body : r.body;
     await ws.write(system, recordedName(featureId), RecordedSchema, {

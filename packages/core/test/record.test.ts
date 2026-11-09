@@ -271,7 +271,7 @@ describe("record", () => {
   });
 
   it("params의 ${ENV} 값(query 인증)은 녹화 파일·이벤트·drift.md·RecordResult 어디에도 남지 않는다", async () => {
-    const KEY = "k9";   // 8자 미만도 가린다
+    const KEY = "k9k9";   // 8자 미만이어도 4자 이상이면 가린다
     const withQuery: MockSpec = { ...spec, contracts: spec.contracts.map((c) => (c.featureId === "listPets" && c.name === "정상 요청" ? { ...c, request: { ...c.request, query: { ...c.request.query, apiKey: "x" } } } : c)) };
     t = await startFakeTarget(strip(() => ({ status: 401 })));
     const events: ServiceEvent[] = [];
@@ -284,6 +284,16 @@ describe("record", () => {
       expect(out.includes(KEY)).toBe(false);
     }
     expect(driftMarkdown.includes("***")).toBe(true);
+  });
+
+  it("2xx JSON 응답이 에코한 비밀도 녹화 파일에서 ***로 가려지고, 4자 미만 비밀은 건드리지 않는다", async () => {
+    const SEC = "echo-secret-77";
+    t = await startFakeTarget(strip(() => ({ status: 200, body: { echoKey: SEC, id: 1, n: 12 } })));
+    await record(ws, SYS, spec, target(t.url, { headers: { "X-Sig": SEC }, secrets: [SEC, "1"] }), { features: ["listPets"] });
+    const text = await readFile(ws.file(SYS, "recorded/listPets.json"), "utf8");
+    expect(text).not.toContain(SEC);
+    expect(text).toContain("***");
+    expect((await ws.read(SYS, "recorded/listPets.json", RecordedSchema)).response.body).toEqual({ echoKey: "***", id: 1, n: 12 });
   });
 
   it("진행 이벤트의 path도 query 이름 기반(token·key)으로 가린다", async () => {

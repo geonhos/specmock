@@ -25,9 +25,9 @@ export function maskHeaders(headers: Record<string, string>): Record<string, str
   }));
 }
 
-/** 출처 기반 마스킹: 값의 정확한 문자열을 `***`로 바꾼다(길이 제한 없음, 긴 값부터). 빈 문자열은 무시. */
+/** 출처 기반 마스킹: 값의 정확한 문자열을 `***`로 바꾼다(긴 값부터). 4자 미만 값은 다른 텍스트를 지우는 오탐이 커서 가리지 않는다. */
 export function redactSecrets(text: string, secrets: readonly string[]): string {
   let out = text;
-  for (const v of [...new Set(secrets)].filter((x) => x !== "").sort((a, b) => b.length - a.length)) out = out.split(v).join("***");
+  for (const v of [...new Set(secrets)].filter((x) => x.length >= 4).sort((a, b) => b.length - a.length)) out = out.split(v).join("***");
   return out;
 }
