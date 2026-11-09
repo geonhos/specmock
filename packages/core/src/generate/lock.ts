@@ -54,3 +54,17 @@ export async function readLock(dir: string): Promise<Lock | null> {
 export async function writeLock(dir: string, lock: LockInput): Promise<void> {
   await writeFile(path.join(dir, LOCK_FILE), JSON.stringify(LockSchema.parse(lock), null, 2) + "\n", "utf8");
 }
+
+const quoteArg = (a: string) => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, "'\\''")}'`);
+const joinCommand = (c: { command: string; args: string[] }) => [c.command, ...c.args].map(quoteArg).join(" ");
+
+/** 사용자가 mock을 직접 띄우는 명령. ts는 package.json 스크립트가 있으므로 지금 문구 그대로. */
+export function launchCommand(lock: Pick<Lock, "language" | "install" | "start">): string {
+  if (lock.language === "ts") return "npm install && npm start";
+  const install = lock.install === undefined ? NPM_INSTALL : lock.install;
+  return [install ? joinCommand(install) : null, joinCommand(lock.start)].filter(Boolean).join(" && ");
+}
+
+export function launchHint(outDir: string, lock: Pick<Lock, "language" | "install" | "start">): string {
+  return `cd ${outDir} && ${launchCommand(lock)}`;
+}

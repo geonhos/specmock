@@ -65,12 +65,12 @@ export function registerMockTools(server: McpServer, ws: Workspace, onEvent: OnE
     outputSchema: z.object({ outDir: z.string(), written: z.array(z.string()), preserved: z.array(z.string()), orphaned: z.array(z.string()) }),
   }, guard(async ({ system, outDir, force }) => {
     const r = await generate(ws, system, { outDir, force });
-    return ok(`생성: ${r.outDir} (파일 ${r.written.length}개, 보존 ${r.preserved.length}, 남겨진 fixture ${r.orphaned.length}). 실행: cd ${r.outDir} && npm install && npm start. 다음: verify_mock`, { outDir: r.outDir, written: r.written, preserved: r.preserved, orphaned: r.orphaned });
+    return ok(`생성: ${r.outDir} (파일 ${r.written.length}개, 보존 ${r.preserved.length}, 남겨진 fixture ${r.orphaned.length}). 실행: ${r.launch}. 다음: verify_mock`, { outDir: r.outDir, written: r.written, preserved: r.preserved, orphaned: r.orphaned });
   }));
 
   server.registerTool("verify_mock", {
     title: "contract test",
-    description: "mock 서버를 띄워 contract test를 실행하고 .specmock/<system>/coverage.md를 쓴다. 대상은 dir → 마지막 generate_mock 위치 → ./mock/<system>. 의존성이 없으면 npm install을 먼저 실행하므로 처음엔 오래 걸릴 수 있다.",
+    description: "mock 서버를 띄워 contract test와 런타임 계약(501·404)을 실행하고 .specmock/<system>/coverage.md를 쓴다. 대상은 dir → 마지막 generate_mock 위치 → ./mock/<system>. 의존성이 없으면 lock의 설치 명령(TS는 npm install, Java는 ./mvnw package)을 먼저 실행하므로 처음엔 오래 걸릴 수 있다.",
     inputSchema: z.object({ system: SystemArg, dir: z.string().optional() }),
     outputSchema: z.object({
       total: z.number(), passed: z.number(), failed: z.number(),

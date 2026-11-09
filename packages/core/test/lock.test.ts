@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { analyze } from "../src/analyze/index.js";
 import { generate } from "../src/generate/index.js";
-import { NPM_INSTALL, readLock, resolveInstall } from "../src/generate/lock.js";
+import { NPM_INSTALL, launchCommand, launchHint, readLock, resolveInstall } from "../src/generate/lock.js";
 import { ingest } from "../src/ingest/index.js";
 import { select } from "../src/select/index.js";
 import { MockSpecSchema } from "../src/types.js";
@@ -86,5 +86,25 @@ describe("mockspec.language 제거", () => {
     const raw = JSON.parse(await readFile(path.join(dir, ".specmock", "petstore", "mockspec.json"), "utf8"));
     expect(raw).not.toHaveProperty("language");
     expect(MockSpecSchema.parse({ ...raw, language: "ts" })).not.toHaveProperty("language");
+  });
+});
+
+describe("실행 안내", () => {
+  const base = { system: "s", generator: "template" as const, mockspecHash: "h", generatedAt: "t", healthPath: "/h", fixtureHashes: {}, sourceFiles: {} };
+  it("ts는 package.json 스크립트 문구를 쓴다", () => {
+    const lock = { ...base, language: "ts", install: NPM_INSTALL, start: { command: "npx", args: ["tsx", "src/server.ts"] } };
+    expect(launchCommand(lock)).toBe("npm install && npm start");
+    expect(launchHint("/r/mock/s", lock)).toBe("cd /r/mock/s && npm install && npm start");
+  });
+  it("그 밖의 언어는 install·start argv를 잇는다", () => {
+    const lock = { ...base, language: "java", install: { command: "./mvnw", args: ["-q", "-DskipTests", "package"] }, start: { command: "java", args: ["-jar", "target/mock.jar"] } };
+    expect(launchHint("mock/petstore", lock)).toBe("cd mock/petstore && ./mvnw -q -DskipTests package && java -jar target/mock.jar");
+  });
+  it("install이 null이면 start만", () => {
+    expect(launchCommand({ ...base, language: "fake", install: null, start: { command: "node", args: ["server.mjs"] } })).toBe("node server.mjs");
+  });
+  it("generate 결과의 launch는 lock에서 조합한다", async () => {
+    const r = await generate(ws, "petstore", { outDir: out });
+    expect(r.launch).toBe(`cd ${out} && npm install && npm start`);
   });
 });

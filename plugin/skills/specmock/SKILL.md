@@ -113,7 +113,7 @@ verify 결과(`contract: 통과 N / 실패 M`)와 `coverage.md` 상단 요약(fi
 
 ## 5. 마무리와 추가
 
-- 실행법: `cd mock/<system> && npm install && npm start` (기본 포트 4010).
+- 실행법: generate 출력의 `실행:` 줄을 그대로 보여 준다. TS는 `cd mock/<system> && npm install && npm start`, Java는 `cd mock/<system> && ./mvnw -q -DskipTests package && java -jar target/mock.jar` (기본 포트 4010).
 - 나중에 기능 추가: `specmock select <system> --add <id> && specmock generate <system>`. 선택하지 않은 경로를 호출하면 mock이 501과 함께 이 명령을 알려준다.
 - 스펙이 바뀌면 `ingest --refresh` → `analyze <system> --refresh`(세션 모드면 기존 추출 결과를 지우고 시작) → 다시 추출 → `--merge`. 출력의 "이전 카탈로그 대비" 줄을 사용자에게 보여준다.
 

@@ -5,7 +5,7 @@ import { hashJson } from "../util/hash.js";
 import type { Workspace } from "../workspace.js";
 import { withSystemLock } from "../workspaceLock.js";
 import type { GenerateReport } from "./generator.js";
-import { LOCK_FILE, readLock, writeLock } from "./lock.js";
+import { LOCK_FILE, launchHint, readLock, writeLock } from "./lock.js";
 import { assertLanguage } from "./profiles/index.js";
 import { writeLanguageFiles, writeScaffold } from "./scaffold.js";
 import { TsHonoGenerator } from "./tsHono.js";
@@ -72,7 +72,7 @@ async function generateUnlocked(ws: Workspace, system: string, opts: GenerateOpt
   await ws.write(system, "generate.json", GenerateInfoSchema, { outDir, generatedAt: new Date().toISOString() });
   return {
     outDir, language, written, preserved: s.preserved, orphaned: s.orphaned,
-    launch: `cd ${outDir} && npm install && npm start`,
+    launch: launchHint(outDir, { language, install: output.install, start: output.start }),
     attempts: 0, notes: [], userModified: [], skipped: false,
   };
 }

@@ -38,7 +38,7 @@ export function registerRun(program: Command): void {
             out(`선택 ${s.selection.resolved.length}개\n`);
           } else if (s.stage === "generate") {
             out(formatGenerate(s.report) + "\n");
-            if (!opts.verify) out(`verify 생략. 실행: cd ${s.report.outDir} && npm install && npm start\n`);
+            if (!opts.verify) out(`verify 생략. 실행: ${s.report.launch}\n`);
           } else {
             out(formatVerify(s.result, s.coverageFile) + "\n");
           }

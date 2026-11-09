@@ -8,7 +8,7 @@ import { pathFor } from "../route";
 import { useJob } from "../useJob";
 
 /** core GenerateReport. CLI의 "생성 완료: <outDir> (N개 파일)"과 같은 정보를 보인다. */
-interface GenerateReport { outDir: string; written: string[]; preserved: string[]; orphaned: string[] }
+interface GenerateReport { outDir: string; written: string[]; preserved: string[]; orphaned: string[]; launch?: string }
 interface Props { system: string; jobs: Job[]; tick: number; go: (path: string) => void; refreshJobs: () => void; onChanged: () => void }
 
 const asError = (e: unknown) => (e instanceof ApiError ? e : new ApiError(0, "failed", String(e)));
@@ -73,7 +73,7 @@ export function Generate({ system, jobs, tick, go, refreshJobs }: Props) {
           {done.orphaned.length ? <p className="muted">고아 fixture {done.orphaned.length}개 (선택 해제됐지만 수정 흔적이 있어 남김): {done.orphaned.join(", ")}</p> : null}
           <ul className="files mono">{done.written.map((f) => <li key={f}>{f}</li>)}</ul>
           <p className="muted">실행</p>
-          <pre className="cmd">cd {done.outDir} && npm install && npm start</pre>
+          <pre className="cmd">{done.launch ?? `cd ${done.outDir} && npm install && npm start`}</pre>
           <div><button type="button" className="btn-primary" onClick={() => go(pathFor("verify", system))}>⑤ 검증으로 →</button></div>
         </section>
       ) : null}

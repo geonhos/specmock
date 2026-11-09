@@ -15,7 +15,7 @@ export function registerGenerate(program: Command): void {
       if (opts.lang !== "ts") fail(`'${opts.lang}' 언어는 아직 지원하지 않습니다. (ts만 가능)`);
       const report = await generate(workspaceFrom(cmd), system, { outDir: opts.out, force: opts.force });
       printJsonOr(opts.json, report, () =>
-        `${formatGenerate(report)}\n실행: cd ${report.outDir} && npm install && npm start\n검증: specmock verify ${system}`,
+        `${formatGenerate(report)}\n실행: ${report.launch}\n검증: specmock verify ${system}`,
       );
     });
 }

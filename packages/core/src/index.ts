@@ -21,7 +21,7 @@ export { harvest, isEgoBrowserAvailable, type HarvestOptions } from "./harvest/i
 export { buildHarvestScript } from "./harvest/script.js";
 export { select, type SelectOptions, type SelectResult } from "./select/index.js";
 export { generate, defaultMockDir, type GenerateOptions } from "./generate/index.js";
-export { readLock, type Lock } from "./generate/lock.js";
+export { readLock, launchCommand, launchHint, type Lock } from "./generate/lock.js";
 export type { GenerateReport, GenerateProgress, LanguageOutput } from "./generate/generator.js";
 export { verify, verifyFailed, loadContracts, type VerifyOptions, type VerifyResult, type ContractResult } from "./verify/index.js";
 export type { RuntimeCheck, RuntimeSpec } from "./verify/runtime.js";

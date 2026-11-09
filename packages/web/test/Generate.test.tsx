@@ -83,7 +83,7 @@ it("job-done: 생성 파일 목록과 실행 방법, ⑤ 검증으로 →", asyn
   fireEvent.click(await screen.findByRole("button", { name: "생성" }));
   await vi.waitFor(() => expect(api.calls).toContain("POST /api/systems/petstore/generate"));
   emit("job-started", job());
-  emit("job-done", job({ state: "done", result: { outDir: "/r/mock/petstore", written: ["package.json", "src/server.ts"], preserved: ["fixtures/a.json"], orphaned: [] } }));
+  emit("job-done", job({ state: "done", result: { outDir: "/r/mock/petstore", written: ["package.json", "src/server.ts"], preserved: ["fixtures/a.json"], orphaned: [], launch: "cd /r/mock/petstore && npm install && npm start" } }));
   expect(await screen.findByText(/생성 완료: \/r\/mock\/petstore \(2개 파일\)/)).toBeTruthy();
   expect(screen.getByText("src/server.ts")).toBeTruthy();
   expect(screen.getByText(/보존된 fixture 1개/)).toBeTruthy();
