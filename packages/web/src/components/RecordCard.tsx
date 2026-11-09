@@ -67,6 +67,7 @@ export function RecordCard({ system, jobs, tick, refreshJobs }: Props) {
       {r && done ? (
         <>
           <p className="summary"><strong>일치 {r.matched.length} · 스펙과 다름 {r.drifted.length} · 상태 불일치 {r.statusMismatch.length} · 건너뜀 {r.skipped.length} · 실패 {r.failed.length}</strong></p>
+          <p className="muted">coverage에 반영하려면 verify를 다시 실행하세요.</p>
           {done.notes.length ? <ul className="cov-list">{done.notes.map((n, i) => <li key={i}>{n}</li>)}</ul> : null}
           <pre className="drift">{done.driftMarkdown}</pre>
         </>

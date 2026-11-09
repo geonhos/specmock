@@ -149,14 +149,47 @@ describe("record", () => {
     expect(t.requests).toHaveLength(1);
   });
 
-  it("refresh는 실행이 끝난 뒤 이번에 쓰지 않은 녹화만 지운다", async () => {
+  it("refresh는 실행이 끝난 뒤 대상 기능 중 이번에 쓰지 않은 옛 녹화만 지운다", async () => {
+    t = await startFakeTarget(strip((q) => (q.path === "/store/inventory" ? { status: 200, destroy: true } : ok(q))));
+    await ws.writeText(SYS, "recorded/inventory.list.json", "{}");
+    await ws.writeText(SYS, "recorded/listPets.json", "{}");
+    // inventory는 첫 전송이 아니므로 실패로 적히고, 옛 녹화는 버려진다. 새로 쓴 listPets는 남는다.
+    const { result } = await record(ws, SYS, spec, target(t.url), { features: ["listPets", "inventory.list"], refresh: true });
+    expect(result.failed.map((f) => f.featureId)).toEqual(["inventory.list"]);
+    expect(await ws.exists(SYS, "recorded/inventory.list.json")).toBe(false);
+    expect(await ws.read(SYS, "recorded/listPets.json", RecordedSchema)).toBeTruthy();
+  });
+
+  it("refresh + features 필터: 다른 기능의 녹화는 유지한다", async () => {
     t = await startFakeTarget(strip(ok));
-    await ws.writeText(SYS, "recorded/old.json", "{}");
-    await record(ws, SYS, spec, target(t.url), { features: ["getPet"] });
-    expect(await ws.exists(SYS, "recorded/old.json")).toBe(true);
+    await record(ws, SYS, spec, target(t.url));
     await record(ws, SYS, spec, target(t.url), { features: ["getPet"], refresh: true });
-    expect(await ws.exists(SYS, "recorded/old.json")).toBe(false);
     expect(await ws.exists(SYS, "recorded/getPet.json")).toBe(true);
+    expect(await ws.exists(SYS, "recorded/listPets.json")).toBe(true);
+    expect(await ws.exists(SYS, "recorded/inventory.list.json")).toBe(true);
+  });
+
+  it("refresh + 변경 요청 건너뜀: 그 기능의 옛 녹화는 유지한다", async () => {
+    t = await startFakeTarget(strip(ok));
+    await record(ws, SYS, spec, target(t.url), { allowMutating: true });
+    expect(await ws.exists(SYS, "recorded/createPet.json")).toBe(true);
+    const { result } = await record(ws, SYS, spec, target(t.url), { refresh: true });
+    expect(result.skipped.map((s) => s.featureId).sort()).toEqual(["createPet", "deletePet"]);
+    expect(await ws.exists(SYS, "recorded/createPet.json")).toBe(true);
+    expect(await ws.exists(SYS, "recorded/deletePet.json")).toBe(true);
+  });
+
+  it("refresh + 두 번째 요청 도중 abort: 옛 녹화를 전부 유지한다", async () => {
+    t = await startFakeTarget(strip(ok));
+    await record(ws, SYS, spec, target(t.url), { allowMutating: true });
+    const ids = ["createPet", "deletePet", "getPet", "inventory.list", "listPets"];
+    const ac = new AbortController();
+    let n = 0;
+    t.close();
+    t = await startFakeTarget(strip((q) => { n++; if (n === 2) ac.abort(); return ok(q); }));
+    await expect(record(ws, SYS, spec, target(t.url), { allowMutating: true, refresh: true, signal: ac.signal })).rejects.toThrow();
+    // 첫 요청은 이미 새로 썼을 수 있지만, 옛 녹화가 지워져서는 안 된다.
+    for (const id of ids) expect(await ws.exists(SYS, `recorded/${id}.json`)).toBe(true);
   });
 
   it("refresh + 첫 요청 연결 실패면 기존 녹화를 유지한다", async () => {

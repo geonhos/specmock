@@ -194,4 +194,5 @@ it("녹화: 변경 요청 포함 → POST /record {allowMutating:true}, 끝나�
   expect(await within(card).findByText("일치 1 · 스펙과 다름 1 · 상태 불일치 0 · 건너뜀 1 · 실패 0")).toBeTruthy();
   expect(card.querySelector("pre.drift")!.textContent).toContain("body.id 없음");
   expect(within(card).getByText("generate를 실행하면 반영됩니다")).toBeTruthy();
+  expect(within(card).getByText("coverage에 반영하려면 verify를 다시 실행하세요.")).toBeTruthy();
 });

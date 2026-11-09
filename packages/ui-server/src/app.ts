@@ -156,7 +156,6 @@ export function createApp(opts: AppOptions) {
     await assertRegistered(ws, system);
     return accepted(c, jobs.start(system, "record", ({ signal, onEvent }) => recordResponses(ws, system, {
       allowMutating: b.allowMutating, refresh: b.refresh, signal, onEvent,
-      adapter: new ClaudeCodeAdapter({ command: claudeCommand }),
     })).id);
   });
   app.get("/api/jobs", (c) => ok(c, jobs.list()));

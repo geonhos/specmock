@@ -27,7 +27,7 @@ describe("renderDrift", () => {
       "- getOrder GET /orders/1 → 기대 200, 실제 401. 인증 헤더를 확인하세요",
       "",
       "## 건너뜀",
-      "- createPet POST /pets — 변경 요청. `--allow-mutating`으로 포함",
+      "- createPet POST /pets — 변경 요청(기본 제외). 포함하려면 CLI `--allow-mutating`, MCP `allowMutating`, Web '변경 요청 포함'",
       "",
       "## 실패",
       "(없음)",

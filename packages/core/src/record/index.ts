@@ -20,7 +20,7 @@ export interface RecordOptions {
   allowMutating?: boolean;
   /** 이 기능만. 현재 mockspec에 없는 id는 오류. */
   features?: string[];
-  /** 실행이 끝난 뒤 이번에 쓰지 않은 기존 녹화를 지운다(중단되면 유지). */
+  /** 실행이 끝난 뒤, 이번 대상 기능(보냈거나 실패한 것) 중 새로 쓰지 않은 옛 녹화를 지운다. 건너뜀 기능·중단 시 유지. */
   refresh?: boolean;
   onEvent?: OnEvent;
   signal?: AbortSignal;
@@ -143,7 +143,11 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
       entries.push({ ...base, kind: "matched" });
     }
   }
-  if (opts.refresh) await pruneRecorded(ws, system, new Set(result.recorded));
+  if (opts.refresh) {
+    const wrote = new Set(result.recorded);
+    const skipped = new Set(result.skipped.map((s) => s.featureId));
+    await pruneRecorded(ws, system, targets.map((c) => c.featureId).filter((id) => !skipped.has(id) && !wrote.has(id)));
+  }
   const driftMarkdown = renderDrift(system, target.baseUrl, now(), entries);
   await ws.writeText(system, DRIFT_FILE, driftMarkdown);
   return { result, driftMarkdown };

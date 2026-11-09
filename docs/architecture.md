@@ -58,12 +58,12 @@ flowchart TB
 
 2A부터 CLI와 MCP 서버는 같은 **서비스 층**(`packages/core/src/service/`)을 호출한다. 흐름 조립과 판정은 서비스 층 한 곳에 있고, 인터페이스는 옵션 파싱과 출력만 맡는다.
 
-3A부터 `generate`는 언어와 무관한 부분(fixtures·contracts·lock·보존 판정, `scaffold`)과 언어 종속 부분(`LanguageGenerator`)으로 나뉜다. `LanguageGenerator`는 `LanguageOutput`(파일·install·start·sourceGlobs)을 돌려주고, verify는 lock의 install·start만 보고 기동한다. TS는 `TsHonoGenerator`(템플릿), 그 밖의 언어는 `LlmGenerator`가 언어 프로필(`core/src/generate/profiles/`)과 TS 참조 구현을 프롬프트로 claude에 보내고, 임시 디렉터리에서 빌드·contract·런타임 계약(501·404)을 통과한 결과만 반영한다. 왜: 새 언어마다 템플릿을 손으로 쓰는 대신 검증된 MockSpec과 같은 verify로 정확성을 보장한다. 지원 언어 목록은 `SUPPORTED_LANGUAGES`이고 입력 단계(CLI·MCP·Web)에서 `assertLanguage`로 검사한다. MCP 도구는 12개(`finalize_generation` 추가).
+3A부터 `generate`는 언어와 무관한 부분(fixtures·contracts·lock·보존 판정, `scaffold`)과 언어 종속 부분(`LanguageGenerator`)으로 나뉜다. `LanguageGenerator`는 `LanguageOutput`(파일·install·start·sourceGlobs)을 돌려주고, verify는 lock의 install·start만 보고 기동한다. TS는 `TsHonoGenerator`(템플릿), 그 밖의 언어는 `LlmGenerator`가 언어 프로필(`core/src/generate/profiles/`)과 TS 참조 구현을 프롬프트로 claude에 보내고, 임시 디렉터리에서 빌드·contract·런타임 계약(501·404)을 통과한 결과만 반영한다. 왜: 새 언어마다 템플릿을 손으로 쓰는 대신 검증된 MockSpec과 같은 verify로 정확성을 보장한다. 지원 언어 목록은 `SUPPORTED_LANGUAGES`이고 입력 단계(CLI·MCP·Web)에서 `assertLanguage`로 검사한다. MCP 도구는 13개(`finalize_generation`, `record_responses` 추가).
 
 ```mermaid
 flowchart LR
     CLI["packages/cli"] --> SVC["core/src/service<br/>ingestSpec · analyzeSpec · summarizeChunks/getChunk<br/>listFeatures/findFeature · verifyMock · runPipeline"]
-    MCP["packages/mcp<br/>stdio · 도구 11개"] --> SVC
+    MCP["packages/mcp<br/>stdio · 도구 13개"] --> SVC
     CLI --> UIS["packages/ui-server<br/>Hono · HTTP/SSE · 작업 관리 · 파일 감시"]
     MCP --> UIS
     UIS --> SVC

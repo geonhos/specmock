@@ -36,7 +36,7 @@ export function registerRecord(program: Command): void {
     .argument("<system>", SYSTEM_ARG_HELP)
     .option("--allow-mutating", "POST·PUT·PATCH·DELETE 요청도 보낸다(실제 데이터가 바뀔 수 있음)", false)
     .option("--feature <id...>", "이 기능만 녹화")
-    .option("--refresh", "기존 녹화를 모두 지우고 다시 녹화", false)
+    .option("--refresh", "대상 기능의 기존 녹화를 버리고 다시 녹화(중단되면 유지)", false)
     .option("--no-apply", "녹화·drift만 하고 select·generate를 다시 실행하지 않는다")
     .option("--json", "RecordResult를 JSON으로 출력", false)
     .action(async (system: string, opts: { allowMutating: boolean; feature?: string[]; refresh: boolean; apply: boolean; json: boolean }, cmd: Command) => {

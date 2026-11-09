@@ -127,7 +127,7 @@ pnpm install && pnpm build
 claude --plugin-dir ./plugin
 ```
 
-Claude Code에서 `/mcp`를 열어 `specmock` 서버와 도구 11개가 보이면 준비된 것입니다. 서버가 안 보이면 `packages/mcp/dist/server.js`가 있는지(`pnpm build`를 했는지) 확인하세요.
+Claude Code에서 `/mcp`를 열어 `specmock` 서버와 도구 13개가 보이면 준비된 것입니다. 서버가 안 보이면 `packages/mcp/dist/server.js`가 있는지(`pnpm build`를 했는지) 확인하세요.
 
 | 도구 | 하는 일 |
 |---|---|
@@ -342,7 +342,7 @@ mock/<system>/
 ```
 
 - 비밀 값은 `${환경변수}`로만 적습니다. 값은 실행한 셸의 환경변수에서 읽고 파일·로그·drift.md에 남기지 않습니다. 그래도 이 파일은 커밋하지 마세요(`.specmock/`를 `.gitignore`에 두세요).
-- `specmock record <system>`은 GET·HEAD만 보냅니다. 생성·삭제 요청까지 보내려면 `--allow-mutating`(실제 데이터가 바뀝니다). `--feature <id>`로 일부만, `--refresh`로 기존 녹화를 지우고 다시, `--no-apply`로 mock 반영 없이 녹화만 합니다.
+- `specmock record <system>`은 GET·HEAD만 보냅니다. 생성·삭제 요청까지 보내려면 `--allow-mutating`(실제 데이터가 바뀝니다). `--feature <id>`로 일부만, `--refresh`로 대상 기능의 기존 녹화를 버리고 다시(중단되면 유지), `--no-apply`로 mock 반영 없이 녹화만 합니다.
 - 결과: `.specmock/<system>/recorded/<기능>.json`, 스펙과의 차이는 `drift.md`("스펙과 다름" = 응답이 스키마와 다름, "상태 불일치" = 기대한 상태 코드가 아님. 404면 `params`로 실제 id를 지정). 녹화 응답은 fixture 출처 `recorded`로 들어가고, 이미 생성한 mock은 LLM 호출 없이 fixture만 바뀝니다. 직접 고친 fixture는 보존됩니다.
 - 종료 코드: 0 전부 일치 · 2 drift 있음 · 1 오류. 동작 확인: `pnpm record:check`(공개 Petstore v3, 네트워크 필요).
 

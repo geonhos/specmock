@@ -108,7 +108,7 @@ flowchart LR
 - `request.headers`는 `maskHeaders`를 거친 뒤 저장한다(재현용 기록이지 재전송용이 아니다). `request.path`에는 `params` 적용 뒤 실제 보낸 경로를 적는다.
 - `response.headers`는 `content-type`·`content-length`만 남긴다. `set-cookie` 등은 버린다.
 - `response.body`: JSON으로 파싱되면 값 그대로, 아니면 `{ "raw": "...", "contentType": "..." }`. 1MB(1,048,576바이트) 초과는 저장하지 않고 `"truncated": true, "bytes": n`만 적는다(fixture로도 쓰지 않는다).
-- `mockspecHash`는 녹화 시점 mockspec.json의 sha256. select가 현재 값과 다르면 "낡은 녹화" 경고를 assumptions에 적되 **사용은 한다**(기능 id가 같으면 의미가 같다고 본다). `--refresh`로 전부 다시 녹화한다.
+- `mockspecHash`는 녹화 시점 mockspec.json의 sha256. select가 현재 값과 다르면 "낡은 녹화" 경고를 assumptions에 적되 **사용은 한다**(기능 id가 같으면 의미가 같다고 본다). `--refresh`로 대상 기능을 다시 녹화한다.
 - 파일 이름은 featureId 그대로(id 규칙이 `[\p{L}\p{N}_.-]`라 경로로 안전하다. 구현 때 workspace의 이름 규칙으로 한 번 더 검사).
 
 ### 3.3 select가 녹화를 쓰는 규칙
@@ -151,7 +151,7 @@ specmock record <system> [--allow-mutating] [--feature id...] [--refresh] [--no-
 | (기본) | GET·HEAD contract의 정상 경로 요청만 보낸다("필수 값 누락" 400 contract는 보내지 않는다). 녹화 뒤 **select → generate를 자동 재실행**(apply). `generate.json`이 없으면(mock을 만든 적 없음) 녹화와 drift만 하고 "generate를 실행하면 반영됩니다" 안내 |
 | `--allow-mutating` | POST·PUT·PATCH·DELETE 포함 |
 | `--feature <id>` | 지정 기능만. 반복 가능. 없는 id는 즉시 오류 |
-| `--refresh` | 기존 `recorded/` 전부 삭제 후 녹화. 없으면 대상 기능 파일만 덮어쓴다 |
+| `--refresh` | 대상 기능의 기존 녹화를 버리고 다시 녹화(중단되면 유지). 건너뜀(변경 요청) 기능의 옛 녹화는 지우지 않는다 |
 | `--no-apply` | 녹화·drift만. select/generate 건너뜀 |
 | `--json` | `RecordResult`를 JSON으로 |
 
@@ -285,6 +285,8 @@ sequenceDiagram
 |---|---|---|---|
 | 실패 종류 | 요청 실패를 network·timeout 둘로 | `failure.kind`에 `"invalid"` 추가(`요청 불가:`). 보낼 수 없는 요청은 첫 전송 판정(연결 실패 시 중단)에 세지 않음 | contract path의 `?`·`#` 같은 문제를 연결 실패로 오인하지 않음 |
 | `--refresh` 삭제 시점 | 녹화 전에 `recorded/` 삭제 | 실행이 끝난 뒤 이번에 쓰지 않은 파일만 삭제(중단되면 유지) | 연결 실패·취소로 기존 녹화를 잃지 않음 |
+| `--refresh` 삭제 대상 | 기존 `recorded/` 전부 삭제 | 이번 실행의 대상 기능(보냈거나 실패한 것) 중 새로 쓰지 않은 옛 녹화만 삭제. `features` 필터 밖 기능과 건너뜀(변경 요청) 기능의 옛 녹화는 유지, 중단되면 아무것도 지우지 않음 | 일부만 다시 녹화해도 나머지를 잃지 않음 |
+| Web coverage 반영 | 완료 시 coverage 다시 읽기 | 카드는 "coverage에 반영하려면 verify를 다시 실행하세요"를 안내. coverage는 verify가 다시 돌아야 바뀜 | record는 coverage를 계산하지 않음 |
 | 마스킹 범위 | 헤더·쿼리 | 비2xx 응답 본문과 `raw`(비JSON) 본문도 마스킹, `maskHeaders`에 `auth`·`session` 포함 | 오류 응답·평문 본문에 토큰이 실려 올 수 있음 |
 | apply의 선택 재실행 | `selection.selected`를 표현식으로 다시 해석 | 모든 항목이 현재 카탈로그 id와 정확히 일치하면 `literalIds: true` | UI·`--interactive`가 저장한 `all`·`3` 같은 id가 다른 집합이 되는 것을 막음 |
 | apply 오류 | 던져서 결과 버림 | 녹화·drift.md는 남기고 `notes`에 `반영 실패: …`, `applied: null`로 결과 반환. CLI 종료 코드 2 | 이미 쓴 녹화 결과를 잃지 않음 |

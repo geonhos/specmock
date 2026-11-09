@@ -1,5 +1,5 @@
 // packages/core/src/record/recorded.ts
-import { readdir, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { RecordedSchema, type Recorded } from "../types.js";
 import type { Workspace } from "../workspace.js";
 
@@ -24,11 +24,7 @@ export async function readRecorded(ws: Workspace, system: string, featureId: str
   return ws.read(system, name, RecordedSchema);
 }
 
-/** keep(기능 id)에 없는 녹화 파일만 지운다. 디렉터리가 없으면 아무것도 하지 않는다. */
-export async function pruneRecorded(ws: Workspace, system: string, keep: Set<string>): Promise<void> {
-  let names: string[];
-  try { names = await readdir(ws.file(system, RECORDED_DIR)); } catch { return; }
-  for (const n of names) {
-    if (!keep.has(n.replace(/\.json$/, ""))) await rm(ws.file(system, `${RECORDED_DIR}/${n}`), { recursive: true, force: true });
-  }
+/** ids에 해당하는 녹화 파일만 지운다. 없는 파일은 무시한다. */
+export async function pruneRecorded(ws: Workspace, system: string, ids: Iterable<string>): Promise<void> {
+  for (const id of ids) await rm(ws.file(system, recordedName(id)), { force: true });
 }

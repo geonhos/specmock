@@ -35,7 +35,7 @@ export function renderDrift(system: string, baseUrl: string, at: Date, entries: 
     "",
     ...section("스펙과 다름", drifted.map((e) => `${head(e)} → ${e.status}. ${e.errors.join("; ")}`)),
     ...section("상태 불일치", mismatch.map((e) => `${head(e)} → 기대 ${e.expected}, 실제 ${e.actual}.${e.hint ? ` ${e.hint}` : ""}`)),
-    ...section("건너뜀", skipped.map((e) => `${head(e)} — 변경 요청. \`--allow-mutating\`으로 포함`)),
+    ...section("건너뜀", skipped.map((e) => `${head(e)} — 변경 요청(기본 제외). 포함하려면 CLI \`--allow-mutating\`, MCP \`allowMutating\`, Web '변경 요청 포함'`)),
     ...section("실패", failed.map((e) => `${head(e)} — ${e.reason}`)),
   ];
   return maskSecrets(lines.join("\n"));
