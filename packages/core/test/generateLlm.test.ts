@@ -141,6 +141,21 @@ describe("generate (LLM 생성기)", () => {
       expect((await readLock(out))!.language).toBe("fake");
     }, 60_000);
 
+    it("언어 변경 --force는 사용자가 고친 fixture를 보존한다(같은 언어 --force는 덮어쓴다)", async () => {
+      await tsMock();
+      const fx = path.join(out, "fixtures", "getPet", "200.json");
+      const mine = JSON.stringify(JSON.parse(await readFile(fx, "utf8"))) + "\n";   // 같은 내용, 다른 서식 = 사용자 수정
+      await writeFile(fx, mine);
+      await respond(1, answer(await specNow()));
+      const r = await generate(ws, "petstore", { ...opts(), force: true });
+      expect(r.preserved).toContain("fixtures/getPet/200.json");
+      expect(await readFile(fx, "utf8")).toBe(mine);
+      expect(await exists("src/server.ts")).toBe(false);
+      await respond(2, answer(await specNow()));
+      await generate(ws, "petstore", { ...opts(), force: true });
+      expect(await readFile(fx, "utf8")).not.toBe(mine);
+    }, 60_000);
+
     it("옛 ts lock(sourceFiles 없음)에서 바꾸면 ts 산출물을 지우고 사용자 파일은 둔다", async () => {
       await tsMock();
       const lockPath = path.join(out, "specmock.lock.json");

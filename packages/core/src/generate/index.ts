@@ -170,7 +170,7 @@ async function generateUnlocked(ws: Workspace, system: string, opts: GenerateOpt
   if (previous && !sameLanguage) await clearForLanguageChange(outDir, previous);
   const written: string[] = [];
   await writeLanguageFiles(outDir, output, written);
-  const s = await writeScaffold(spec, outDir, previous, { force: opts.force }, written);
+  const s = await writeScaffold(spec, outDir, previous, { force: opts.force && sameLanguage }, written);
   const sourceFiles: Record<string, string> = {};
   const statics = new Set((profile?.staticFiles ?? []).map((x) => x.path));
   for (const f of output.files) if (f.content !== null && !statics.has(f.path)) sourceFiles[f.path] = hashText(f.content);

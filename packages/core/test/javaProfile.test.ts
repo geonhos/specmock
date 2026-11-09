@@ -64,6 +64,7 @@ describe("javaProfile", () => {
     expect(env("curl: Failed to fetch https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.16/apache-maven-3.9.16-bin.zip")).toBe(true);
     expect(env("wget: Failed to fetch https://repo.maven.apache.org/x.zip")).toBe(true);
     expect(env("[ERROR] Fatal error compiling: error: release version 17 not supported")).toBe(true);
+    expect(env("error: invalid flag: --release")).toBe(true);   // JDK 8 javac
     expect(env("Error: JAVA_HOME is not defined correctly.")).toBe(true);
     expect(env("[ERROR] Failed to execute goal on project mock: Could not resolve dependencies for project")).toBe(true);
     expect(env("[ERROR] Failed to execute goal … Could not transfer artifact io.javalin:javalin:pom:6.7.0 from/to central")).toBe(true);

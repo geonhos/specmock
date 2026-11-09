@@ -55,7 +55,7 @@ export function Generate({ system, jobs, tick, go, refreshJobs }: Props) {
       const err = asError(e);
       if (err.code === "busy" && err.jobId) watch(err.jobId);
       // 언어를 바꾸는 요청은 작업이 만들어지기 전에 409로 온다: 확인 창을 연다(확인하면 force로 다시 요청).
-      if (err.code === "language-change-required") { setAsk({ id: `lang-${Date.now()}`, kind: "language", dir, language: lang, message: err.message, from: /이 디렉터리는 (\S+)로/.exec(err.message)?.[1] }); refreshJobs(); return; }
+      if (err.code === "language-change-required") { setAsk({ id: `lang-${Date.now()}`, kind: "language", dir, language: lang, message: err.message, from: err.from }); refreshJobs(); return; }
       setError(err); refreshJobs();
     } finally { setBusy(false); }
   };
@@ -117,7 +117,7 @@ export function Generate({ system, jobs, tick, go, refreshJobs }: Props) {
       <ConfirmDialog open={!!ask} title={ask?.kind === "language" ? "언어를 바꿀까요?" : "덮어쓸까요?"} confirmLabel={ask?.kind === "language" ? "언어 바꾸기" : "덮어쓰기"} onCancel={() => { setAsk(null); setDeclined(true); }} onConfirm={() => { const a = ask!; setAsk(null); void start(a.dir, true, a.language); }}>
         <p><code>{ask?.dir}</code></p>
         {ask?.kind === "language"
-          ? <p>이 디렉터리는 {ask.from ?? "다른 언어"}로 만들어졌습니다. 기존 소스를 지우고 {ask.language}로 다시 만들까요? fixtures·contracts의 수정은 보존됩니다.</p>
+          ? <p>이 디렉터리는 {ask.from ?? "다른 언어"}로 만들어졌습니다. 기존 소스를 지우고 {ask.language}로 다시 만들까요? fixtures의 수정은 보존됩니다(contracts는 다시 생성).</p>
           : <p>{ask?.message}</p>}
       </ConfirmDialog>
     </div>

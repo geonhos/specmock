@@ -123,7 +123,7 @@ interface LanguageOutput {
 | 2 | 기존 `specmock.lock.json`의 `language` | 재생성 시 기본값 |
 | 3 | `ts` | |
 
-lock의 언어와 다른 언어를 `--force` 없이 요청하면 "이 디렉터리는 `ts`로 생성됐습니다. 다른 언어로 바꾸려면 `--force`(기존 소스 삭제) 또는 `--out`을 쓰세요"로 종료한다. `--force`로 언어를 바꿀 때 지우는 것은 **화이트리스트**다: lock의 `sourceFiles`에 기록된 언어 종속 파일, 이전 언어 프로필의 빌드 산출물(`ts`: `node_modules/`, `package-lock.json`; `java`: `target/`), 설치 마커. 그 밖의 파일은 건드리지 않는다. 그리고 outDir에 `.git` 또는 `.specmock`이 있으면 언어 변경을 거부한다(예전에 `--out . --force`로 프로젝트 루트에 만든 경우). 왜: "보호 경로 밖 전부 삭제"는 outDir이 잘못 잡혔을 때 사용자 소스를 지운다(리뷰 Major). lock의 `language`가 프로필 등록표에 없으면 즉시 오류다. fixtures 보존 규칙은 그대로다.
+lock의 언어와 다른 언어를 `--force` 없이 요청하면 "이 디렉터리는 `ts`로 생성됐습니다. 다른 언어로 바꾸려면 `--force`(기존 소스 삭제) 또는 `--out`을 쓰세요"로 종료한다. `--force`로 언어를 바꿀 때 지우는 것은 **화이트리스트**다: lock의 `sourceFiles`에 기록된 언어 종속 파일, 이전 언어 프로필의 빌드 산출물(`ts`: `node_modules/`, `package-lock.json`; `java`: `target/`), 설치 마커. 그 밖의 파일은 건드리지 않는다. 그리고 outDir에 `.git` 또는 `.specmock`이 있으면 언어 변경을 거부한다(예전에 `--out . --force`로 프로젝트 루트에 만든 경우). 왜: "보호 경로 밖 전부 삭제"는 outDir이 잘못 잡혔을 때 사용자 소스를 지운다(리뷰 Major). lock의 `language`가 프로필 등록표에 없으면 즉시 오류다. fixtures 보존 규칙은 그대로다: `--force`는 언어 변경 때 fixture를 덮어쓰지 않는다(두 의미 분리: 언어 변경 허용 / 같은 언어에서 fixture 덮어쓰기).
 
 `mockspec.json`의 `language` 필드는 **제거**한다(`types.ts:128`). select가 쓰기만 하고 아무도 읽지 않았다. 옛 mockspec은 `.passthrough()` 없이도 zod가 모르는 키를 버리므로 호환된다. `select()`의 `language` 옵션도 삭제한다.
 

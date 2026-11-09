@@ -49,5 +49,6 @@ export const javaProfile: LanguageProfile = {
     /does not exist in PATH nor is JAVA_HOME set/,
     /Failed to fetch/,
     /release version 17 not supported/,
+    /invalid flag: --release/,   // JDK 8 javac
   ],
 };

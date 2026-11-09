@@ -51,7 +51,7 @@ specmock 플러그인을 로드하면 specmock MCP 서버의 도구 12개가 함
 안전 규칙:
 
 - `generate_mock`이 "specmock이 만든 디렉터리가 아닙니다"로 실패하면, `force: true`로 다시 부르기 **전에** 사용자에게 대상 경로와 덮어쓸 내용(`package.json`·`src` 등이 교체되고 `routes`·`contracts`가 정리된다)을 알리고 확인받는다. 확인 없이 `force: true`를 쓰지 않는다.
-- `generate_mock`이 "이 디렉터리는 …로 생성됐습니다"로 실패하면 언어를 바꾸려는 것이다(ts→java, java→ts 모두). `force: true`는 fixtures·contracts 밖의 기존 소스를 지운다고 알리고 확인받은 뒤에만 쓴다. 아니면 `outDir`을 다른 곳으로 준다.
+- `generate_mock`이 "이 디렉터리는 …로 생성됐습니다"로 실패하면 언어를 바꾸려는 것이다(ts→java, java→ts 모두). `force: true`는 이전 언어의 소스·빌드 산출물을 지운다고(fixtures의 수정은 보존, contracts는 다시 생성) 알리고 확인받은 뒤에만 쓴다. 아니면 `outDir`을 다른 곳으로 준다.
 - `outDir`은 사용자가 위치를 지정했을 때만 준다. 아니면 생략해 기본 `mock/<system>`을 쓴다.
 - `submit_extraction`의 `ok: false`는 실패가 아니라 고쳐서 다시 내라는 뜻이다. `errors`를 읽고 같은 청크를 고쳐 제출한다.
 

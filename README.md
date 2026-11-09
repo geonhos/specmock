@@ -97,7 +97,7 @@ TS는 템플릿으로 만들지만 Java는 `claude`가 MockSpec과 TS 참조 구
 - 같은 mockspec으로 다시 `generate`하면 claude를 부르지 않고 "변경 없음"을 출력합니다(`--force`로 다시 생성).
 - 기능을 추가해 다시 생성하면 기존 소스를 함께 보내 고칠 부분만 바뀝니다. 직접 고친 소스는 "(사용자 수정)"으로 표시해 라우트 추가·삭제 외에는 바꾸지 말라고 요청하고, 그래도 바뀐 파일은 출력에 목록으로 알립니다. 응답에서 빠진 기존 소스는 지우지 않습니다.
 - Claude Code 대화 안에서는 `--llm session`이 지시서(`.specmock/<system>/generate-request.json`)만 쓰고, 대화에서 파일을 작성한 뒤 `specmock generate <system> --finalize`로 확정합니다. MCP는 `generate_mock(language)` → `finalize_generation`입니다.
-- 언어를 바꿀 때(ts ↔ java)는 `--force`가 필요합니다. fixtures·contracts만 남기고 기존 소스를 지웁니다(`.git`이나 `.specmock`이 있는 디렉터리는 거부).
+- 언어를 바꿀 때(ts ↔ java)는 `--force`가 필요합니다. 이전 언어의 소스·빌드 산출물을 지우고 사용자가 고친 fixture는 보존합니다(contracts는 다시 생성. `.git`이나 `.specmock`이 있는 디렉터리는 거부).
 - `mock/<system>/`을 커밋한다면 `.gitignore`에 `.specmock-attempt/`, `.specmock-installed`, `target/`, `node_modules/`를 넣으세요(빌드·검증 산출물입니다).
 
 ### Claude Code 스킬
@@ -327,7 +327,7 @@ mock/<system>/
 | 카탈로그에 없는 경로 | `404 { error: "unknown_path" }` |
 | `GET /__specmock/health` | `{ ok, system, features }` |
 
-`generate`를 다시 실행하면 사용자가 수정한 fixture는 보존하고(`specmock.lock.json`의 해시와 비교. lock을 지우면 보존되지 않는다), `--force`를 주면 덮어씁니다. 선택 해제된 기능의 라우트·contract·수정하지 않은 fixture는 정리하고, 수정 흔적이 있는 fixture만 남기고 알려줍니다.
+`generate`를 다시 실행하면 사용자가 수정한 fixture는 보존하고(`specmock.lock.json`의 해시와 비교. lock을 지우면 보존되지 않는다), `--force`를 주면 같은 언어에서는 사용자가 고친 fixture도 덮어씁니다(언어를 바꿀 때의 `--force`는 이전 소스 삭제만 뜻하고 fixture 수정은 보존합니다). 선택 해제된 기능의 라우트·contract·수정하지 않은 fixture는 정리하고, 수정 흔적이 있는 fixture만 남기고 알려줍니다.
 
 ## 커버리지 리포트
 

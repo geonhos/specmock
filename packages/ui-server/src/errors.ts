@@ -27,7 +27,7 @@ export function ingestInputError(e: unknown): unknown {
 }
 
 export type ErrorCode = "invalid" | "not-found" | "busy" | "overwrite-required" | "language-change-required" | "cancelled" | "not-cancellable" | "forbidden" | "failed" | "shutting-down";
-export interface ApiErrorBody { ok: false; error: { code: ErrorCode; message: string; hint?: string } }
+export interface ApiErrorBody { ok: false; error: { code: ErrorCode; message: string; hint?: string; from?: string; to?: string } }
 
 const STEP: Record<string, string> = { ingest: "① 등록", analyze: "② 분석", select: "③ 기능 선택", generate: "④ 생성", verify: "⑤ 검증" };
 
@@ -43,8 +43,8 @@ export function toUiHint(sentence: string): string {
 
 const HINT_SENTENCE = /\s*먼저 `?specmock [^.]*\.\s*$/;
 
-export function errorBody(code: ErrorCode, message: string, hint?: string): ApiErrorBody {
-  return { ok: false, error: { code, message, ...(hint ? { hint } : {}) } };
+export function errorBody(code: ErrorCode, message: string, hint?: string, extra: { from?: string; to?: string } = {}): ApiErrorBody {
+  return { ok: false, error: { code, message, ...(hint ? { hint } : {}), ...extra } };
 }
 
 export type ApiErrorStatus = 400 | 403 | 404 | 405 | 409 | 499 | 500 | 503;

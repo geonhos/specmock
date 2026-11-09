@@ -15,8 +15,10 @@ let root: string;
 beforeEach(async () => { root = await mkdtemp(path.join(os.tmpdir(), "specmock-api-")); });
 afterEach(async () => { await rm(root, { recursive: true, force: true }); });
 
+// 실제 claude를 부르지 않도록 느린 가짜를 쓴다(core/test/bin).
+const FAKE_CLAUDE = path.join(REPO, "packages", "core", "test", "bin", "claude-slow");
 function client() {
-  const { app } = createApp({ root, webDir: path.join(root, "web"), port: () => 4310 });
+  const { app } = createApp({ root, webDir: path.join(root, "web"), port: () => 4310, claudeCommand: FAKE_CLAUDE });
   return {
     get: async (p: string) => { const r = await app.request(`/api${p}`, { headers: HOST }); return { status: r.status, body: await r.json() }; },
     post: async (p: string, b: unknown = {}) => { const r = await app.request(`/api${p}`, { method: "POST", headers: HOST, body: JSON.stringify(b) }); return { status: r.status, body: await r.json() }; },
@@ -296,7 +298,7 @@ describe("Task 9 리뷰 수정", () => {
     await vi.waitFor(async () => expect((await c.get("/jobs")).body.data.recent).toHaveLength(1));
     const r = await c.post("/systems/petstore/generate", { outDir: out, language: "java" });
     expect(r.status).toBe(409);
-    expect(r.body).toMatchObject({ ok: false, error: { code: "language-change-required", message: expect.stringMatching(/ts.*java/) } });
+    expect(r.body).toMatchObject({ ok: false, error: { code: "language-change-required", from: "ts", to: "java", message: expect.stringMatching(/ts.*java/) } });
     expect((await c.get("/jobs")).body.data.recent).toHaveLength(1);
     const forced = await c.post("/systems/petstore/generate", { outDir: out, language: "java", force: true });
     expect(forced.status).toBe(202);

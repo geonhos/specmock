@@ -56,7 +56,7 @@ it("언어 변경: 409 language-change-required → 확인 창, 확인하면 for
   let conflicts = 2; // force 없는 요청은 둘 다 409
   const api = setup({
     "POST /api/systems/petstore/generate": () => {
-      if (conflicts-- > 0) { return { status: 409, body: { ok: false, error: { code: "language-change-required", message: "이 디렉터리는 ts로 만들어졌어요. java로 바꾸려면 기존 소스를 지워야 해요 (현재 ts → 요청 java)." } } }; }
+      if (conflicts-- > 0) { return { status: 409, body: { ok: false, error: { code: "language-change-required", message: "이 디렉터리는 ts로 만들어졌어요. java로 바꾸려면 기존 소스를 지워야 해요 (현재 ts → 요청 java).", from: "ts", to: "java" } } }; }
       return accepted();
     },
   });
@@ -64,7 +64,7 @@ it("언어 변경: 409 language-change-required → 확인 창, 확인하면 for
   fireEvent.change(await screen.findByLabelText("언어"), { target: { value: "java" } });
   fireEvent.click(screen.getByRole("button", { name: "생성" }));
   const dialog = await screen.findByRole("dialog", { name: "언어를 바꿀까요?" });
-  expect(dialog.textContent).toContain("이 디렉터리는 ts로 만들어졌습니다. 기존 소스를 지우고 java로 다시 만들까요? fixtures·contracts의 수정은 보존됩니다");
+  expect(dialog.textContent).toContain("이 디렉터리는 ts로 만들어졌습니다. 기존 소스를 지우고 java로 다시 만들까요? fixtures의 수정은 보존됩니다");
   expect(screen.queryByRole("alert")).toBeNull();
   fireEvent.click(within(dialog).getByRole("button", { name: "취소" }));
   expect(api.calls.filter((c) => c === "POST /api/systems/petstore/generate")).toHaveLength(1);
