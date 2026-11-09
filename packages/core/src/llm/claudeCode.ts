@@ -36,7 +36,7 @@ export class ClaudeCodeAdapter implements LlmAdapter {
     args.push("--tools", "");   // 마지막 고정 플래그. 뒤에는 extraArgs 옵션만 온다.
     args.push(...(this.opts.extraArgs ?? []));
     const command = this.opts.command ?? "claude";
-    const timeoutMs = req.timeoutMs ?? this.opts.timeoutMs ?? 180_000;
+    const timeoutMs = this.opts.timeoutMs ?? req.timeoutMs ?? 180_000;
 
     const ownCwd = this.opts.cwd === undefined;
     const cwd = this.opts.cwd ?? (await mkdtemp(path.join(os.tmpdir(), "specmock-claude-")));

@@ -21,12 +21,16 @@ export function validateOutput(raw: unknown, profile: LanguageProfile): Validate
   const errors: string[] = [];
   const seen = new Set<string>();
   for (const f of parsed.data.files) {
+    if (/[\x00-\x1f\x7f]/.test(f.path)) { errors.push(`경로에 제어 문자가 있습니다: ${JSON.stringify(f.path)}`); continue; }
     const p = f.path.replace(/\\/g, "/");
     if (path.posix.isAbsolute(p) || /^[A-Za-z]:/.test(p)) { errors.push(`절대 경로는 쓸 수 없습니다: ${f.path}`); continue; }
     const norm = path.posix.normalize(p);
     if (norm === ".." || norm.startsWith("../")) { errors.push(`경로가 outDir을 벗어납니다: ${f.path}`); continue; }
-    if (seen.has(norm)) errors.push(`같은 경로가 두 번 나옵니다: ${norm}`);
-    seen.add(norm);
+    if (p.endsWith("/")) { errors.push(`디렉터리 경로는 쓸 수 없습니다: ${f.path}`); continue; }
+    const key = norm.normalize("NFC").toLowerCase();
+    if (seen.has(key)) errors.push(`같은 경로가 두 번 나옵니다: ${norm}`);
+    seen.add(key);
+    if (profile.sourceGlobs.some((g) => g.endsWith("/**") && g.slice(0, -3) === norm)) { errors.push(`디렉터리 경로는 쓸 수 없습니다: ${norm}`); continue; }
     if (matchesAny(profile.protectedPaths, norm)) errors.push(`보호 경로입니다: ${norm}`);
     else if (!matchesAny(profile.sourceGlobs, norm)) errors.push(`sourceGlobs 밖입니다: ${norm} (허용: ${profile.sourceGlobs.join(", ")})`);
   }

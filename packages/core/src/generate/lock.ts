@@ -73,5 +73,5 @@ export function launchCommand(lock: Pick<Lock, "language" | "install" | "start">
 }
 
 export function launchHint(outDir: string, lock: Pick<Lock, "language" | "install" | "start">): string {
-  return `cd ${outDir} && ${launchCommand(lock)}`;
+  return `cd ${quoteArg(outDir)} && ${launchCommand(lock)}`;
 }

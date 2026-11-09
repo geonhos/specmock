@@ -98,9 +98,9 @@ describe("ClaudeCodeAdapter", () => {
     await expect(adapter.complete({ prompt: "x", schema })).rejects.toThrow(/시간 초과/);
   }, 5_000);
 
-  it("요청의 timeoutMs가 생성자 timeoutMs보다 우선한다", async () => {
-    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-slow"), timeoutMs: 60_000 });
-    await expect(adapter.complete({ prompt: "x", schema, timeoutMs: 200 })).rejects.toThrow("claude 호출 시간 초과 (200ms)");
+  it("생성자 timeoutMs가 요청의 timeoutMs보다 우선한다", async () => {
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-slow"), timeoutMs: 200 });
+    await expect(adapter.complete({ prompt: "x", schema, timeoutMs: 60_000 })).rejects.toThrow("claude 호출 시간 초과 (200ms)");
   }, 5_000);
 });
 
@@ -109,6 +109,10 @@ describe("SessionAdapter", () => {
     const a = new SessionAdapter();
     await expect(a.complete({ prompt: "x", schema })).rejects.toThrow(/세션 모드/);
     expect(a.name).toBe("session");
+  });
+  it("호출처가 안내 문구를 넘길 수 있다", async () => {
+    await expect(new SessionAdapter("지시서를 따르세요").complete({ prompt: "x", schema })).rejects.toThrow(/지시서를 따르세요/);
+    await expect(new SessionAdapter().complete({ prompt: "x", schema })).rejects.not.toThrow(/analyze/);
   });
 });
 

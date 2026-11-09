@@ -159,6 +159,7 @@ describe("실행 안내", () => {
   });
   it("그 밖의 언어는 install·start argv를 잇는다", () => {
     const lock = { ...base, language: "java", install: { command: "./mvnw", args: ["-q", "-DskipTests", "package"] }, start: { command: "java", args: ["-jar", "target/mock.jar"] } };
+    expect(launchHint("/r/my mock/s", lock)).toMatch(/^cd '\/r\/my mock\/s' && /);
     expect(launchHint("mock/petstore", lock)).toBe("cd mock/petstore && ./mvnw -q -DskipTests package && java -jar target/mock.jar");
   });
   it("install이 null이면 start만", () => {

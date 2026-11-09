@@ -60,4 +60,9 @@ describe("retrySection", () => {
     expect(s).not.toContain("line 29\n");
     expect(s).toContain("- getPet [200] 기대 200, 실제 500: status: expected 200, got 500");
   });
+  it("spec이 있으면 실패 contract의 요청(method·path·query·body)을 적는다", () => {
+    const c = spec.contracts[0]!;
+    const s = retrySection({ attempt: 2, stage: "contract", errors: [], contracts: [{ featureId: c.featureId, name: c.name, expectedStatus: c.expect.status, actualStatus: 500, passed: false, errors: ["x"] }], runtime: [] }, spec);
+    expect(s).toContain(`요청 ${JSON.stringify({ method: c.request.method, path: c.request.path, query: c.request.query, body: c.request.body })}`);
+  });
 });

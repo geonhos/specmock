@@ -109,11 +109,15 @@ export interface AttemptFailure {
 
 const STAGE_LABEL: Record<AttemptFailure["stage"], string> = { response: "응답 검증", build: "빌드", start: "기동", contract: "contract" };
 
-/** 재시도 프롬프트 끝에 붙이는 절. 오류 텍스트는 마지막 50줄만. */
-export function retrySection(f: AttemptFailure): string {
+/** 재시도 프롬프트 끝에 붙이는 절. 오류 텍스트는 마지막 50줄만. spec이 있으면 실패 contract의 요청을 함께 적는다. */
+export function retrySection(f: AttemptFailure, spec?: MockSpec): string {
   const lines = f.errors.join("\n").split("\n");
   const tail = lines.slice(-50).join("\n");
-  const failed = f.contracts.filter((c) => !c.passed).map((c) => `- ${c.featureId} [${c.name}] 기대 ${c.expectedStatus}, 실제 ${c.actualStatus ?? "응답 없음"}: ${c.errors.join("; ")}`);
+  const failed = f.contracts.filter((c) => !c.passed).map((c) => {
+    const req = spec?.contracts.find((k) => k.featureId === c.featureId && k.name === c.name)?.request;
+    const reqText = req ? ` 요청 ${JSON.stringify({ method: req.method, path: req.path, query: req.query, body: req.body })}` : "";
+    return `- ${c.featureId} [${c.name}]${reqText} 기대 ${c.expectedStatus}, 실제 ${c.actualStatus ?? "응답 없음"}: ${c.errors.join("; ")}`;
+  });
   const rt = f.runtime.filter((c) => !c.passed).map((c) => `- ${c.name} ${c.request ?? ""}: ${c.errors.join("; ")}`);
   return [
     `## 이전 시도 결과 (${f.attempt}번째)`,
