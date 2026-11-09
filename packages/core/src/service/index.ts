@@ -5,3 +5,4 @@ export { getChunk, summarizeChunks, type ChunkContent, type ChunkSummary } from 
 export { findFeature, listFeatures, type FeatureRow, type ListFeaturesResult } from "./features.js";
 export { resolveMockDir, verifyMock, type VerifyMockResult } from "./verify.js";
 export { runPipeline, type RunPipelineOptions, type RunPipelineResult, type RunStage } from "./run.js";
+export { recordResponses, APPLY_LATER, PRESERVED_NOTE, type RecordResponsesOptions, type RecordResponsesResult } from "./record.js";

@@ -31,6 +31,8 @@ export { verify, verifyFailed, loadContracts, type VerifyOptions, type VerifyRes
 export type { RuntimeCheck, RuntimeSpec } from "./verify/runtime.js";
 export { startMock, ensureInstalled, installKey, markInstalled, type RunningMock, type StartMockOptions, type EnsureInstalledOptions } from "./verify/server.js";
 export { renderCoverage } from "./verify/coverage.js";
+export { DRIFT_FILE, RECORDED_DIR, TARGET_EXAMPLE, TARGET_FILE, isSafeFeatureId, readRecorded, readTarget, record, type RecordOptions, type RecordResult, type Target } from "./record/index.js";
+export { specInputHash, featureInputHash } from "./util/specHash.js";
 export { extract, type ExtractOptions, type ExtractProgress, type ExtractResult } from "./analyze/extract.js";
 export { submitExtraction, type SubmitExtractionInput, type SubmitExtractionResult, type SubmitExtractionOptions, type SubmitError } from "./analyze/submit.js";
 export { createAdapter, ADAPTER_NAMES, ClaudeCodeAdapter, SessionAdapter, type AdapterName, type LlmAdapter, type CompleteRequest, type ExtractRequest, type ClaudeCodeOptions } from "./llm/index.js";
