@@ -10,7 +10,6 @@ import { buildFixtures } from "./fixtures.js";
 export interface SelectOptions {
   add?: boolean;
   remove?: boolean;
-  language?: MockSpec["language"];
   /** true면 exprs를 표현식이 아닌 기능 id 그대로 취급한다(id가 all·숫자 등과 겹쳐도 안전). add/remove는 무시. */
   literalIds?: boolean;
 }
@@ -96,7 +95,7 @@ async function selectUnlocked(ws: Workspace, system: string, exprs: string[], op
     system, catalogHash, selected, resolved, catalogIds: currentIds, updatedAt: new Date().toISOString(),
   });
   const mockspecFile = await ws.write(system, "mockspec.json", MockSpecSchema, {
-    system, baseUrl: "/", language: opts.language ?? "ts", features, notMocked, contracts, assumptions,
+    system, baseUrl: "/", features, notMocked, contracts, assumptions,
   });
   return { selected, resolved, selectionFile, mockspecFile, catalogChanged, ...(catalogDiff ? { catalogDiff } : {}) };
 }

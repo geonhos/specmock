@@ -1,19 +1,38 @@
+// packages/core/src/generate/lock.ts
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 
 export const LOCK_FILE = "specmock.lock.json";
 
+const CommandSchema = z.object({ command: z.string(), args: z.array(z.string()) });
+
 export const LockSchema = z.object({
   system: z.string(),
-  language: z.enum(["ts"]),
+  /** 열린 문자열. 허용 여부는 사용자 입력 단계에서 프로필 등록표로 검사한다. */
+  language: z.string().min(1),
+  generator: z.enum(["llm", "template"]).default("template"),
   mockspecHash: z.string(),
   generatedAt: z.string(),
-  start: z.object({ command: z.string(), args: z.array(z.string()) }),
+  /** 없음(undefined) = 2단계 lock = npm install. null = 설치 단계 없음. */
+  install: CommandSchema.nullable().optional(),
+  start: CommandSchema,
   healthPath: z.string(),
+  startTimeoutMs: z.number().int().positive().optional(),
+  installTimeoutMs: z.number().int().positive().optional(),
   fixtureHashes: z.record(z.string(), z.string()),
+  /** 언어 종속 파일의 생성 시 해시. 증분 생성의 userModified 판정과 설치 키에 쓴다. */
+  sourceFiles: z.record(z.string(), z.string()).default({}),
 });
 export type Lock = z.infer<typeof LockSchema>;
+export type LockInput = z.input<typeof LockSchema>;
+
+export const NPM_INSTALL = { command: "npm", args: ["install", "--no-audit", "--no-fund", "--loglevel=error"] };
+
+/** lock의 설치 명령. 옛 lock(install 필드 없음)은 npm install. */
+export function resolveInstall(lock: Lock): { command: string; args: string[] } | null {
+  return lock.install === undefined ? NPM_INSTALL : lock.install;
+}
 
 /** lock 파일을 읽는다. 없으면 null, 있는데 손상됐으면 던진다(조용히 무시하면 보존 판단이 틀어진다). */
 export async function readLock(dir: string): Promise<Lock | null> {
@@ -32,6 +51,6 @@ export async function readLock(dir: string): Promise<Lock | null> {
   }
 }
 
-export async function writeLock(dir: string, lock: Lock): Promise<void> {
+export async function writeLock(dir: string, lock: LockInput): Promise<void> {
   await writeFile(path.join(dir, LOCK_FILE), JSON.stringify(LockSchema.parse(lock), null, 2) + "\n", "utf8");
 }

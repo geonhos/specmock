@@ -2,6 +2,7 @@ import { Eta } from "eta";
 import { fileURLToPath } from "node:url";
 import type { MockFeature, MockSpec } from "../types.js";
 import type { GenerateContext, LanguageGenerator, LanguageOutput } from "./generator.js";
+import { NPM_INSTALL } from "./lock.js";
 import { lowest2xxStatus } from "./scaffold.js";
 
 const TEMPLATES = fileURLToPath(new URL("../../templates/ts-hono/", import.meta.url));
@@ -100,7 +101,7 @@ export class TsHonoGenerator implements LanguageGenerator {
   async generate(ctx: GenerateContext): Promise<LanguageOutput> {
     return {
       files: renderTsHonoFiles(ctx.spec),
-      install: null,
+      install: NPM_INSTALL,
       start: { command: "npx", args: ["tsx", "src/server.ts"] },
       healthPath: "/__specmock/health",
       notes: [],

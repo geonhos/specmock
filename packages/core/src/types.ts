@@ -125,7 +125,6 @@ export type MockFeature = z.infer<typeof MockFeatureSchema>;
 export const MockSpecSchema = z.object({
   system: z.string().min(1),
   baseUrl: z.string(),
-  language: z.enum(["ts"]),
   features: z.array(MockFeatureSchema),
   notMocked: z.array(z.object({ id: z.string(), method: HttpMethod, path: z.string() })),
   contracts: z.array(ContractSchema),

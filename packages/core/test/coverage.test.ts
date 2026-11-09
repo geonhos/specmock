@@ -6,7 +6,6 @@ import type { VerifyResult } from "../src/verify/index.js";
 const spec: MockSpec = {
   system: "demo",
   baseUrl: "/",
-  language: "ts",
   features: [
     {
       id: "getThing",
