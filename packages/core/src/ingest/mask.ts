@@ -24,3 +24,10 @@ export function maskHeaders(headers: Record<string, string>): Record<string, str
     return [k, secret ? "***" : v];
   }));
 }
+
+/** 출처 기반 마스킹: 값의 정확한 문자열을 `***`로 바꾼다(길이 제한 없음, 긴 값부터). 빈 문자열은 무시. */
+export function redactSecrets(text: string, secrets: readonly string[]): string {
+  let out = text;
+  for (const v of [...new Set(secrets)].filter((x) => x !== "").sort((a, b) => b.length - a.length)) out = out.split(v).join("***");
+  return out;
+}

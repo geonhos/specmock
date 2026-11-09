@@ -142,7 +142,7 @@ export function registerMockTools(server: McpServer, ws: Workspace, onEvent: OnE
       system: SystemArg,
       allowMutating: z.boolean().optional().describe("POST·PUT·PATCH·DELETE도 보낸다. 실제 데이터가 바뀔 수 있으므로 반드시 사용자에게 대상 시스템과 요청 목록을 알리고 확인받은 뒤에만 true"),
       features: z.array(z.string()).optional().describe("이 기능 id만 녹화"),
-      refresh: z.boolean().optional().describe("대상 기능의 기존 녹화를 버리고 다시 녹화(중단되면 유지)"),
+      refresh: z.boolean().optional().describe("대상 기능(이번에 보낸 것)의 기존 녹화를 버리고 다시 녹화. 건너뛴 변경 요청 기능의 녹화는 유지, 중단되면 모두 유지"),
       apply: z.boolean().optional().describe("기본 true. false면 녹화·drift만"),
     }),
     outputSchema: z.object({

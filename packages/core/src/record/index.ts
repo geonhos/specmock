@@ -1,6 +1,6 @@
 // packages/core/src/record/index.ts
 import type { GenerateReport } from "../generate/generator.js";
-import { maskHeaders, maskSecrets } from "../ingest/mask.js";
+import { maskHeaders, maskSecrets, redactSecrets } from "../ingest/mask.js";
 import type { OnEvent } from "../service/events.js";
 import { RecordedSchema, type HttpMethod, type MockSpec } from "../types.js";
 import { makeAjv } from "../util/ajv.js";
@@ -55,9 +55,28 @@ function maskBody(kind: "json" | "raw" | "empty" | "truncated", body: unknown, c
   try { return { kind: "json", body: JSON.parse(masked) }; } catch { return { kind: "raw", body: { raw: masked, contentType } }; }
 }
 
+/** 표시용 경로. query는 이름 기반(token·key 등)으로 값을 가린다. */
 function display(p: string, query: Record<string, string>): string {
-  const qs = new URLSearchParams(query).toString();
+  const qs = new URLSearchParams(maskHeaders(query)).toString();
   return qs ? `${p}?${qs}` : p;
+}
+
+function redactValues(r: Record<string, string>, secrets: string[]): Record<string, string> {
+  return Object.fromEntries(Object.entries(r).map(([k, v]) => [k, redactSecrets(v, secrets)]));
+}
+
+/** 녹화 파일의 요청 헤더. target에서 온 헤더는 이름과 무관하게 전부 `***`(이름은 남김), contract 헤더는 값을 유지한다. */
+function recordedHeaders(contractHeaders: Record<string, string>, target: Target): Record<string, string> {
+  const fromTarget = Object.fromEntries(Object.keys(target.headers).map((k) => [k, "***"]));
+  return maskHeaders(mergeHeaders(redactValues(contractHeaders, target.secrets), fromTarget));
+}
+
+/** 문자열 안의 비밀을 출처 기반(target 치환 값) + 패턴 기반으로 가린다. */
+function deepRedact<T>(v: T, red: (s: string) => string): T {
+  if (typeof v === "string") return red(v) as T;
+  if (Array.isArray(v)) return v.map((x) => deepRedact(x, red)) as T;
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deepRedact(x, red)])) as T;
+  return v;
 }
 
 /** mockspec의 정상 요청 contract를 target에 순서대로 보내 녹화하고 drift.md를 쓴다. 잠금은 잡지 않는다. */
@@ -72,6 +91,7 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
   const targets = spec.contracts.filter((c) => c.name === NORMAL_CONTRACT && (!want || want.has(c.featureId)));
   for (const c of targets) recordedName(c.featureId);   // 안전하지 않은 id는 요청 전에 거부
 
+  const red = (t: string) => maskSecrets(redactSecrets(t, target.secrets));
   const now = opts.now ?? (() => new Date());
   const ajv = makeAjv();
   const entries: DriftEntry[] = [];
@@ -85,7 +105,7 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
     const featureId = c.featureId;
     const method = c.request.method;
     const { path: p, query } = applyParams(byId.get(featureId), c, target.params);
-    const shown = maskSecrets(display(p, query));
+    const shown = red(display(p, query));
     opts.onEvent?.({ stage: "record", message: `${featureId} ${method} ${shown}`, done: i + 1, total: targets.length });
     const base = { featureId, method, path: shown };
     if (!opts.allowMutating && !SAFE_METHODS.has(method)) {
@@ -100,9 +120,9 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
     if (r.status === null || r.kind === null) {
       const f = r.failure ?? { kind: "network" as const, message: "unknown" };
       if (f.kind === "network" && first) {
-        throw new Error(maskSecrets(`실제 시스템에 연결하지 못했습니다(${f.message}): ${target.baseUrl}. baseUrl을 확인하세요`));
+        throw new Error(red(`실제 시스템에 연결하지 못했습니다(${f.message}): ${target.baseUrl}. baseUrl을 확인하세요`));
       }
-      const reason = maskSecrets(f.kind === "timeout" ? `시간 초과(${target.timeoutMs}ms)` : f.kind === "invalid" ? `요청 불가: ${f.message}` : `연결 실패: ${f.message}`);
+      const reason = red(f.kind === "timeout" ? `시간 초과(${target.timeoutMs}ms)` : f.kind === "invalid" ? `요청 불가: ${f.message}` : `연결 실패: ${f.message}`);
       result.failed.push({ featureId, reason });
       entries.push({ ...base, kind: "failed", reason });
       continue;
@@ -115,12 +135,12 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
       featureId,
       recordedAt: now().toISOString(),
       mockspecHash: featureInputHash(spec, featureId),
-      request: { method, path: p, query: maskHeaders(query), headers: maskHeaders(mergeHeaders(c.request.headers, target.headers)) },
+      request: { method, path: red(p), query: redactValues(maskHeaders(query), target.secrets), headers: recordedHeaders(c.request.headers, target) },
       response: {
         status: r.status, kind, headers: r.headers, bytes: r.bytes,
         ...(kind === "truncated" ? { truncated: true as const } : { body }),
       },
-      contract: { expectedStatus: c.expect.status, statusMatch, schemaErrors: r.schemaErrors.map(maskSecrets) },
+      contract: { expectedStatus: c.expect.status, statusMatch, schemaErrors: r.schemaErrors.map(red) },
     });
     result.recorded.push(featureId);
 
@@ -129,13 +149,13 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
       result.statusMismatch.push({ featureId, expected: c.expect.status, actual: r.status, ...(hint ? { hint } : {}) });
       entries.push({ ...base, kind: "statusMismatch", expected: c.expect.status, actual: r.status, ...(hint ? { hint } : {}) });
     } else if (r.kind === "truncated" || r.kind === "raw") {
-      const reason = r.kind === "truncated"
+      const reason = red(r.kind === "truncated"
         ? `응답이 1MB를 넘어 저장하지 않았습니다(${r.bytes}바이트)`
-        : `바디가 JSON이 아닙니다(content-type: ${r.headers["content-type"] ?? "없음"})`;
+        : `바디가 JSON이 아닙니다(content-type: ${r.headers["content-type"] ?? "없음"})`);
       result.failed.push({ featureId, reason });
       entries.push({ ...base, kind: "failed", reason });
     } else if (r.schemaErrors.length > 0) {
-      const errors = r.schemaErrors.map(maskSecrets);
+      const errors = r.schemaErrors.map(red);
       result.drifted.push({ featureId, errors });
       entries.push({ ...base, kind: "drifted", status: r.status, errors });
     } else {
@@ -148,9 +168,9 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
     const skipped = new Set(result.skipped.map((s) => s.featureId));
     await pruneRecorded(ws, system, targets.map((c) => c.featureId).filter((id) => !skipped.has(id) && !wrote.has(id)));
   }
-  const driftMarkdown = renderDrift(system, target.baseUrl, now(), entries);
+  const driftMarkdown = red(renderDrift(system, target.baseUrl, now(), entries));
   await ws.writeText(system, DRIFT_FILE, driftMarkdown);
-  return { result, driftMarkdown };
+  return { result: deepRedact(result, red), driftMarkdown };
 }
 
 export { DRIFT_FILE } from "./drift.js";

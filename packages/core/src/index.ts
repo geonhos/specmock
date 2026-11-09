@@ -4,7 +4,7 @@ export * from "./types.js";
 export { Workspace } from "./workspace.js";
 export { hashJson, hashText } from "./util/hash.js";
 export { ingest, ingestOne, detectKind, type IngestOptions, type IngestResult } from "./ingest/index.js";
-export { maskHeaders, maskSecrets } from "./ingest/mask.js";
+export { maskHeaders, maskSecrets, redactSecrets } from "./ingest/mask.js";
 export { analyze, writeCatalogWithDiff, type AnalyzeOutcome } from "./analyze/index.js";
 export { analyzeOpenApiDocument } from "./analyze/openapi.js";
 export { prepare, pruneExtracted, documentText, needsLlm, CHUNKS_DIR, EXTRACTED_DIR, chunkFileName, extractedFileName } from "./analyze/prepare.js";
@@ -26,7 +26,8 @@ export type { GenerateReport, GenerateProgress, LanguageOutput } from "./generat
 export { prepareGeneration, finalizeGeneration, readSessionMarker, REQUEST_FILE, SESSION_MARKER, type PrepareGenerationOptions, type PrepareGenerationResult, type FinalizeResult, type FinalizeReason } from "./generate/session.js";
 export { SUPPORTED_LANGUAGES, assertLanguage } from "./generate/profiles/index.js";
 export { LlmGenerator, ATTEMPT_DIR, type LlmGeneratorOptions } from "./generate/llm.js";
-export { GenerationFailedError, EnvironmentError } from "./generate/errors.js";
+export { GenerationFailedError, EnvironmentError, LlmForbiddenError } from "./generate/errors.js";
+export { forbiddenLlmAdapter } from "./llm/forbidden.js";
 export { verify, verifyFailed, loadContracts, type VerifyOptions, type VerifyResult, type ContractResult } from "./verify/index.js";
 export type { RuntimeCheck, RuntimeSpec } from "./verify/runtime.js";
 export { startMock, ensureInstalled, installKey, markInstalled, type RunningMock, type StartMockOptions, type EnsureInstalledOptions } from "./verify/server.js";

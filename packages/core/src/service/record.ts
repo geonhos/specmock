@@ -4,10 +4,11 @@ import type { GenerateReport } from "../generate/generator.js";
 import { generate } from "../generate/index.js";
 import { readLock } from "../generate/lock.js";
 import type { LanguageProfile } from "../generate/profiles/index.js";
-import type { LlmAdapter } from "../llm/adapter.js";
 import { readTarget, record, type RecordResult } from "../record/index.js";
 import { select } from "../select/index.js";
-import { maskSecrets } from "../ingest/mask.js";
+import { LlmForbiddenError } from "../generate/errors.js";
+import { maskSecrets, redactSecrets } from "../ingest/mask.js";
+import { forbiddenLlmAdapter } from "../llm/forbidden.js";
 import { CatalogSchema, GenerateInfoSchema, MockSpecSchema, SelectionSchema } from "../types.js";
 import { specInputHash } from "../util/specHash.js";
 import type { Workspace } from "../workspace.js";
@@ -27,9 +28,8 @@ export interface RecordResponsesOptions {
   env?: Record<string, string | undefined>;
   onEvent?: OnEvent;
   signal?: AbortSignal;
-  /** 테스트 전용: 언어 프로필·LLM 어댑터 주입. apply는 LLM을 부르지 않지만 generate가 프로필을 찾는 데 쓴다. */
+  /** 테스트 전용: 언어 프로필 주입. apply는 LLM을 부르지 않는다(어댑터는 항상 forbiddenLlmAdapter). */
   profile?: LanguageProfile;
-  adapter?: LlmAdapter;
 }
 
 export interface RecordResponsesResult { result: RecordResult; driftPath: string; driftMarkdown: string; notes: string[] }
@@ -42,6 +42,11 @@ export async function recordResponses(ws: Workspace, system: string, opts: Recor
     allowMutating: opts.allowMutating, features: opts.features, refresh: opts.refresh, onEvent: opts.onEvent, signal: opts.signal,
   });
   const notes: string[] = [];
+  let selectedCount = 0;
+  const finish = (): RecordResponsesResult => {
+    const red = (t: string) => maskSecrets(redactSecrets(t, target.secrets));
+    return { result, driftPath: result.driftPath, driftMarkdown, notes: notes.map(red) };
+  };
   if (opts.apply !== false) {
     let selectDone = false;
     try {
@@ -53,6 +58,7 @@ export async function recordResponses(ws: Workspace, system: string, opts: Recor
       const literal = selection.literal ?? (selection.selected.length > 0 && selection.selected.every((id) => ids.has(id)));
       const sel = await select(ws, system, selection.selected, { literalIds: literal });
       selectDone = true;
+      selectedCount = sel.resolved.length;
       let generated: GenerateReport | null = null;
       const info = (await ws.exists(system, "generate.json")) ? await ws.read(system, "generate.json", GenerateInfoSchema) : null;
       const outDir = info ? path.resolve(info.outDir) : null;
@@ -64,12 +70,18 @@ export async function recordResponses(ws: Workspace, system: string, opts: Recor
         notes.push(`${APPLY_LATER}(LLM 재생성 필요)`);
       } else {
         opts.onEvent?.({ stage: "record", message: "generate 다시 실행(fixture 반영)" });
-        generated = await generate(ws, system, { outDir, language: lock.language, profile: opts.profile, adapter: opts.adapter, signal: opts.signal });
+        generated = await generate(ws, system, { outDir, language: lock.language, profile: opts.profile, adapter: forbiddenLlmAdapter(), signal: opts.signal });
         for (const p of generated.preserved) if (p.startsWith("fixtures/")) notes.push(`${p}: ${PRESERVED_NOTE}`);
       }
       result.applied = { selected: sel.resolved.length, generate: generated };
     } catch (e) {
       if (opts.signal?.aborted) throw e;
+      if (e instanceof LlmForbiddenError) {
+        // 잠금 안 generate가 LLM 경로로 갔다(그 사이 mockspec이 바뀜). LLM은 부르지 않고 안내만 한다.
+        notes.push(`${APPLY_LATER}(LLM 재생성 필요)`);
+        result.applied = { selected: selectedCount, generate: null };
+        return finish();
+      }
       // 프로그래밍 오류(Error가 아니거나 TypeError·RangeError)는 삼키지 않는다.
       if (!(e instanceof Error) || e instanceof TypeError || e instanceof RangeError) throw e;
       // 녹화·drift.md는 이미 썼다. 결과를 버리지 않고 반영 실패를 알린다.
@@ -77,5 +89,5 @@ export async function recordResponses(ws: Workspace, system: string, opts: Recor
       result.applied = null;
     }
   }
-  return { result, driftPath: result.driftPath, driftMarkdown, notes };
+  return finish();
 }

@@ -40,7 +40,7 @@ function ok(q: FakeReq): FakeRes {
   if (q.path === "/store/inventory") return { status: 200, body: { available: 3 } };
   return { status: 404 };
 }
-const target = (url: string, over: Partial<Target> = {}): Target => ({ file: "target.json", baseUrl: `${url}/v2`, headers: { Authorization: "Bearer secret-token-123456", "X-Tenant": "dev" }, params: {}, timeoutMs: 2000, ...over });
+const target = (url: string, over: Partial<Target> = {}): Target => ({ file: "target.json", baseUrl: `${url}/v2`, headers: { Authorization: "Bearer secret-token-123456", "X-Tenant": "dev" }, params: {}, timeoutMs: 2000, secrets: [], ...over });
 const strip = (handler: (q: FakeReq) => FakeRes) => (q: FakeReq) => handler({ ...q, path: q.path.replace(/^\/v2/, "") });
 
 /** getPet의 정상 요청 path에 `?`를 넣어 보낼 수 없게 만든 mockspec. */
@@ -63,7 +63,7 @@ describe("record", () => {
     expect(events.filter((e) => e.stage === "record")).toHaveLength(5);
     expect(events[events.length - 1]).toMatchObject({ done: 5, total: 5 });
     const rec = await ws.read(SYS, "recorded/getPet.json", RecordedSchema);
-    expect(rec.request.headers).toEqual({ authorization: "***", "x-tenant": "dev" });
+    expect(rec.request.headers).toEqual({ authorization: "***", "x-tenant": "***" });
     expect(rec.response).toMatchObject({ status: 200, kind: "json", body: PET });
     expect(rec.contract).toEqual({ expectedStatus: 200, statusMatch: true, schemaErrors: [] });
     expect(result.driftPath).toBe(ws.file(SYS, "drift.md"));
@@ -255,5 +255,43 @@ describe("record", () => {
     const noSchema: MockSpec = { ...spec, contracts: spec.contracts.map((c) => (c.featureId === "listPets" && c.name === "정상 요청" ? { ...c, expect: { ...c.expect, schema: null } } : c)) };
     r = await record(ws, SYS, noSchema, target(t.url), { features: ["listPets"] });
     expect(r.result.matched).toEqual(["listPets"]);
+  });
+  it("출처 기반 마스킹: target 헤더는 이름과 무관하게 전부 ***, contract 헤더는 유지", async () => {
+    t = await startFakeTarget(strip(ok));
+    const hdr: MockSpec = { ...spec, contracts: spec.contracts.map((c) => (c.featureId === "getPet" && c.name === "정상 요청" ? { ...c, request: { ...c.request, headers: { "x-trace": "keep-me" } } } : c)) };
+    const SIG = "sig-plain-1";
+    await record(ws, SYS, hdr, target(t.url, { headers: { "X-Signature": SIG, "X-Client-Id": "cid-77" }, secrets: [SIG, "cid-77"] }), { features: ["getPet"] });
+    const text = await readFile(ws.file(SYS, "recorded/getPet.json"), "utf8");
+    const rec = await ws.read(SYS, "recorded/getPet.json", RecordedSchema);
+    expect(text).not.toContain(SIG);
+    expect(text).not.toContain("cid-77");
+    expect(rec.request.headers["x-signature"]).toBe("***");
+    expect(rec.request.headers["x-client-id"]).toBe("***");
+    expect(rec.request.headers["x-trace"]).toBe("keep-me");
+  });
+
+  it("params의 ${ENV} 값(query 인증)은 녹화 파일·이벤트·drift.md·RecordResult 어디에도 남지 않는다", async () => {
+    const KEY = "k9";   // 8자 미만도 가린다
+    const withQuery: MockSpec = { ...spec, contracts: spec.contracts.map((c) => (c.featureId === "listPets" && c.name === "정상 요청" ? { ...c, request: { ...c.request, query: { ...c.request.query, apiKey: "x" } } } : c)) };
+    t = await startFakeTarget(strip(() => ({ status: 401 })));
+    const events: ServiceEvent[] = [];
+    const tg = target(t.url, { params: { apiKey: KEY, petId: KEY }, secrets: [KEY] });
+    const { result, driftMarkdown } = await record(ws, SYS, withQuery, tg, { features: ["listPets", "getPet"], onEvent: (e) => events.push(e) });
+    expect(result.statusMismatch).toHaveLength(2);
+    expect(t.requests.some((r) => r.path.includes(KEY))).toBe(true);   // 실제로는 보냈다
+    const files = [await readFile(ws.file(SYS, "recorded/listPets.json"), "utf8"), await readFile(ws.file(SYS, "recorded/getPet.json"), "utf8")];
+    for (const out of [...files, driftMarkdown, JSON.stringify(result), JSON.stringify(events), await readFile(ws.file(SYS, "drift.md"), "utf8")]) {
+      expect(out.includes(KEY)).toBe(false);
+    }
+    expect(driftMarkdown.includes("***")).toBe(true);
+  });
+
+  it("진행 이벤트의 path도 query 이름 기반(token·key)으로 가린다", async () => {
+    t = await startFakeTarget(strip(ok));
+    const withToken: MockSpec = { ...spec, contracts: spec.contracts.map((c) => (c.featureId === "listPets" && c.name === "정상 요청" ? { ...c, request: { ...c.request, query: { token: "abcdefghijkl" } } } : c)) };
+    const events: ServiceEvent[] = [];
+    await record(ws, SYS, withToken, target(t.url), { features: ["listPets"], onEvent: (e) => events.push(e) });
+    expect(events[0].message).toContain("token=***");
+    expect(events[0].message).not.toContain("abcdefghijkl");
   });
 });

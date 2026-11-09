@@ -40,7 +40,14 @@ describe("readTarget", () => {
   it("baseUrl 끝 /를 지우고 헤더 env를 치환하며 기본 timeout 15000", async () => {
     await put(JSON.stringify({ baseUrl: "https://api.example.com/v2/", headers: { Authorization: "Bearer ${T}" }, params: { petId: "123" } }));
     const t = await readTarget(ws, "pets", { T: "tok" });
-    expect(t).toEqual({ file: ws.file("pets", TARGET_FILE), baseUrl: "https://api.example.com/v2", headers: { Authorization: "Bearer tok" }, params: { petId: "123" }, timeoutMs: 15000 });
+    expect(t).toEqual({ file: ws.file("pets", TARGET_FILE), baseUrl: "https://api.example.com/v2", headers: { Authorization: "Bearer tok" }, params: { petId: "123" }, timeoutMs: 15000, secrets: ["tok"] });
+  });
+
+  it("params의 ${ENV}도 치환하고, 치환된 값만 secrets에 모은다(빈 값 제외)", async () => {
+    await put(JSON.stringify({ baseUrl: "https://x", headers: { "X-Signature": "${SIG}", "X-Tenant": "dev" }, params: { apiKey: "k-${KEY}", petId: "7" } }));
+    const t = await readTarget(ws, "pets", { SIG: "sig-1", KEY: "abc" });
+    expect(t.params).toEqual({ apiKey: "k-abc", petId: "7" });
+    expect(t.secrets.sort()).toEqual(["abc", "sig-1"]);
   });
 
   it("파일이 없으면 예시 JSON을 담은 오류", async () => {

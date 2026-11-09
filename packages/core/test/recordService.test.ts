@@ -1,4 +1,5 @@
 // packages/core/test/recordService.test.ts
+import { readFileSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -9,6 +10,8 @@ import { generate } from "../src/generate/index.js";
 import { LockSchema, readLock } from "../src/generate/lock.js";
 import { ingest } from "../src/ingest/index.js";
 import { ClaudeCodeAdapter } from "../src/llm/claudeCode.js";
+import { forbiddenLlmAdapter } from "../src/llm/forbidden.js";
+import { LlmForbiddenError } from "../src/generate/errors.js";
 import { select } from "../src/select/index.js";
 import { CatalogSchema, SelectionSchema } from "../src/types.js";
 import { recordResponses } from "../src/service/record.js";
@@ -55,7 +58,7 @@ async function generateFake(): Promise<void> {
 describe("recordResponses", () => {
   it("LLM 목(fake 프로필): 녹화 바디가 fixture 파일이 되고 LLM은 다시 부르지 않는다", async () => {
     await generateFake();
-    const r = await recordResponses(ws, SYS, { profile: fakeProfile, adapter: adapter() });
+    const r = await recordResponses(ws, SYS, { profile: fakeProfile });
     expect(r.result.matched).toEqual(["getPet"]);
     expect(r.result.skipped).toEqual([{ featureId: "createPet", reason: "mutating" }]);
     expect(r.result.applied).toMatchObject({ selected: 2, generate: { skipped: false, attempts: 0 } });
@@ -76,7 +79,7 @@ describe("recordResponses", () => {
   it("사용자가 고친 fixture는 보존하고 메모로 알린다", async () => {
     await generateFake();
     await writeFile(path.join(out, "fixtures/getPet/200.json"), JSON.stringify({ mine: true }));
-    const r = await recordResponses(ws, SYS, { profile: fakeProfile, adapter: adapter() });
+    const r = await recordResponses(ws, SYS, { profile: fakeProfile });
     expect(await fixture()).toEqual({ mine: true });
     expect(r.notes).toEqual(["fixtures/getPet/200.json: 보존됨 — 녹화가 반영되지 않음"]);
   }, 60_000);
@@ -93,7 +96,7 @@ describe("recordResponses", () => {
     const { inputHash: _drop, ...old } = (await readLock(out))!;
     await writeFile(path.join(out, "specmock.lock.json"), JSON.stringify(LockSchema.parse(old), null, 2));
     const before = await fixture();
-    const r = await recordResponses(ws, SYS, { profile: fakeProfile, adapter: adapter() });
+    const r = await recordResponses(ws, SYS, { profile: fakeProfile });
     expect(r.result.applied).toEqual({ selected: 2, generate: null });
     expect(r.notes).toEqual(["generate를 실행하면 반영됩니다(LLM 재생성 필요)"]);
     expect(await fixture()).toEqual(before);
@@ -156,7 +159,27 @@ describe("recordResponses", () => {
   it("프로그래밍 오류(TypeError)는 삼키지 않고 다시 던진다", async () => {
     await generateFake();
     const onEvent = (e: { message: string }) => { if (e.message.startsWith("generate")) (null as unknown as { x: number }).x; };
-    await expect(recordResponses(ws, SYS, { profile: fakeProfile, adapter: adapter(), onEvent })).rejects.toBeInstanceOf(TypeError);
+    await expect(recordResponses(ws, SYS, { profile: fakeProfile, onEvent })).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it("잠금 밖 검사 뒤 mockspec이 바뀌어 generate가 LLM 경로로 가도 어댑터는 부르지 않고 안내만 한다", async () => {
+    await generateFake();
+    const file = ws.file(SYS, "mockspec.json");
+    const onEvent = (e: { message: string }) => {
+      if (!e.message.startsWith("generate")) return;
+      const j = JSON.parse(readFileSync(file, "utf8"));
+      j.baseUrl = "http://changed.example";
+      writeFileSync(file, JSON.stringify(j));
+    };
+    const r = await recordResponses(ws, SYS, { profile: fakeProfile, onEvent });
+    expect(r.result.applied).toEqual({ selected: 2, generate: null });
+    expect(r.notes).toEqual(["generate를 실행하면 반영됩니다(LLM 재생성 필요)"]);
+    expect(await calls()).toBe(1);
+  }, 60_000);
+
+  it("forbiddenLlmAdapter는 호출되면 안내와 함께 던진다", async () => {
+    await expect(forbiddenLlmAdapter().complete({ prompt: "x", schema: {} })).rejects.toBeInstanceOf(LlmForbiddenError);
+    await expect(forbiddenLlmAdapter().complete({ prompt: "x", schema: {} })).rejects.toThrow("specmock generate <system>");
   });
 
   it("select 뒤 generate가 실패하면 mock은 아직이라고 안내한다", async () => {
@@ -164,7 +187,7 @@ describe("recordResponses", () => {
     // fixtures 자리에 파일을 두어 generate의 쓰기를 실패시킨다.
     await rm(path.join(out, "fixtures"), { recursive: true, force: true });
     await writeFile(path.join(out, "fixtures"), "x");
-    const r = await recordResponses(ws, SYS, { profile: fakeProfile, adapter: adapter() });
+    const r = await recordResponses(ws, SYS, { profile: fakeProfile });
     expect(r.result.applied).toBeNull();
     expect(r.notes).toEqual([expect.stringMatching(/^반영 실패: .*mockspec은 갱신됐고 mock은 아직/)]);
   });

@@ -35,8 +35,11 @@ export interface Target {
   baseUrl: string;
   /** `${ENV}` 치환을 마친 값. 화면·로그에 싣지 않는다. */
   headers: Record<string, string>;
+  /** `${ENV}` 치환을 마친 값. */
   params: Record<string, string>;
   timeoutMs: number;
+  /** `${ENV}`로 치환된 모든 값(빈 문자열 제외). 출처 기반 마스킹에 쓴다. 화면·로그·파일에 싣지 않는다. */
+  secrets: string[];
 }
 
 const ENV_REF = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
@@ -49,6 +52,15 @@ export function substituteEnv(value: string, env: Record<string, string | undefi
     if (v === "") throw new Error(`환경변수 ${name}이 비어 있습니다`);
     return v;
   });
+}
+
+/** `${ENV}` 치환 + 치환된 값을 secrets에 모은다. */
+function substituteCollect(value: string, env: Record<string, string | undefined>, secrets: Set<string>): string {
+  for (const m of value.matchAll(ENV_REF)) {
+    const v = env[m[1]];
+    if (v) secrets.add(v);
+  }
+  return substituteEnv(value, env);
 }
 
 /** target.json을 읽는다. 어떤 오류 메시지에도 파일 원문·헤더 값을 싣지 않는다. */
@@ -74,8 +86,10 @@ export async function readTarget(ws: Workspace, system: string, env: Record<stri
     throw new Error(`${file}: 형식 오류. 확인할 필드: ${[...fields].join(", ")} (모르는 키는 거부합니다)`);
   }
   const t = parsed.data;
-  const headers = Object.fromEntries(Object.entries(t.headers ?? {}).map(([k, v]) => [k, substituteEnv(v, env)]));
-  return { file, baseUrl: t.baseUrl.replace(/\/+$/, ""), headers, params: t.params ?? {}, timeoutMs: t.timeoutMs ?? DEFAULT_TIMEOUT_MS };
+  const found = new Set<string>();
+  const headers = Object.fromEntries(Object.entries(t.headers ?? {}).map(([k, v]) => [k, substituteCollect(v, env, found)]));
+  const params = Object.fromEntries(Object.entries(t.params ?? {}).map(([k, v]) => [k, substituteCollect(v, env, found)]));
+  return { file, baseUrl: t.baseUrl.replace(/\/+$/, ""), headers, params, timeoutMs: t.timeoutMs ?? DEFAULT_TIMEOUT_MS, secrets: [...found] };
 }
 
 /** params를 contract에 적용한 경로·쿼리. 쿼리는 contract에 있거나 feature에 선언된 이름만 덮어쓴다. */

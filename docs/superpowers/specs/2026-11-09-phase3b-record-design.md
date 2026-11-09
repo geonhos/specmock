@@ -86,8 +86,8 @@ flowchart LR
 | 필드 | 규칙 |
 |---|---|
 | `baseUrl` | 필수. `http://` 또는 `https://`. contract의 path(`/`로 시작)를 **경로 결합**으로 뒤에 붙인다(`https://host/v2` + `/pets` → `https://host/v2/pets`). `new URL(path, baseUrl)`은 `/v2`를 지우므로 쓰지 않는다. 끝 `/`는 하나로 정규화 |
-| `headers` | 선택. 모든 요청에 붙인다. 값 안의 `${NAME}`은 환경변수 `NAME`으로 치환하고, 없으면 "환경변수 NAME이 없습니다"로 종료 코드 1. `${`가 없는 값은 그대로 쓴다(파일에 비밀을 적어도 동작하지만 README·SKILL에서 금지를 안내) |
-| `params` | 선택. 파라미터 이름 → 문자열 값. contract의 경로·쿼리 파라미터 중 같은 이름의 생성값을 덮어쓴다(모든 기능에 공통 적용). 지어낸 id로 404가 나는 문제를 해결하는 수단 |
+| `headers` | 선택. 모든 요청에 붙인다. 값 안의 `${NAME}`은 환경변수 `NAME`으로 치환하고(치환된 값은 "비밀 값 집합"에 모아 출처 기반 마스킹에 쓴다), 없으면 "환경변수 NAME이 없습니다"로 종료 코드 1. `${`가 없는 값은 그대로 쓴다(파일에 비밀을 적어도 동작하지만 README·SKILL에서 금지를 안내) |
+| `params` | 선택. 파라미터 이름 → 문자열 값. 값 안의 `${NAME}`도 `headers`와 같이 치환하고 비밀 값 집합에 넣는다(query 인증 키 등). contract의 경로·쿼리 파라미터 중 같은 이름의 생성값을 덮어쓴다(모든 기능에 공통 적용). 지어낸 id로 404가 나는 문제를 해결하는 수단 |
 | `timeoutMs` | 선택. 요청당 제한. 기본 15000 |
 
 모르는 키는 거부한다(오타 방지). 파일은 사용자 프로젝트 안에 있으므로 `.gitignore` 안내는 README에 적고 specmock은 쓰지 않는다(기존 원칙: 사용자 프로젝트에 `.gitignore`를 쓰지 않음).
@@ -105,10 +105,10 @@ flowchart LR
 }
 ```
 
-- `request.headers`는 `maskHeaders`를 거친 뒤 저장한다(재현용 기록이지 재전송용이 아니다). `request.path`에는 `params` 적용 뒤 실제 보낸 경로를 적는다.
+- `request.headers`: **target에서 온 헤더는 이름은 남기고 값은 이름과 무관하게 전부 `***`**, contract에서 온 헤더(content-type 등)만 값을 유지한다(그 뒤 `maskHeaders`도 적용. 재현용 기록이지 재전송용이 아니다). 추가로 `${ENV}`로 치환된 값(`Target.secrets`)은 `redactSecrets`(정확한 문자열 일치, 길이 무관)로 `request.path`·`request.query`·실패 사유·drift.md·진행 이벤트·`RecordResult`·서비스 notes에서 `***`로 바꾼다. 패턴 기반 `maskSecrets`는 그 위에 그대로 적용한다. `request.path`에는 `params` 적용 뒤 실제 보낸 경로를 적는다.
 - `response.headers`는 `content-type`·`content-length`만 남긴다. `set-cookie` 등은 버린다.
 - `response.body`: JSON으로 파싱되면 값 그대로, 아니면 `{ "raw": "...", "contentType": "..." }`. 1MB(1,048,576바이트) 초과는 저장하지 않고 `"truncated": true, "bytes": n`만 적는다(fixture로도 쓰지 않는다).
-- `mockspecHash`는 녹화 시점 mockspec.json의 sha256. select가 현재 값과 다르면 "낡은 녹화" 경고를 assumptions에 적되 **사용은 한다**(기능 id가 같으면 의미가 같다고 본다). `--refresh`로 대상 기능을 다시 녹화한다.
+- `mockspecHash`는 녹화 시점의 `featureInputHash`(그 기능 + 그 기능의 contract, fixture는 status만; 전체 mockspec 해시가 아님). select가 현재 값과 다르면 "낡은 녹화" 경고를 assumptions에 적되 **사용은 한다**(기능 id가 같으면 의미가 같다고 본다). `--refresh`로 대상 기능을 다시 녹화한다.
 - 파일 이름은 featureId 그대로(id 규칙이 `[\p{L}\p{N}_.-]`라 경로로 안전하다. 구현 때 workspace의 이름 규칙으로 한 번 더 검사).
 
 ### 3.3 select가 녹화를 쓰는 규칙
@@ -151,7 +151,7 @@ specmock record <system> [--allow-mutating] [--feature id...] [--refresh] [--no-
 | (기본) | GET·HEAD contract의 정상 경로 요청만 보낸다("필수 값 누락" 400 contract는 보내지 않는다). 녹화 뒤 **select → generate를 자동 재실행**(apply). `generate.json`이 없으면(mock을 만든 적 없음) 녹화와 drift만 하고 "generate를 실행하면 반영됩니다" 안내 |
 | `--allow-mutating` | POST·PUT·PATCH·DELETE 포함 |
 | `--feature <id>` | 지정 기능만. 반복 가능. 없는 id는 즉시 오류 |
-| `--refresh` | 대상 기능의 기존 녹화를 버리고 다시 녹화(중단되면 유지). 건너뜀(변경 요청) 기능의 옛 녹화는 지우지 않는다 |
+| `--refresh` | 대상 기능(이번에 보낸 것)의 기존 녹화를 버리고 다시 녹화. 건너뛴 변경 요청 기능의 녹화는 유지, 중단되면 모두 유지 |
 | `--no-apply` | 녹화·drift만. select/generate 건너뜀 |
 | `--json` | `RecordResult`에 `notes`(반영 실패·generate 안내)를 더해 JSON으로 |
 
@@ -275,7 +275,7 @@ sequenceDiagram
 ## 8. 열린 질문
 
 - `pnpm record:check`의 대상 공개 API는 구현 때 안정적인 것을 고른다(응답이 자주 바뀌면 drift가 늘 나온다 — 그 자체는 정상 동작이므로 "실행이 끝나고 drift.md가 생기면 OK" 기준).
-- 녹화 파일에 `request.headers`를 남기는 것이 필요한지(마스킹해도 헤더 이름은 남는다). 지금은 "무엇을 보냈는지 재현"을 위해 남기되, 리뷰에서 불필요하다고 보면 이름만 남기거나 뺀다.
+- (닫힘) 녹화 파일의 `request.headers`: 헤더 이름은 남기고 target에서 온 값은 전부 가린다(§3.2, §9).
 
 ## 9. 구현 중 변경
 
@@ -297,3 +297,6 @@ sequenceDiagram
 | `GET target` | 파일 내용 | `example`(TARGET_EXAMPLE)·`error` 포함(D18) | Web UI가 만드는 법과 읽기 실패를 보여 줌 |
 | `joinUrl` | 경로에 `?`·`#` 허용 | 거부(요청 불가) | 쿼리가 path로 섞여 다른 URL로 나가는 것을 막음 |
 | 빈 환경변수 | 빈 문자열로 치환 | `${ENV}`가 비어 있으면 오류(변수 이름만 표시) | 빈 `Authorization`으로 조용히 401이 나는 것을 막음 |
+| 비밀 마스킹 기준 | 헤더 이름 기반(`maskHeaders`)과 패턴 기반(`maskSecrets`) | **출처 기반 추가**: target의 `${ENV}` 치환 값 집합(`Target.secrets`, headers·params)을 `redactSecrets`로 녹화 파일·drift.md·이벤트·`RecordResult`·notes 전부에서 가림. target에서 온 요청 헤더는 이름과 무관하게 값 전부 `***`(이름 유지) | `X-Signature`처럼 이름에 걸리지 않는 비밀이 평문으로 저장되는 것을 막음 |
+| apply의 LLM 금지 | 해시가 같을 때만 generate 호출(잠금 밖 검사) | `generate`에 항상 `forbiddenLlmAdapter()`를 넘김. 호출되면 `LlmForbiddenError`(재시도 없이 전파), 서비스는 "generate를 실행하면 반영됩니다(LLM 재생성 필요)" 메모로 바꿈 | 검사와 잠금 안 generate 사이에 mockspec이 바뀌어도 기본 `ClaudeCodeAdapter`로 떨어지지 않음(TOCTOU) |
+| `mockspecHash` 의미 (D6) | 녹화 시점 mockspec.json 전체의 sha256 | `featureInputHash`: 그 기능 + 그 contract, fixture는 status만 | 다른 기능 선택·녹화가 바뀌어도 낡은 녹화 경고가 오탐되지 않음 |
