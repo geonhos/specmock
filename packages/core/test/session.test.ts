@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { analyze } from "../src/analyze/index.js";
+import { generate } from "../src/generate/index.js";
 import { readLock } from "../src/generate/lock.js";
 import { GenerateRequestSchema } from "../src/generate/request.js";
 import { finalizeGeneration, prepareGeneration, SESSION_MARKER } from "../src/generate/session.js";
@@ -99,5 +100,57 @@ describe("finalizeGeneration", () => {
     await expect(access(path.join(out, SESSION_MARKER))).rejects.toMatchObject({ code: "ENOENT" });
     const v = await verifyMock(ws, "petstore");
     expect(v.result.failed + v.result.runtimeFailed).toBe(0);
+  }, 60_000);
+});
+
+describe("재finalize와 언어 변경", () => {
+  it("finalize 뒤 verify가 마커·산출물을 만들고 소스를 고쳐도 재finalize가 통과한다. 지시서를 재사용해도 마찬가지", async () => {
+    const profile = { ...fakeProfile, artifacts: ["build"], protectedPaths: [...fakeProfile.protectedPaths, "build/**"] };
+    const prepP = () => prepareGeneration(ws, "petstore", { outDir: out, profile });
+    const finP = () => finalizeGeneration(ws, "petstore", { profile });
+    await prepP();
+    await put("server.mjs", fakeServerSource(await spec()));
+    expect(await finP()).toMatchObject({ ok: true });
+    await put(".specmock-installed", "key");   // verify가 만드는 설치 마커 흉내
+    await put("build/out.bin", "x");            // 프로필 산출물
+    await put("server.mjs", fakeServerSource(await spec()) + "// 수정\n");
+    expect(await finP()).toMatchObject({ ok: true });
+    expect(await prepP()).toMatchObject({ reused: true });
+    await put("lib/a.mjs", "export {};\n");
+    expect(await finP()).toMatchObject({ ok: true });
+  }, 60_000);
+
+  it("finalize 사이에 사용자가 fixture를 고치면 여전히 protected-path-modified", async () => {
+    await prep();
+    await put("server.mjs", fakeServerSource(await spec()));
+    expect(await fin()).toMatchObject({ ok: true });
+    await put("fixtures/getPet/200.json", "{\"edited\":true}");
+    expect(await fin()).toMatchObject({ ok: false, reason: "protected-path-modified", errors: ["fixtures/getPet/200.json"] });
+  }, 60_000);
+
+  it("ts mock 위에 --force prepare(fake) → finalize: TS 소스·node_modules는 지우고 fixtures·contracts는 유지", async () => {
+    await generate(ws, "petstore", { outDir: out });
+    await mkdir(path.join(out, "node_modules"));
+    await writeFile(path.join(out, "node_modules", "x"), "x");
+    const fixture = await readFile(path.join(out, "fixtures", "getPet", "200.json"), "utf8");
+    const r = await prepareGeneration(ws, "petstore", { outDir: out, profile: fakeProfile, force: true });
+    expect(r.language).toBe("fake");
+    expect(JSON.parse(await readFile(path.join(out, SESSION_MARKER), "utf8")).previous.language).toBe("ts");
+    await put("server.mjs", fakeServerSource(await spec()));
+    expect(await access(path.join(out, "src", "server.ts")).then(() => true, () => false)).toBe(true);   // finalize 전에는 그대로
+    expect(await finalizeGeneration(ws, "petstore", { profile: fakeProfile })).toMatchObject({ ok: true });
+    for (const gone of ["src/server.ts", "package.json", "node_modules"]) {
+      expect(await access(path.join(out, gone)).then(() => true, () => false), gone).toBe(false);
+    }
+    expect(await readFile(path.join(out, "fixtures", "getPet", "200.json"), "utf8")).toBe(fixture);
+    await access(path.join(out, "contracts", "getPet.json"));
+    expect((await readLock(out))!.language).toBe("fake");
+  }, 60_000);
+
+  it("finalize가 실패하면(no-sources) 이전 언어 소스를 지우지 않는다", async () => {
+    await generate(ws, "petstore", { outDir: out });
+    await prepareGeneration(ws, "petstore", { outDir: out, profile: fakeProfile, force: true });
+    expect(await fin()).toMatchObject({ ok: false, reason: "no-sources" });
+    await access(path.join(out, "src", "server.ts"));
   }, 60_000);
 });

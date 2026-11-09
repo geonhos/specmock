@@ -100,4 +100,60 @@ describe("generate (LLM 생성기)", () => {
     await generate(ws, "petstore", opts());
     await expect(access(path.join(out, ".specmock-attempt"))).rejects.toMatchObject({ code: "ENOENT" });
   }, 60_000);
+
+  it("--max-attempts가 1 미만이면 옵션 단계에서 거부한다", async () => {
+    for (const n of [0, -1, 1.5]) {
+      await expect(generate(ws, "petstore", { ...opts(), maxAttempts: n })).rejects.toThrow("--max-attempts는 1 이상");
+    }
+    await expect(access(out)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  describe("--force 언어 변경은 생성 성공 뒤에만 지운다", () => {
+    const exists = (rel: string) => access(path.join(out, rel)).then(() => true, () => false);
+    async function tsMock() {
+      await generate(ws, "petstore", { outDir: out });
+      await mkdir(path.join(out, "node_modules"));
+      await writeFile(path.join(out, "node_modules", "x"), "x");
+    }
+
+    it("생성이 실패하면 TS 소스·lock이 그대로이고 .specmock-attempt/만 생긴다", async () => {
+      await tsMock();
+      const lockBefore = await readFile(path.join(out, "specmock.lock.json"), "utf8");
+      const bad = { files: [{ path: "server.mjs", content: fakeServerSource(await specNow(), { omit501: true }) }], notes: [] };
+      await respond(1, bad);
+      await respond(2, bad);
+      await expect(generate(ws, "petstore", { ...opts(), force: true, maxAttempts: 2 })).rejects.toMatchObject({ exitCode: 5 });
+      expect(await exists("src/server.ts")).toBe(true);
+      expect(await exists("node_modules/x")).toBe(true);
+      expect(await readFile(path.join(out, "specmock.lock.json"), "utf8")).toBe(lockBefore);
+      expect(await exists(".specmock-attempt/errors.md")).toBe(true);
+      expect(await exists("server.mjs")).toBe(false);
+    }, 60_000);
+
+    it("성공하면 TS 소스·node_modules가 지워지고 fake 파일과 새 lock이 생긴다", async () => {
+      await tsMock();
+      await respond(1, answer(await specNow()));
+      await generate(ws, "petstore", { ...opts(), force: true });
+      expect(await exists("src/server.ts")).toBe(false);
+      expect(await exists("package.json")).toBe(false);
+      expect(await exists("node_modules")).toBe(false);
+      expect(await exists("server.mjs")).toBe(true);
+      expect((await readLock(out))!.language).toBe("fake");
+    }, 60_000);
+
+    it("옛 ts lock(sourceFiles 없음)에서 바꾸면 ts 산출물을 지우고 사용자 파일은 둔다", async () => {
+      await tsMock();
+      const lockPath = path.join(out, "specmock.lock.json");
+      const lock = JSON.parse(await readFile(lockPath, "utf8"));
+      await writeFile(lockPath, JSON.stringify({ ...lock, sourceFiles: {} }));
+      await writeFile(path.join(out, "package-lock.json"), "{}");
+      await writeFile(path.join(out, "stray.txt"), "x");
+      await respond(1, answer(await specNow()));
+      await generate(ws, "petstore", { ...opts(), force: true });
+      expect(await exists("package-lock.json")).toBe(false);
+      expect(await exists("node_modules")).toBe(false);
+      expect(await exists("src/server.ts")).toBe(false);
+      expect(await readFile(path.join(out, "stray.txt"), "utf8")).toBe("x");
+    }, 60_000);
+  });
 });

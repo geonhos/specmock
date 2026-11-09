@@ -1,12 +1,13 @@
 // packages/core/src/generate/session.ts
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { z } from "zod";
 import { GenerateInfoSchema, MockSpecSchema } from "../types.js";
 import { hashJson, hashText } from "../util/hash.js";
 import type { Workspace } from "../workspace.js";
 import { withSystemLock } from "../workspaceLock.js";
 import { matchesAny } from "./glob.js";
-import { assertSafeOutDir, defaultMockDir, listFiles, readExisting, SESSION_MARKER } from "./index.js";
+import { assertNoVcsMarkers, assertSafeOutDir, clearForLanguageChange, defaultMockDir, languageChangeTargets, listFiles, readExisting, SESSION_MARKER } from "./index.js";
 import { readStaticFiles } from "./llm.js";
 import { readLock, writeLock } from "./lock.js";
 import { assertLanguage, getProfile, type LanguageProfile } from "./profiles/index.js";
@@ -14,6 +15,7 @@ import { buildGenerateRequest, GenerateRequestSchema } from "./request.js";
 import { writeLanguageFiles, writeScaffold } from "./scaffold.js";
 
 export { SESSION_MARKER } from "./index.js";
+const INSTALLED_MARKER = ".specmock-installed";
 export const REQUEST_FILE = "generate-request.json";
 
 export interface PrepareGenerationOptions {
@@ -51,13 +53,35 @@ function nextSteps(system: string, requestPath: string, outDir: string, profile:
   ];
 }
 
-/** 보호 경로 파일의 현재 해시(지시서 작성 시점과 finalize 시점 비교용). */
+/** 보호 경로 비교 대상: 보호 경로 중 진행 표식·설치 마커·프로필 산출물(target 등)은 verify가 만들므로 제외한다. */
+function isCompared(rel: string, profile: LanguageProfile): boolean {
+  if (!matchesAny(profile.protectedPaths, rel) || rel === SESSION_MARKER || rel === INSTALLED_MARKER) return false;
+  return !profile.artifacts.some((a) => rel === a || rel.startsWith(`${a}/`));
+}
+
+/** 보호 경로 파일의 현재 해시(지시서 작성 시점·finalize 성공 시점과 finalize 시점 비교용). */
 async function protectedHashes(outDir: string, profile: LanguageProfile): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   for (const rel of await listFiles(outDir)) {
-    if (matchesAny(profile.protectedPaths, rel)) out[rel] = hashText(await readFile(path.join(outDir, rel), "utf8"));
+    if (isCompared(rel, profile)) out[rel] = hashText(await readFile(path.join(outDir, rel), "utf8"));
   }
   return out;
+}
+
+const SessionMarkerSchema = z.object({
+  system: z.string(),
+  language: z.string(),
+  mockspecHash: z.string(),
+  /** --force 언어 변경이면 이전 lock의 언어·소스. finalize가 성공 직전에 정리한다. */
+  previous: z.object({ language: z.string(), sourceFiles: z.record(z.string(), z.string()) }).optional(),
+});
+
+async function readMarker(outDir: string): Promise<z.infer<typeof SessionMarkerSchema> | null> {
+  try {
+    return SessionMarkerSchema.parse(JSON.parse(await readFile(path.join(outDir, SESSION_MARKER), "utf8")));
+  } catch {
+    return null;
+  }
 }
 
 /** 세션 모드 1단계: 지시서를 쓰고 정적 파일을 outDir에 둔 뒤 멈춘다. 파일 작성은 대화 속 Claude가 한다. */
@@ -75,6 +99,8 @@ export async function prepareGeneration(ws: Workspace, system: string, opts: Pre
     if (previous && previous.language !== language && !opts.force) {
       throw new Error(`이 디렉터리는 ${previous.language}로 생성됐습니다. 다른 언어로 바꾸려면 --force(기존 소스 삭제) 또는 --out을 쓰세요`);
     }
+    const languageChange = previous !== null && previous.language !== language;
+    if (languageChange) await assertNoVcsMarkers(outDir);
     const requestPath = ws.file(system, REQUEST_FILE);
     const mockspecHash = hashJson(spec);
 
@@ -88,7 +114,7 @@ export async function prepareGeneration(ws: Workspace, system: string, opts: Pre
     const existing = previous && previous.language === language && previous.generator === "llm" ? await readExisting(outDir, profile, previous) : null;
     await mkdir(outDir, { recursive: true });
     await writeLanguageFiles(outDir, { files: await readStaticFiles(profile), install: null, start: profile.start, healthPath: profile.healthPath, notes: [] }, []);
-    await writeFile(path.join(outDir, SESSION_MARKER), JSON.stringify({ system, language, mockspecHash }, null, 2) + "\n", "utf8");
+    await writeFile(path.join(outDir, SESSION_MARKER), JSON.stringify({ system, language, mockspecHash, ...(languageChange ? { previous: { language: previous.language, sourceFiles: previous.sourceFiles } } : {}) }, null, 2) + "\n", "utf8");
     const req = await buildGenerateRequest({ spec, profile, outDir, existing, mockspecHash });
     req.protectedHashes = await protectedHashes(outDir, profile);
     await ws.write(system, REQUEST_FILE, GenerateRequestSchema, req);
@@ -113,8 +139,7 @@ export async function finalizeGeneration(ws: Workspace, system: string, opts: { 
     const outDir = req.outDir;
     const files = await listFiles(outDir);
 
-    const changed = files.filter((rel) => matchesAny(profile.protectedPaths, rel) && rel !== SESSION_MARKER)
-      .filter((rel) => req.protectedHashes[rel] === undefined);
+    const changed = files.filter((rel) => isCompared(rel, profile)).filter((rel) => req.protectedHashes[rel] === undefined);
     for (const [rel, hash] of Object.entries(req.protectedHashes)) {
       const now = files.includes(rel) ? hashText(await readFile(path.join(outDir, rel), "utf8")) : null;
       if (now !== hash) changed.push(rel);
@@ -122,11 +147,15 @@ export async function finalizeGeneration(ws: Workspace, system: string, opts: { 
     if (changed.length) return { ok: false, reason: "protected-path-modified", errors: changed.sort() };
 
     const statics = new Set(profile.staticFiles.map((s) => s.path));
-    const sources = files.filter((rel) => !statics.has(rel) && rel !== SESSION_MARKER && matchesAny(profile.sourceGlobs, rel) && !matchesAny(profile.protectedPaths, rel));
+    // --force 언어 변경: 이전 언어의 소스·산출물은 새 소스로 세지 않고, 성공 직전에 지운다.
+    const marker = await readMarker(outDir);
+    const stale = new Set(marker?.previous ? await languageChangeTargets(outDir, marker.previous) : []);
+    const sources = files.filter((rel) => !stale.has(rel) && !statics.has(rel) && rel !== SESSION_MARKER && matchesAny(profile.sourceGlobs, rel) && !matchesAny(profile.protectedPaths, rel));
     if (sources.length === 0) return { ok: false, reason: "no-sources", errors: [`${profile.sourceGlobs.join(", ")} 범위에 파일이 없습니다`] };
     if (sources.length > profile.maxFiles) return { ok: false, reason: "too-many-files", errors: [`파일 ${sources.length}개 > 최대 ${profile.maxFiles}개`] };
 
     const previous = await readLock(outDir);
+    if (marker?.previous) await clearForLanguageChange(outDir, marker.previous);
     const written: string[] = [];
     const s = await writeScaffold(spec, outDir, previous, {}, written);
     const sourceFiles: Record<string, string> = {};
@@ -148,6 +177,11 @@ export async function finalizeGeneration(ws: Workspace, system: string, opts: { 
       sourceFiles,
     });
     await rm(path.join(outDir, SESSION_MARKER), { force: true });
+    // 재finalize: 지금의 보호 파일(방금 쓴 fixtures·contracts·lock 포함)을 새 기준으로 삼는다. 원자적으로 쓴다.
+    const refreshed = GenerateRequestSchema.parse({ ...req, protectedHashes: await protectedHashes(outDir, profile) });
+    const reqFile = ws.file(system, REQUEST_FILE);
+    await writeFile(`${reqFile}.tmp`, JSON.stringify(refreshed, null, 2) + "\n", "utf8");
+    await rename(`${reqFile}.tmp`, reqFile);
     await ws.write(system, "generate.json", GenerateInfoSchema, { outDir, generatedAt: new Date().toISOString(), language: profile.language, notes: [], attempts: 0 });
     const warnings = [
       ...s.preserved.map((p) => `사용자 수정 fixture 보존: ${p}`),

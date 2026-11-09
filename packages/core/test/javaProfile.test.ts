@@ -59,11 +59,10 @@ describe("javaProfile", () => {
   it("환경 오류(JDK·네트워크)만 재시도 없이 멈추고 컴파일 오류는 재시도 대상이다", () => {
     const env = (log: string) => (javaProfile.environmentErrors ?? []).some((re) => re.test(log));
     expect(env("The JAVA_HOME environment variable is not defined correctly, so mvnw cannot run.")).toBe(true);
-    expect(env("The java/javac command does not exist in PATH nor is JAVA_HOME set, so mvnw cannot run.")).toBe(true);
-    expect(env("curl: Failed to fetch https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.16/apache-maven-3.9.16-bin.zip")).toBe(true);
+    expect(env("Error: JAVA_HOME is not defined correctly.")).toBe(true);
+    expect(env("[ERROR] Failed to execute goal on project mock: Could not resolve dependencies for project")).toBe(true);
     expect(env("[ERROR] Failed to execute goal … Could not transfer artifact io.javalin:javalin:pom:6.7.0 from/to central")).toBe(true);
     expect(env("java.net.UnknownHostException: repo.maven.apache.org")).toBe(true);
-    expect(env("[ERROR] Fatal error compiling: error: release version 17 not supported")).toBe(true);
     expect(env("[ERROR] /x/src/main/java/specmock/petstore/Main.java:[12,5] cannot find symbol")).toBe(false);
   });
 

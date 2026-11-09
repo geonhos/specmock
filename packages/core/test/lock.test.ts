@@ -151,21 +151,6 @@ describe("언어 결정", () => {
         expect(await exists("old/Legacy.java")).toBe(true);
       }
     });
-
-    it("옛 ts lock(sourceFiles 없음)에서 다른 언어로 바꾸면 ts 산출물을 지우고 사용자 파일은 둔다", async () => {
-      await generate(ws, "petstore", { outDir: out });
-      const lockPath = path.join(out, "specmock.lock.json");
-      const lock = JSON.parse(await readFile(lockPath, "utf8"));
-      await writeFile(lockPath, JSON.stringify({ ...lock, sourceFiles: {} }));
-      await mkdir(path.join(out, "node_modules"));
-      await writeFile(path.join(out, "package-lock.json"), "{}");
-      await writeFile(path.join(out, "stray.txt"), "x");
-      // 프로필 없는 java(등록만 된 테스트 언어)는 생성에서 실패하지만, 그 전에 ts 산출물 정리는 끝난다
-      await expect(generate(ws, "petstore", { outDir: out, language: "java", force: true })).rejects.toThrow("프로필이 없습니다");
-      expect(await exists("node_modules")).toBe(false);
-      expect(await exists("package-lock.json")).toBe(false);
-      expect(await readFile(path.join(out, "stray.txt"), "utf8")).toBe("x");
-    });
   });
 });
 

@@ -8,7 +8,7 @@ import type { Workspace } from "../workspace.js";
 import { withSystemLock } from "../workspaceLock.js";
 import type { ExistingSources, GenerateProgress, GenerateReport, LanguageGenerator } from "./generator.js";
 import { matchesAny } from "./glob.js";
-import { ATTEMPT_DIR, LlmGenerator } from "./llm.js";
+import { assertMaxAttempts, ATTEMPT_DIR, LlmGenerator } from "./llm.js";
 import { LOCK_FILE, launchHint, readLock, writeLock, type Lock } from "./lock.js";
 import { SUPPORTED_LANGUAGES, assertLanguage, getEntry, getProfile, type LanguageProfile } from "./profiles/index.js";
 import { writeLanguageFiles, writeScaffold } from "./scaffold.js";
@@ -34,16 +34,19 @@ export interface GenerateOptions {
 
 const INSTALLED_MARKER = ".specmock-installed";
 
-/**
- * --force로 언어를 바꿀 때 지우는 것은 화이트리스트뿐이다: 이전 lock의 sourceFiles, 이전 언어의 빌드 산출물, 설치 마커.
- * 옛 TS lock(sourceFiles 없음)은 TS 고정 파일과 src/routes/*.ts를 쓴다. 비게 된 디렉터리는 지운다.
- */
-async function clearForLanguageChange(outDir: string, previous: Lock): Promise<void> {
+/** --force 언어 변경은 .git·.specmock이 있는 디렉터리를 거부한다. 시도(LLM 생성) 전에 검사한다. */
+export async function assertNoVcsMarkers(outDir: string): Promise<void> {
   for (const marker of [".git", ".specmock"]) {
     if (await access(path.join(outDir, marker)).then(() => true, () => false)) {
       throw new Error(`${outDir}에 .git 또는 .specmock이 있어 언어를 바꿀 수 없습니다. --out으로 다른 디렉터리를 지정하세요`);
     }
   }
+}
+
+type PreviousForClear = Pick<Lock, "language" | "sourceFiles">;
+
+/** 언어 변경 때 지울 화이트리스트(outDir 상대): 이전 lock의 sourceFiles, 이전 언어의 빌드 산출물, 설치 마커. 옛 TS lock(sourceFiles 없음)은 TS 고정 파일과 src/routes/*.ts. */
+export async function languageChangeTargets(outDir: string, previous: PreviousForClear): Promise<string[]> {
   const targets = new Set(Object.keys(previous.sourceFiles));
   if (targets.size === 0 && previous.language === "ts") {
     for (const f of TS_FIXED_FILES) targets.add(f);
@@ -51,16 +54,26 @@ async function clearForLanguageChange(outDir: string, previous: Lock): Promise<v
   }
   for (const a of getEntry(previous.language)?.artifacts ?? []) targets.add(a);
   targets.add(INSTALLED_MARKER);
-  const dirs = new Set<string>();
   const root = path.resolve(outDir);
-  for (const rel of [...targets]) {
+  return [...targets].filter((rel) => {
     // 방어: lock(손상·조작)이 outDir 밖을 가리켜도 지우지 않는다.
     const r = path.relative(root, path.resolve(root, rel));
     if (r === "" || r.startsWith("..") || path.isAbsolute(r)) {
       console.warn(`경고: outDir 밖 경로라 삭제하지 않습니다: ${rel}`);
-      targets.delete(rel);
+      return false;
     }
-  }
+    return true;
+  });
+}
+
+/**
+ * --force로 언어를 바꿀 때 지우는 것은 화이트리스트뿐이다(languageChangeTargets). 비게 된 디렉터리는 지운다.
+ * 새 생성이 성공한 뒤 반영 직전에 부른다(실패한 시도가 기존 mock을 지우지 않게).
+ */
+export async function clearForLanguageChange(outDir: string, previous: PreviousForClear): Promise<void> {
+  await assertNoVcsMarkers(outDir);
+  const targets = await languageChangeTargets(outDir, previous);
+  const dirs = new Set<string>();
   for (const rel of targets) {
     await rm(path.join(outDir, rel), { recursive: true, force: true });
     for (let d = path.posix.dirname(rel); d !== "." && d !== "/"; d = path.posix.dirname(d)) dirs.add(d);
@@ -119,6 +132,7 @@ async function generateUnlocked(ws: Workspace, system: string, opts: GenerateOpt
   const spec = await ws.read(system, "mockspec.json", MockSpecSchema);
   const outDir = path.resolve(opts.outDir ?? defaultMockDir(system));
   if (opts.language !== undefined && !opts.profile) assertLanguage(opts.language);
+  assertMaxAttempts(opts.maxAttempts);
   if (!opts.force) await assertSafeOutDir(outDir);
   const previous = await readLock(outDir);
   if (previous && !getEntry(previous.language) && previous.language !== opts.profile?.language) {
@@ -127,7 +141,7 @@ async function generateUnlocked(ws: Workspace, system: string, opts: GenerateOpt
   const language = opts.profile?.language ?? opts.language ?? previous?.language ?? "ts";
   if (previous && previous.language !== language) {
     if (!opts.force) throw new Error(`이 디렉터리는 ${previous.language}로 생성됐습니다. 다른 언어로 바꾸려면 --force(기존 소스 삭제) 또는 --out을 쓰세요`);
-    await clearForLanguageChange(outDir, previous);
+    await assertNoVcsMarkers(outDir);   // 삭제 자체는 생성 성공 뒤(반영 직전)에 한다
   }
   await rm(path.join(outDir, ATTEMPT_DIR), { recursive: true, force: true });
 
@@ -153,6 +167,7 @@ async function generateUnlocked(ws: Workspace, system: string, opts: GenerateOpt
     : new TsHonoGenerator();
   const output = await generator.generate({ spec, outDir, existing, signal: opts.signal, onProgress: opts.onProgress });
 
+  if (previous && !sameLanguage) await clearForLanguageChange(outDir, previous);
   const written: string[] = [];
   await writeLanguageFiles(outDir, output, written);
   const s = await writeScaffold(spec, outDir, previous, { force: opts.force }, written);

@@ -41,11 +41,9 @@ export const javaProfile: LanguageProfile = {
   requires: "JDK 17 이상과 네트워크(첫 빌드)",
   referenceFiles: ["reference/pom.xml", "reference/Main.java"],
   environmentErrors: [
-    /JAVA_HOME environment variable is not defined correctly/,
-    /java\/javac command does not exist/,
-    /Failed to fetch https?:/,
-    /UnknownHostException/,
     /Could not transfer artifact/,
-    /release version 17 not supported|invalid target release/,
+    /Could not resolve dependencies/,
+    /JAVA_HOME (environment variable )?is not defined/,
+    /UnknownHostException/,
   ],
 };

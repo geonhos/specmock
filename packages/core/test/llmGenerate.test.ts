@@ -104,6 +104,37 @@ describe("LlmGenerator", () => {
     expect(await calls()).toBe(1);
   }, 30_000);
 
+  describe("환경 오류 패턴은 install 단계 출력에만 적용된다", () => {
+    const installFailing = (log: string) => ({ command: process.execPath, args: ["-e", `console.error(${JSON.stringify(log)}); process.exit(1)`] });
+
+    it("install 로그에 UnknownHostException과 COMPILATION ERROR가 함께 있으면 환경 오류가 아니라 재시도한다", async () => {
+      await respond(1, good());
+      await respond(2, good());
+      const profile = { ...fakeProfile, install: () => installFailing("[ERROR] COMPILATION ERROR : java.net.UnknownHostException"), environmentErrors: [/UnknownHostException/] };
+      await expect(new LlmGenerator(profile, adapter(), { maxAttempts: 2 }).generate({ spec, outDir: out, existing: null })).rejects.toBeInstanceOf(GenerationFailedError);
+      expect(await calls()).toBe(2);
+    }, 30_000);
+
+    it("Could not transfer artifact만 있으면 EnvironmentError", async () => {
+      await respond(1, good());
+      const profile = { ...fakeProfile, install: () => installFailing("Could not transfer artifact io.javalin:javalin:pom:6.7.0"), environmentErrors: [/Could not transfer artifact/] };
+      await expect(new LlmGenerator(profile, adapter()).generate({ spec, outDir: out, existing: null })).rejects.toBeInstanceOf(EnvironmentError);
+      expect(await calls()).toBe(1);
+    }, 30_000);
+
+    it("기동 로그의 UnknownHostException은 환경 오류가 아니라 재시도 대상", async () => {
+      await respond(1, good());
+      await respond(2, good());
+      const profile = {
+        ...fakeProfile,
+        start: { command: process.execPath, args: ["-e", "console.error('java.net.UnknownHostException: foo'); process.exit(1)"] },
+        environmentErrors: [/UnknownHostException/],
+      };
+      await expect(new LlmGenerator(profile, adapter(), { maxAttempts: 2 }).generate({ spec, outDir: out, existing: null })).rejects.toBeInstanceOf(GenerationFailedError);
+      expect(await calls()).toBe(2);
+    }, 60_000);
+  });
+
   it("증분: 응답에 없는 기존 파일은 유지하고 notes에 적는다", async () => {
     await respond(1, good());
     const existing = { files: [{ path: "lib/util.mjs", content: "export const x = 1;\n", userModified: false }] };

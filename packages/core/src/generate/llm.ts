@@ -32,6 +32,11 @@ export interface LlmGeneratorOptions {
 type FileOut = LanguageOutput["files"][number];
 type Progress = (stage: GenerateProgress["stage"], attempt: number, message: string) => void;
 
+/** 옵션 단계 검사: 시도 횟수는 1 이상의 정수. */
+export function assertMaxAttempts(n: number | undefined): void {
+  if (n !== undefined && (!Number.isInteger(n) || n < 1)) throw new Error("--max-attempts는 1 이상의 정수여야 합니다");
+}
+
 const isAbort = (e: unknown) => e instanceof Error && e.name === "AbortError";
 const SPAWN_FAILURE = /실행할 수 없습니다|시작할 수 없습니다/;
 
@@ -70,6 +75,7 @@ export class LlmGenerator implements LanguageGenerator {
 
   constructor(private readonly profile: LanguageProfile, private readonly adapter: LlmAdapter, opts: LlmGeneratorOptions = {}) {
     this.language = profile.language;
+    assertMaxAttempts(opts.maxAttempts);
     this.maxAttempts = opts.maxAttempts ?? 3;
     this.timeoutMs = opts.timeoutMs ?? 600_000;
     this.platform = opts.platform ?? process.platform;
@@ -153,7 +159,7 @@ export class LlmGenerator implements LanguageGenerator {
         await ensureInstalled(tmp, { lock, signal: ctx.signal });
       } catch (e) {
         if (isAbort(e)) throw e;
-        this.throwIfEnvironment((e as Error).message);
+        this.throwIfEnvironment((e as Error).message, true);
         return { attempt, stage: "build", errors: [(e as Error).message], contracts: [], runtime: [] };
       }
 
@@ -164,7 +170,7 @@ export class LlmGenerator implements LanguageGenerator {
         result = await verify(tmp, { signal: ctx.signal, runtime });
       } catch (e) {
         if (isAbort(e)) throw e;
-        this.throwIfEnvironment((e as Error).message);
+        this.throwIfEnvironment((e as Error).message, false);
         return { attempt, stage: "start", errors: [(e as Error).message], contracts: [], runtime: [] };
       }
       if (!verifyFailed(result)) return null;
@@ -176,8 +182,10 @@ export class LlmGenerator implements LanguageGenerator {
     }
   }
 
-  private throwIfEnvironment(message: string): void {
-    if (SPAWN_FAILURE.test(message) || (this.profile.environmentErrors ?? []).some((re) => re.test(message))) {
+  /** 실행 파일 spawn 실패는 어느 단계든 환경 오류. 프로필 패턴은 install 단계 출력에만 쓰고, 컴파일 오류가 섞여 있으면 환경 오류로 보지 않는다. */
+  private throwIfEnvironment(message: string, installStage: boolean): void {
+    const profileMatch = installStage && !/COMPILATION ERROR/.test(message) && (this.profile.environmentErrors ?? []).some((re) => re.test(message));
+    if (SPAWN_FAILURE.test(message) || profileMatch) {
       throw new EnvironmentError(this.profile.requires, message);
     }
   }
