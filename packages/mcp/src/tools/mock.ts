@@ -75,12 +75,14 @@ export function registerMockTools(server: McpServer, ws: Workspace, onEvent: OnE
     outputSchema: z.object({
       total: z.number(), passed: z.number(), failed: z.number(),
       failures: z.array(z.object({ featureId: z.string(), name: z.string(), expectedStatus: z.number(), actualStatus: z.number().nullable(), errors: z.array(z.string()) })),
+      runtime: z.array(z.object({ id: z.string(), name: z.string(), passed: z.boolean(), skipped: z.boolean(), request: z.string().nullable(), errors: z.array(z.string()) })),
       coverageFile: z.string(), coverageSummary: z.string(),
     }),
   }, guard(async ({ system, dir }, ctx) => {
     const v = await withProgress(ctx, onEvent, (ev) => verifyMock(ws, system, { dir, onEvent: ev }), opts.heartbeatMs ?? 5000, "verify");
     const failures = v.result.results.filter((r) => !r.passed).map((r) => ({ featureId: r.featureId, name: r.name, expectedStatus: r.expectedStatus, actualStatus: r.actualStatus ?? null, errors: r.errors }));
-    const data = { total: v.result.total, passed: v.result.passed, failed: v.result.failed, failures, coverageFile: absPath(ws.dir(system), v.coverageFile), coverageSummary: coverageSummary(v.coverageMarkdown) };
-    return ok(`contract: 통과 ${data.passed} / 실패 ${data.failed}. 커버리지: ${data.coverageFile}`, data);
+    const runtime = v.result.runtime.map((c) => ({ id: c.id, name: c.name, passed: c.passed, skipped: c.skipped, request: c.request, errors: c.errors }));
+    const data = { total: v.result.total, passed: v.result.passed, failed: v.result.failed, failures, runtime, coverageFile: absPath(ws.dir(system), v.coverageFile), coverageSummary: coverageSummary(v.coverageMarkdown) };
+    return ok(`contract: 통과 ${data.passed} / 실패 ${data.failed}, 런타임 계약 실패 ${v.result.runtimeFailed}. 커버리지: ${data.coverageFile}`, data);
   }));
 }

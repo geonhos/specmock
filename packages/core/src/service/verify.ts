@@ -22,8 +22,9 @@ export interface VerifyMockResult { dir: string; result: VerifyResult; coverageF
 /** mock을 띄워 contract test를 돌리고 .specmock/<system>/coverage.md를 쓴다. */
 export async function verifyMock(ws: Workspace, system: string, opts: { dir?: string; onEvent?: OnEvent; signal?: AbortSignal } = {}): Promise<VerifyMockResult> {
   const dir = await resolveMockDir(ws, system, opts.dir);
-  const result = await verify(dir, { onLog: (message) => opts.onEvent?.({ stage: "verify", message }), signal: opts.signal });
   const spec = await ws.read(system, "mockspec.json", MockSpecSchema);
+  const runtime = { notMocked: spec.notMocked, features: spec.features.map((f) => ({ method: f.method, path: f.path })) };
+  const result = await verify(dir, { onLog: (message) => opts.onEvent?.({ stage: "verify", message }), signal: opts.signal, runtime });
   const coverageMarkdown = renderCoverage(spec, result);
   const coverageFile = await ws.writeText(system, "coverage.md", coverageMarkdown);
   return { dir, result, coverageFile, coverageMarkdown };

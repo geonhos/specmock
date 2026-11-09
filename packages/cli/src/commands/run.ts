@@ -1,4 +1,4 @@
-import { formatCatalog, runPipeline } from "@specmock/core";
+import { formatCatalog, runPipeline, verifyFailed } from "@specmock/core";
 import type { Command } from "commander";
 import { fail, formatDiff, formatGenerate, formatMerge, formatVerify, SYSTEM_ARG_HELP, workspaceFrom } from "../context.js";
 
@@ -48,6 +48,6 @@ export function registerRun(program: Command): void {
         process.stdout.write(JSON.stringify({ system, catalog: { features: r.catalog.features.length }, selected: r.selection.resolved, generate: r.generate, verify: r.verify, coverage: r.coverageFile, extract: r.extract, merge: r.merge }, null, 2) + "\n");
       }
       // process.exit는 파이프로 흘러가는 stdout을 잘라먹을 수 있으므로 exitCode만 설정하고 자연 종료한다.
-      if (r.extractFailed || (r.verify && r.verify.failed > 0)) process.exitCode = 2;
+      if (r.extractFailed || (r.verify && verifyFailed(r.verify))) process.exitCode = 2;
     });
 }

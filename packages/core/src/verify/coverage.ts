@@ -59,6 +59,19 @@ export function renderCoverage(spec: MockSpec, result: VerifyResult | null): str
     }
   }
   lines.push("");
+  lines.push("## 런타임 계약");
+  lines.push("");
+  if (!result) {
+    lines.push("실행하지 않음 (`specmock verify` 로 실행)");
+  } else {
+    lines.push("| 계약 | 요청 | 기대 | 실제 | 결과 |");
+    lines.push("|---|---|---|---|---|");
+    for (const c of result.runtime) {
+      const verdict = c.skipped ? "건너뜀 (대상 없음)" : c.passed ? "통과" : `실패: ${c.errors.join("; ")}`;
+      lines.push(`| ${cell(c.name)} | ${cell(c.request ?? "-")} | ${c.expectedStatus} | ${c.actualStatus ?? "-"} | ${cell(verdict)} |`);
+    }
+  }
+  lines.push("");
   lines.push("## 선택되지 않은 기능");
   lines.push("");
   if (spec.notMocked.length === 0) lines.push("없음");

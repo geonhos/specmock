@@ -53,6 +53,8 @@ describe("renderCoverage", () => {
           errors: ["/id must be integer | got string", "line one\nline two"],
         },
       ],
+      runtime: [],
+      runtimeFailed: 0,
     };
     const md = renderCoverage(spec, result);
     const row = md.split("\n").find((l) => l.startsWith("| getThing |"));

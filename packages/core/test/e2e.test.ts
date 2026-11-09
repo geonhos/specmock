@@ -98,6 +98,11 @@ describe("e2e: ingest → analyze → select → generate → verify", () => {
     expect(result.total).toBe(1);
     expect(result.failed).toBe(0);
     expect((await readdir(path.join(out, "contracts"))).sort()).toEqual(["getPet.json"]);
+    const spec = await ws.read("petstore", "mockspec.json", MockSpecSchema);
+    const rt = await verify(out, { runtime: { notMocked: spec.notMocked, features: spec.features.map((f) => ({ method: f.method, path: f.path })) } });
+    expect(rt.runtime.map((c) => [c.id, c.passed]), JSON.stringify(rt.runtime, null, 2)).toEqual([["not_mocked", true], ["unknown_path", true]]);
+    expect(rt.runtimeFailed).toBe(0);
+    expect(rt.total).toBe(1);
   });
 
   it("fails fast with a clear message when the start command cannot be spawned", async () => {

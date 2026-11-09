@@ -32,6 +32,7 @@ export function formatGenerate(report: GenerateReport): string {
 export function formatVerify(result: VerifyResult, coveragePath: string): string {
   const lines = [`contract: 통과 ${result.passed} / 실패 ${result.failed} / 전체 ${result.total}`];
   for (const r of result.results.filter((x) => !x.passed)) lines.push(`  ✗ ${r.featureId} [${r.name}] ${r.errors.join("; ")}`);
+  for (const c of result.runtime.filter((x) => !x.passed)) lines.push(`  ✗ runtime [${c.name}] ${c.request ?? ""} ${c.errors.join("; ")}`);
   lines.push(`coverage: ${coveragePath}`);
   return lines.join("\n");
 }
