@@ -276,7 +276,7 @@ describe("generation tools", () => {
     await s.ok("ingest_spec", { system: "petstore", origins: [PETSTORE] });
     await s.ok("analyze_spec", { system: "petstore" });
     await s.ok("select_features", { system: "petstore", exprs: ["getPet"] });
-    expect(await s.err("generate_mock", { system: "petstore", language: "cobol" })).toMatch(/'cobol' 언어는 지원하지 않습니다\. 지원 언어: ts/);
+    expect(await s.err("generate_mock", { system: "petstore", language: "cobol" })).toMatch(/'cobol' 언어는 지원하지 않습니다\. 지원 언어: ts, java/);
   });
 
   it("generate_mock(ts) reports mode generated and the launch hint", async () => {

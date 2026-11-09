@@ -55,7 +55,7 @@ describe("lock 호환", () => {
 
 describe("언어 결정", () => {
   it("모르는 언어는 지원 언어 목록과 함께 거부하고 아무것도 쓰지 않는다", async () => {
-    await expect(generate(ws, "petstore", { outDir: out, language: "cobol" })).rejects.toThrow("'cobol' 언어는 지원하지 않습니다. 지원 언어: ts");
+    await expect(generate(ws, "petstore", { outDir: out, language: "cobol" })).rejects.toThrow("'cobol' 언어는 지원하지 않습니다. 지원 언어: ts, java");
     expect(await readLock(out)).toBeNull();
   });
 
@@ -82,7 +82,7 @@ describe("언어 결정", () => {
     await writeFile(lockPath, JSON.stringify({ ...lock, language: "cobol" }));
     const before = await readFile(path.join(out, "src", "server.ts"), "utf8");
     await writeFile(path.join(out, "src", "server.ts"), "// edited");
-    await expect(generate(ws, "petstore", { outDir: out, force: true })).rejects.toThrow("이 디렉터리는 'cobol' 언어로 생성됐지만 지원하지 않습니다. 지원 언어: ts");
+    await expect(generate(ws, "petstore", { outDir: out, force: true })).rejects.toThrow("이 디렉터리는 'cobol' 언어로 생성됐지만 지원하지 않습니다. 지원 언어: ts, java");
     expect(await readFile(path.join(out, "src", "server.ts"), "utf8")).toBe("// edited");
     expect(before).not.toBe("// edited");
   });

@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { matchesAny } from "../src/generate/glob.js";
 import { readStaticFiles } from "../src/generate/llm.js";
 import { launchCommand } from "../src/generate/lock.js";
+import { SUPPORTED_LANGUAGES, getProfile } from "../src/generate/profiles/index.js";
 import { javaProfile } from "../src/generate/profiles/java.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -76,5 +77,17 @@ describe("javaProfile", () => {
     expect(javaProfile.rules.join("\n")).toMatch(/target\/mock\.jar/);
     expect(javaProfile.rules.join("\n")).toMatch(/127\.0\.0\.1/);
     expect(await readFile(path.join(JAVA_TEMPLATES, ".mvn", "wrapper", "maven-wrapper.properties"), "utf8")).toMatch(/wrapperVersion=3\.3\.4/);
+  });
+
+  it("참조 발췌는 참조 mock과 같은 내용이다(프롬프트의 예시가 실제로 빌드·검증되는 코드)", async () => {
+    const FIXTURE = path.resolve(here, "fixtures", "java-petstore");
+    expect(await readFile(path.join(JAVA_TEMPLATES, "reference", "pom.xml"), "utf8")).toBe(await readFile(path.join(FIXTURE, "pom.xml"), "utf8"));
+    expect(await readFile(path.join(JAVA_TEMPLATES, "reference", "Main.java"), "utf8"))
+      .toBe(await readFile(path.join(FIXTURE, "src", "main", "java", "specmock", "petstore", "Main.java"), "utf8"));
+  });
+
+  it("java는 등록표에 있다", () => {
+    expect(SUPPORTED_LANGUAGES).toEqual(["ts", "java"]);
+    expect(getProfile("java")).toBe(javaProfile);
   });
 });
