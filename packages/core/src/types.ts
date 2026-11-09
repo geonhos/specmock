@@ -136,6 +136,11 @@ export type MockSpec = z.infer<typeof MockSpecSchema>;
 export const GenerateInfoSchema = z.object({
   outDir: z.string().min(1),
   generatedAt: z.string(),
+  /** 3A부터 기록. 옛 파일에는 없다. */
+  language: z.string().optional(),
+  /** LLM 생성기의 notes. coverage.md "## 생성 메모"에 옮긴다. */
+  notes: z.array(z.string()).optional(),
+  attempts: z.number().int().nonnegative().optional(),
 });
 export type GenerateInfo = z.infer<typeof GenerateInfoSchema>;
 

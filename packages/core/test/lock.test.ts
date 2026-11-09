@@ -134,7 +134,8 @@ describe("언어 결정", () => {
       await mkdir(path.join(out, "node_modules"));
       await writeFile(path.join(out, "package-lock.json"), "{}");
       await writeFile(path.join(out, "stray.txt"), "x");
-      await generate(ws, "petstore", { outDir: out, language: "java", force: true });   // java 생성기는 아직 없어 ts 파일이 다시 쓰인다
+      // 프로필 없는 java(등록만 된 테스트 언어)는 생성에서 실패하지만, 그 전에 ts 산출물 정리는 끝난다
+      await expect(generate(ws, "petstore", { outDir: out, language: "java", force: true })).rejects.toThrow("프로필이 없습니다");
       expect(await exists("node_modules")).toBe(false);
       expect(await exists("package-lock.json")).toBe(false);
       expect(await readFile(path.join(out, "stray.txt"), "utf8")).toBe("x");

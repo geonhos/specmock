@@ -1,0 +1,103 @@
+// packages/core/test/generateLlm.test.ts
+import { access, appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { analyze } from "../src/analyze/index.js";
+import { generate } from "../src/generate/index.js";
+import { readLock } from "../src/generate/lock.js";
+import { ingest } from "../src/ingest/index.js";
+import { ClaudeCodeAdapter } from "../src/llm/claudeCode.js";
+import { select } from "../src/select/index.js";
+import { verifyMock } from "../src/service/verify.js";
+import { GenerateInfoSchema, MockSpecSchema, type MockSpec } from "../src/types.js";
+import { hashText } from "../src/util/hash.js";
+import { Workspace } from "../src/workspace.js";
+import { fakeProfile, fakeServerSource } from "./fakeProfile.js";
+import { PETSTORE } from "./helpers.js";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const BIN = path.join(here, "bin");
+
+let dir: string;
+let genDir: string;
+let out: string;
+let ws: Workspace;
+const specNow = () => ws.read("petstore", "mockspec.json", MockSpecSchema);
+beforeEach(async () => {
+  dir = await mkdtemp(path.join(os.tmpdir(), "specmock-genllm-"));
+  genDir = path.join(dir, "gen");
+  out = path.join(dir, "mock");
+  await mkdir(genDir);
+  ws = new Workspace(path.join(dir, ".specmock"));
+  await ingest(ws, "petstore", [PETSTORE]);
+  await analyze(ws, "petstore");
+  await select(ws, "petstore", ["getPet", "createPet"]);
+});
+afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
+
+const adapter = () => new ClaudeCodeAdapter({ command: path.join(BIN, "claude-gen"), env: { GEN_DIR: genDir } });
+const respond = (n: number, body: unknown) => writeFile(path.join(genDir, `${n}.json`), JSON.stringify(body));
+const calls = async () => Number(await readFile(path.join(genDir, "count"), "utf8"));
+const opts = () => ({ outDir: out, profile: fakeProfile, adapter: adapter() });
+const answer = (spec: MockSpec, extra: { path: string; content: string | null }[] = []) => ({ files: [{ path: "server.mjs", content: fakeServerSource(spec) }, ...extra], notes: ["가정: 인증 없음"] });
+
+describe("generate (LLM 생성기)", () => {
+  it("파일·scaffold·lock·generate.json을 쓰고 verify가 통과한다", async () => {
+    await respond(1, answer(await specNow()));
+    const r = await generate(ws, "petstore", opts());
+    expect(r).toMatchObject({ language: "fake", attempts: 1, notes: ["가정: 인증 없음"], skipped: false, userModified: [] });
+    expect(r.written).toEqual(expect.arrayContaining(["server.mjs", "fixtures/getPet/200.json", "contracts/getPet.json"]));
+    expect(r.launch).toBe(`cd ${out} && node server.mjs`);
+    const lock = (await readLock(out))!;
+    expect(lock).toMatchObject({ language: "fake", generator: "llm", install: null, startTimeoutMs: 10_000, installTimeoutMs: 10_000 });
+    expect(lock.sourceFiles).toEqual({ "server.mjs": hashText(await readFile(path.join(out, "server.mjs"), "utf8")) });
+    expect(await ws.read("petstore", "generate.json", GenerateInfoSchema)).toMatchObject({ outDir: out, language: "fake", notes: ["가정: 인증 없음"], attempts: 1 });
+    const v = await verifyMock(ws, "petstore");
+    expect(v.result.failed + v.result.runtimeFailed).toBe(0);
+    expect(v.coverageMarkdown).toContain("## 생성 메모\n\n- 가정: 인증 없음");
+  }, 60_000);
+
+  it("mockspec이 같으면 LLM을 부르지 않는다(skipped)", async () => {
+    await respond(1, answer(await specNow()));
+    await generate(ws, "petstore", opts());
+    const r = await generate(ws, "petstore", opts());
+    expect(r).toMatchObject({ skipped: true, written: [], attempts: 0, launch: `cd ${out} && node server.mjs` });
+    expect(await calls()).toBe(1);
+  }, 60_000);
+
+  it("--force면 같은 mockspec이어도 다시 생성한다", async () => {
+    const spec = await specNow();
+    await respond(1, answer(spec));
+    await respond(2, answer(spec));
+    await generate(ws, "petstore", opts());
+    const r = await generate(ws, "petstore", { ...opts(), force: true });
+    expect(r.skipped).toBe(false);
+    expect(await calls()).toBe(2);
+  }, 60_000);
+
+  it("증분: 기존 소스·사용자 수정을 지시서에 넣고 content:null은 지운다", async () => {
+    await respond(1, answer(await specNow(), [{ path: "lib/old.mjs", content: "export {};\n" }]));
+    await generate(ws, "petstore", opts());
+    await appendFile(path.join(out, "server.mjs"), "// 사용자 메모\n");
+    await select(ws, "petstore", ["getPet", "createPet", "listPets"]);
+    await respond(2, answer(await specNow(), [{ path: "lib/old.mjs", content: null }]));
+    const r = await generate(ws, "petstore", opts());
+    const prompt2 = await readFile(path.join(genDir, "prompt-2.txt"), "utf8");
+    expect(prompt2).toContain("## 7. 증분 생성");
+    expect(prompt2).toContain("### server.mjs (사용자 수정)");
+    expect(prompt2).toContain("### lib/old.mjs");
+    await expect(access(path.join(out, "lib/old.mjs"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(r.userModified).toEqual(["server.mjs"]);
+    expect(Object.keys((await readLock(out))!.sourceFiles)).toEqual(["server.mjs"]);
+  }, 60_000);
+
+  it(".specmock-attempt/만 있는 디렉터리는 specmock 디렉터리로 보고, 시작할 때 지운다", async () => {
+    await mkdir(path.join(out, ".specmock-attempt"), { recursive: true });
+    await writeFile(path.join(out, ".specmock-attempt", "errors.md"), "x");
+    await respond(1, answer(await specNow()));
+    await generate(ws, "petstore", opts());
+    await expect(access(path.join(out, ".specmock-attempt"))).rejects.toMatchObject({ code: "ENOENT" });
+  }, 60_000);
+});

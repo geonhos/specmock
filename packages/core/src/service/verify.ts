@@ -25,7 +25,10 @@ export async function verifyMock(ws: Workspace, system: string, opts: { dir?: st
   const spec = await ws.read(system, "mockspec.json", MockSpecSchema);
   const runtime = { notMocked: spec.notMocked, features: spec.features.map((f) => ({ method: f.method, path: f.path })) };
   const result = await verify(dir, { onLog: (message) => opts.onEvent?.({ stage: "verify", message }), signal: opts.signal, runtime });
-  const coverageMarkdown = renderCoverage(spec, result);
+  // 생성 메모는 마지막 generate가 같은 디렉터리일 때만 붙인다.
+  const info = (await ws.exists(system, "generate.json")) ? await ws.read(system, "generate.json", GenerateInfoSchema) : null;
+  const notes = info && path.resolve(info.outDir) === dir ? (info.notes ?? []) : [];
+  const coverageMarkdown = renderCoverage(spec, result, notes);
   const coverageFile = await ws.writeText(system, "coverage.md", coverageMarkdown);
   return { dir, result, coverageFile, coverageMarkdown };
 }

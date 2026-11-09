@@ -6,7 +6,7 @@ const SOURCES: Fixture["source"][] = ["spec-example", "doc-sample", "schema-gene
 /** Markdown 표 셀 안에서 줄바꿈과 `|`가 표를 깨뜨리지 않게 한다. */
 const cell = (s: string) => s.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
 
-export function renderCoverage(spec: MockSpec, result: VerifyResult | null): string {
+export function renderCoverage(spec: MockSpec, result: VerifyResult | null, notes: string[] = []): string {
   const total = spec.features.length + spec.notMocked.length;
   const primary = spec.features.map((f) => f.fixtures.filter((x) => x.status >= 200 && x.status < 300).sort((a, b) => a.status - b.status)[0] ?? f.fixtures[0]);
   const bySource = Object.fromEntries(SOURCES.map((s) => [s, primary.filter((p) => p.source === s).length]));
@@ -77,5 +77,11 @@ export function renderCoverage(spec: MockSpec, result: VerifyResult | null): str
   if (spec.notMocked.length === 0) lines.push("없음");
   for (const n of spec.notMocked) lines.push(`- \`${n.id}\` ${n.method} ${n.path}`);
   lines.push("");
+  if (notes.length) {
+    lines.push("## 생성 메모");
+    lines.push("");
+    for (const n of notes) lines.push(`- ${n}`);
+    lines.push("");
+  }
   return lines.join("\n");
 }
