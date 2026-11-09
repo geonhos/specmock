@@ -56,7 +56,7 @@ it("언어 변경: 409 language-change-required → 확인 창, 확인하면 for
   let conflicts = 2; // force 없는 요청은 둘 다 409
   const api = setup({
     "POST /api/systems/petstore/generate": () => {
-      if (conflicts-- > 0) { return { status: 409, body: { ok: false, error: { code: "language-change-required", message: "이 디렉터리는 ts로 만들어졌어요. java로 바꾸려면 기존 소스를 지워야 해요 (현재 ts → 요청 java).", from: "ts", to: "java" } } }; }
+      if (conflicts-- > 0) { return { status: 409, body: { ok: false, error: { code: "language-change-required", message: "기존 소스를 지우지 않으면 바꿀 수 없어요.", from: "ts", to: "java" } } }; }
       return accepted();
     },
   });
