@@ -133,6 +133,28 @@ describe("재finalize와 언어 변경", () => {
     expect(await fin()).toMatchObject({ ok: true });
   }, 60_000);
 
+  it("세션 진행 중 prepare(reused)는 protectedHashes를 갱신하지 않는다: 변조 뒤 재prepare해도 finalize는 거부", async () => {
+    await prep();
+    await put("server.mjs", fakeServerSource(await spec()));
+    await put("fixtures/getPet/200.json", "{\"edited\":true}");
+    expect(await fin()).toMatchObject({ ok: false, reason: "protected-path-modified", errors: ["fixtures/getPet/200.json"] });
+    expect(await prep()).toMatchObject({ reused: true });
+    expect(await fin()).toMatchObject({ ok: false, reason: "protected-path-modified", errors: ["fixtures/getPet/200.json"] });
+  }, 60_000);
+
+  it("--force 언어 변경 세션: 사용자가 고친 fixture는 보존하고 경고한다", async () => {
+    await generate(ws, "petstore", { outDir: out });
+    const edited = "{\"mine\":true}\n";
+    await writeFile(path.join(out, "fixtures", "getPet", "200.json"), edited);
+    await prepareGeneration(ws, "petstore", { outDir: out, profile: fakeProfile, force: true });
+    await put("server.mjs", fakeServerSource(await spec()));
+    const r = await fin();
+    expect(r).toMatchObject({ ok: true });
+    expect(r.ok && r.warnings.join("\n")).toContain("fixtures/getPet/200.json");
+    expect(await readFile(path.join(out, "fixtures", "getPet", "200.json"), "utf8")).toBe(edited);
+    expect(await access(path.join(out, "src", "server.ts")).then(() => true, () => false)).toBe(false);
+  }, 60_000);
+
   it("finalize 사이에 사용자가 fixture를 고치면 여전히 protected-path-modified", async () => {
     await prep();
     await put("server.mjs", fakeServerSource(await spec()));

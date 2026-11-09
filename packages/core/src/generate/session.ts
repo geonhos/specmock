@@ -107,10 +107,13 @@ export async function prepareGeneration(ws: Workspace, system: string, opts: Pre
     if (await ws.exists(system, REQUEST_FILE)) {
       const old = await ws.read(system, REQUEST_FILE, GenerateRequestSchema);
       if (old.mockspecHash === mockspecHash && old.language === language && old.outDir === outDir) {
-        // 복구 경로: 이전 finalize 뒤 보호 파일이 달라졌을 수 있으니 해시를 다시 계산해 지시서를 갱신한다.
-        const hashes = await protectedHashes(outDir, profile);
-        if (JSON.stringify(hashes) !== JSON.stringify(old.protectedHashes)) {
-          await ws.write(system, REQUEST_FILE, GenerateRequestSchema, { ...old, protectedHashes: hashes });
+        // 복구 경로: finalize가 끝난 뒤(진행 표식 없음, lock 있음)에만 보호 파일 해시를 다시 계산해 지시서를 갱신한다.
+        // 진행 중(표식 있음)에 갱신하면 그 사이의 보호 경로 변조가 기준으로 굳어 finalize 검사가 무력해진다.
+        if (!(await readSessionMarker(outDir)) && previous) {
+          const hashes = await protectedHashes(outDir, profile);
+          if (JSON.stringify(hashes) !== JSON.stringify(old.protectedHashes)) {
+            await ws.write(system, REQUEST_FILE, GenerateRequestSchema, { ...old, protectedHashes: hashes });
+          }
         }
         return { mode: "session", requestPath, outDir, language, reused: true, nextSteps: nextSteps(system, requestPath, outDir, profile) };
       }
