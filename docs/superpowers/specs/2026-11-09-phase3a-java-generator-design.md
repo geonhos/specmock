@@ -220,7 +220,9 @@ sequenceDiagram
 - 임시 디렉터리에서 검증하고 통과한 뒤에만 outDir에 반영한다. 왜: 실패한 시도가 사용자의 기존 mock을 깨지 않는다. 증분 생성 때 임시 디렉터리에는 사용자 fixture 수정분도 복사한다(검증은 실제 fixture로).
 - Maven의 로컬 저장소(`~/.m2`)는 시도 간에 공유되므로 두 번째 빌드부터는 빠르다. 임시 디렉터리에는 `target/`만 새로 생긴다.
 - 최종 실패(maxAttempts 초과): 종료 코드 **5**(verify 실패 2와 구분). 마지막 시도의 파일과 오류 요약을 `outDir/.specmock-attempt/`에 남기고 경로를 알려 준다. outDir의 기존 내용은 바꾸지 않는다. 다음 `generate`가 이 디렉터리를 지운다.
-- 환경 오류는 재시도하지 않는다: `java`/`./mvnw` spawn 실패, 빌드 로그에 `JAVA_HOME`, `UnknownHostException`, `Could not transfer artifact`가 보이면 즉시 "JDK 17 이상과 네트워크가 필요합니다"로 종료(코드 1). 왜: 모델이 고칠 수 없는 실패에 토큰을 쓰지 않는다.
+- 환경 오류는 재시도하지 않는다: `java`/`./mvnw` spawn 실패, 또는 **install 단계** 로그에 Maven 해석 실패 문구(`Could not transfer artifact`, `Could not resolve dependencies`, `JAVA_HOME is not defined`, `UnknownHostException`)가 보이고 **컴파일 오류 표식(`COMPILATION ERROR`)은 없을 때** 즉시 "JDK 17 이상과 네트워크가 필요합니다"로 종료(코드 1). 기동 · contract 단계 로그에는 적용하지 않는다. 왜: 모델이 고칠 수 없는 실패에 토큰을 쓰지 않되, 모델 코드가 `UnknownHostException`을 참조해 javac가 그 줄을 되찍는 경우를 환경 오류로 오판하지 않는다(리뷰 Minor).
+- `--force`로 언어를 바꾸는 경우, 이전 언어 파일의 삭제(2.3 화이트리스트)는 **생성이 통과한 뒤, 반영 직전**에 한다. 왜: 시도 전에 지우면 생성 실패 시 기존 mock이 깨진다(리뷰 Major).
+- 알려진 한계: 반영 단계(언어 파일 → fixtures/contracts → lock)는 원자적이지 않다. 중간에 실패하면 새 소스 + 옛 lock이 남아 다음 증분 생성이 그 파일을 `userModified`로 볼 수 있다. 드물고 `--force`로 복구된다. `outDir/.specmock-attempt/`에는 빌드 로그 꼬리가 남으므로 outDir을 커밋한다면 `.gitignore`에 넣기를 README에 안내한다.
 - 어댑터: `LlmAdapter.extract` → `complete(req: { prompt, schema, signal?, timeoutMs? })`로 이름과 시그니처를 일반화한다. 기존 호출부는 바꿔 끼운다. 기본 타임아웃은 호출마다 주입(추출 180s 유지, 생성 600s). 그 외(`--json-schema`, 빈 임시 cwd, `--no-session-persistence`, `--tools ""`, 모델 옵션)는 그대로.
 
 ### 3.2 세션 모드 (MCP · 스킬)
@@ -245,6 +247,8 @@ sequenceDiagram
 - `generate_mock`이 `ts`면 지금처럼 즉시 생성(LLM 없음). `java`면 지시서를 쓰고 멈춘다. 이미 지시서가 있고 mockspec 해시가 같으면 다시 쓰지 않고 같은 안내를 돌려준다.
 - `finalize_generation` 거부 조건: 지시서 없음(`no-request`), 지시서의 mockspecHash ≠ 현재 mockspec(`stale-request`: "select가 바뀌었습니다. generate_mock을 다시 호출하세요"), 보호 경로 파일이 바뀌었거나 생겼음(`protected-path-modified`, 파일 목록 포함), `sourceGlobs` 안에 파일이 하나도 없음(`no-sources`), 파일 수 > maxFiles. 실패는 예외가 아니라 `{ok:false, reason, errors}`(submit_extraction과 같은 관례).
 - finalize는 **컴파일하지 않는다**. 컴파일 · 기동 · contract는 `verify_mock`의 일이다. 왜: 역할을 하나씩 두고(작성 → 확정 → 검증), 세션 모드에서 Claude가 이미 컴파일했을 가능성이 높다.
+- finalize는 **여러 번** 할 수 있어야 한다(verify 실패 → 소스 수정 → finalize → verify 반복). 그래서 보호 경로 변경 판정은 "지시서의 `protectedHashes`"와 비교하되, finalize가 성공하면 그 시점의 보호 파일 해시로 `protectedHashes`를 **갱신**한다. 빌드 산출물(`target/**`)과 설치 마커는 비교에서 제외한다(verify가 만든다). 왜: 그렇지 않으면 finalize 자신이 쓴 fixtures · contracts · lock이 "새로 생긴 보호 파일"로 잡혀 2번째 finalize가 항상 거부된다(리뷰 Major).
+- 세션 모드에서 `--force`로 언어를 바꿀 때는 prepare가 이전 lock(언어 · `sourceFiles`)을 `.specmock-session.json`에 기록하고, finalize가 성공 직전에 2.3의 화이트리스트 정리(이전 언어의 소스 · 산출물 · 마커)를 수행한다. 왜: 그렇지 않으면 옛 TS 소스와 `node_modules`가 어떤 화이트리스트에도 들지 않는 고아가 된다.
 - CLI 대응: `generate --llm session`(지시서 작성 후 멈춤, 다음 할 일 안내), `generate --finalize`(finalize). analyze의 `--prepare`/`--merge`와 같은 모양이다.
 
 ### 3.3 런타임 계약 (verify가 확인하는 것)
