@@ -1,5 +1,5 @@
 // packages/core/src/generate/scaffold.ts
-import { mkdir, readdir, readFile, rm, rmdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rm, rmdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Contract, MockFeature, MockSpec } from "../types.js";
 import { hashText } from "../util/hash.js";
@@ -29,7 +29,10 @@ export function lowest2xxStatus(f: MockFeature): number {
 export async function writeLanguageFiles(outDir: string, output: LanguageOutput, written: string[]): Promise<void> {
   for (const f of output.files) {
     if (f.content === null) await rm(path.join(outDir, f.path), { force: true });
-    else await writeOut(outDir, f.path, f.content, written);
+    else {
+      await writeOut(outDir, f.path, f.content, written);
+      if (f.mode !== undefined) await chmod(path.join(outDir, f.path), f.mode);
+    }
   }
   for (const p of output.prune ?? []) {
     const keep = new Set(output.files.filter((f) => f.content !== null && path.posix.dirname(f.path) === p.dir).map((f) => path.posix.basename(f.path)));
