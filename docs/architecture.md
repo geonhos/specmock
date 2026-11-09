@@ -106,6 +106,10 @@ flowchart LR
     SL --> M[mockspec.json<br/>선택된 기능 + fixture + contract]
     M --> MOCK["mock/&lt;system&gt;/<br/>서버 코드 · fixtures · contracts"]
     MOCK --> COV[coverage.md<br/>믿을 수 있는 범위]
+    T[target.json<br/>실제 시스템] --> REC[record]
+    M --> REC
+    REC --> RD[recorded/ · drift.md]
+    RD -.->|fixture 출처 recorded| SL
 ```
 
 | 파일 | 만드는 단계 | 쓰는 단계 | 핵심 내용 |
@@ -120,6 +124,9 @@ flowchart LR
 | `selection.json` | select | select / generate | 선택 표현식, 해석 결과, 선택 시점의 `catalogIds`. 재현과 추가 선택의 기준 |
 | `mockspec.json` | select | generate / verify | 선택된 기능 + fixtures + contracts + assumptions. **단일 진실** |
 | `coverage.md` | verify | 사용자 | fixture 출처 비율, 신뢰도 분포, 가정 목록, contract 결과 |
+| `target.json` | 사용자 | record | 실제 시스템 `baseUrl`·`headers`(`${ENV}`만)·`params`·`timeoutMs`. 커밋 금지 |
+| `recorded/<기능>.json` | record | select | 실제 응답(상태·헤더·본문, 비밀 마스킹)과 `mockspecHash` |
+| `drift.md` | record | 사용자 | 스펙과 다름·상태 불일치·건너뜀·실패 |
 
 ## 입력별 처리 경로
 
@@ -222,11 +229,12 @@ gantt
     MCP 서버(2A) · Web UI(2B)            :done, a2, after a1, 2
     section 3단계
     다른 언어 생성(3A, Java)             :done, a3, after a2, 1
-    Proxy/녹화 · API 키                  :a4, after a3, 1
+    녹화(record, 3B)                     :done, a4, after a3, 1
+    API 키                               :a5, after a4, 1
 ```
 
 | 단계 | 완료 기준 |
 |---|---|
 | 1 | OpenAPI와 웹 문서에서 TS mock 생성, contract test 통과, coverage.md 출력, 기능 추가 재생성 |
 | 2 | 2A: MCP로 Claude Code에서 도구 호출(셸 없이 끝까지). 2B: 브라우저 화면에서 같은 흐름 |
-| 3 | 3A(완료): 검증된 MockSpec으로 Java mock을 LLM이 생성하고 같은 verify 통과. 이후: 키 있으면 실제 시스템 전달·녹화 |
+| 3 | 3A(완료): 검증된 MockSpec으로 Java mock을 LLM이 생성하고 같은 verify 통과. 3B(완료): `record`가 실제 시스템 응답을 녹화해 fixture로 반영, drift.md. 이후: API 키 어댑터 |

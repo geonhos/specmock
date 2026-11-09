@@ -331,7 +331,20 @@ mock/<system>/
 
 ## 커버리지 리포트
 
-`verify`가 `.specmock/<system>/coverage.md`를 씁니다(`--report <path>`로 사본 저장). fixture 출처 비율(spec-example / doc-sample / schema-generated / empty), 신뢰도 분포, 가정 목록, contract 결과, 선택되지 않은 기능이 들어 있습니다. 이 파일이 "이 mock을 어디까지 믿을지"의 근거입니다.
+`verify`가 `.specmock/<system>/coverage.md`를 씁니다(`--report <path>`로 사본 저장). fixture 출처 비율(recorded / spec-example / doc-sample / schema-generated / empty), 신뢰도 분포, 가정 목록, contract 결과, 선택되지 않은 기능이 들어 있습니다. 이 파일이 "이 mock을 어디까지 믿을지"의 근거입니다.
+
+## 실제 시스템 녹화
+
+실제 시스템이 있으면 정상 요청을 보내 응답을 fixture로 씁니다. `.specmock/<system>/target.json`을 직접 만듭니다.
+
+```json
+{ "baseUrl": "https://api.example.com/v2", "headers": { "Authorization": "Bearer ${PETS_TOKEN}" }, "params": { "petId": "123" } }
+```
+
+- 비밀 값은 `${환경변수}`로만 적습니다. 값은 실행한 셸의 환경변수에서 읽고 파일·로그·drift.md에 남기지 않습니다. 그래도 이 파일은 커밋하지 마세요(`.specmock/`를 `.gitignore`에 두세요).
+- `specmock record <system>`은 GET·HEAD만 보냅니다. 생성·삭제 요청까지 보내려면 `--allow-mutating`(실제 데이터가 바뀝니다). `--feature <id>`로 일부만, `--refresh`로 기존 녹화를 지우고 다시, `--no-apply`로 mock 반영 없이 녹화만 합니다.
+- 결과: `.specmock/<system>/recorded/<기능>.json`, 스펙과의 차이는 `drift.md`("스펙과 다름" = 응답이 스키마와 다름, "상태 불일치" = 기대한 상태 코드가 아님. 404면 `params`로 실제 id를 지정). 녹화 응답은 fixture 출처 `recorded`로 들어가고, 이미 생성한 mock은 LLM 호출 없이 fixture만 바뀝니다. 직접 고친 fixture는 보존됩니다.
+- 종료 코드: 0 전부 일치 · 2 drift 있음 · 1 오류. 동작 확인: `pnpm record:check`(공개 Petstore v3, 네트워크 필요).
 
 ## 제한 사항
 
@@ -371,7 +384,7 @@ pnpm typecheck     # src와 test 모두
 pnpm test:e2e      # 브라우저 E2E(별도). 처음 한 번 `pnpm exec playwright install chromium`
 ```
 
-실제 claude 호출 확인은 `pnpm llm:check`, Java 생성·verify까지는 `pnpm llm:check --java`입니다(JDK 17, 수 분, 구독 호출).
+실제 claude 호출 확인은 `pnpm llm:check`, Java 생성·verify까지는 `pnpm llm:check --java`입니다(JDK 17, 수 분, 구독 호출). 실제 네트워크 녹화 확인은 `pnpm record:check`입니다.
 
 변경 후 위 명령이 통과하면 PR을 엽니다. 설계 의도는 [설계 문서](docs/superpowers/specs/2026-11-04-specmock-design.md)에, 단계별 작업 단위는 [구현 계획](docs/superpowers/plans/)(1A, 1B, 2A, 2B, 3A)에 있습니다. 설계와 다르게 구현한 지점은 설계 문서 12장 "구현 중 변경"에 이유와 함께 적습니다.
 
@@ -383,5 +396,6 @@ pnpm test:e2e      # 브라우저 E2E(별도). 처음 한 번 `pnpm exec playwri
 | 1B | 웹 문서·PDF 분석, LLM 어댑터, ego-browser 수확, Claude Code 스킬, `select --interactive` — 완료 |
 | 2A | 공용 서비스 층, MCP 서버(도구 10개), 스킬 MCP 우선 흐름 — 완료 |
 | 2B | Web UI(`specmock ui`, MCP `open_ui`로 11개), 파일 잠금, Playwright E2E — 완료 |
-| 3A | 다른 언어 생성: `LanguageGenerator`·언어 프로필, Java(Maven + Javalin) LLM 생성과 검증 루프, 세션 모드, MCP `finalize_generation`(12개) ← 현재 |
-| 3 | Proxy/녹화, API 키 어댑터, 다른 언어 프로필 추가 |
+| 3A | 다른 언어 생성: `LanguageGenerator`·언어 프로필, Java(Maven + Javalin) LLM 생성과 검증 루프, 세션 모드, MCP `finalize_generation`(12개) — 완료 |
+| 3B | 녹화(record): `target.json`의 실제 시스템에 정상 요청을 보내 `recorded/`·`drift.md`, fixture 출처 `recorded`, MCP `record_responses`(13개) ← 현재 |
+| 3 | 녹화(record, 3B 완료), 다른 언어 생성(3A 완료), API 키 어댑터 |

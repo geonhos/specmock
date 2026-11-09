@@ -533,7 +533,7 @@ specmock/
 - Web UI 서버는 LLM으로 `ClaudeCodeAdapter`를 쓴다.
 - 상세: [2026-11-05-phase2a-mcp-design.md](2026-11-05-phase2a-mcp-design.md), 2B는 [2026-11-06-phase2b-web-ui.md](../plans/2026-11-06-phase2b-web-ui.md) 계획과 실행 기록.
 
-3단계 인터페이스 경계: 3A(다른 언어 생성)를 먼저 했다. `generate`는 언어 무관 `scaffold`(fixtures·contracts·lock·보존 판정)와 `LanguageGenerator`(`LanguageOutput`: 파일 · install · start · sourceGlobs)로 나뉜다. TS는 `TsHonoGenerator`(템플릿, 출력 바이트 동일), 그 밖의 언어는 `LlmGenerator`가 언어 프로필(Java: Maven + Javalin) + MockSpec + TS 참조 구현을 프롬프트로 claude에 보내고 임시 디렉터리에서 빌드·contract·런타임 계약(501·404)을 통과한 결과만 반영한다(기본 3회, 실패 시 exit 5). verify는 lock의 install·start만 안다. 세션 모드(`--llm session` → `--finalize`, MCP `finalize_generation`)로 대화 안에서도 생성한다. MCP 도구는 12개. 상세: [2026-11-09-phase3a-java-generator-design.md](2026-11-09-phase3a-java-generator-design.md), [계획](../plans/2026-11-09-phase3a-java-generator.md). Proxy/녹화와 API 키 어댑터는 남은 3단계다.
+3단계 인터페이스 경계: 3A(다른 언어 생성)를 먼저 했다. `generate`는 언어 무관 `scaffold`(fixtures·contracts·lock·보존 판정)와 `LanguageGenerator`(`LanguageOutput`: 파일 · install · start · sourceGlobs)로 나뉜다. TS는 `TsHonoGenerator`(템플릿, 출력 바이트 동일), 그 밖의 언어는 `LlmGenerator`가 언어 프로필(Java: Maven + Javalin) + MockSpec + TS 참조 구현을 프롬프트로 claude에 보내고 임시 디렉터리에서 빌드·contract·런타임 계약(501·404)을 통과한 결과만 반영한다(기본 3회, 실패 시 exit 5). verify는 lock의 install·start만 안다. 세션 모드(`--llm session` → `--finalize`, MCP `finalize_generation`)로 대화 안에서도 생성한다. MCP 도구는 12개. 상세: [2026-11-09-phase3a-java-generator-design.md](2026-11-09-phase3a-java-generator-design.md), [계획](../plans/2026-11-09-phase3a-java-generator.md). 3B는 프록시 대신 `record` 명령이다: mockspec의 정상 contract를 `target.json`의 실제 시스템에 보내 `recorded/`에 저장하고 `drift.md`를 쓴다. `select`는 녹화를 최우선 fixture 출처 `recorded`로 쓰고, `generate`는 입력(`inputHash`)이 같으면 LLM 없이 fixture만 다시 쓴다. MCP 도구는 13개(`record_responses`). 상세: [2026-11-09-phase3b-record-design.md](2026-11-09-phase3b-record-design.md), [계획](../plans/2026-11-09-phase3b-record.md). API 키 어댑터는 남은 3단계다.
 
 ## 11. 주요 결정 기록
 
@@ -543,6 +543,7 @@ specmock/
 | Claude Code 구독 우선 | API 키 | 추가 비용 없이 바로 동작. 어댑터로 교체 가능 |
 | TypeScript 참조 구현만 템플릿 | 언어별 템플릿 | mock이라 언어 다양성보다 빠른 검증이 중요. 다른 언어는 검증된 MockSpec으로 LLM 생성 |
 | 문서 샘플 추출 + 출처/신뢰도 우선, Proxy/녹화는 후순위 | 녹화를 1단계에 | 키를 못 받는 경우가 대부분. 키 없이 판단을 돕는 정보가 더 중요 |
+| 녹화는 끝나는 `record` 명령 | 상주 프록시 | ui-server 작업 구조(시스템당 하나·끝나는 작업)와 잠금에 맞고, HTTPS·요청↔기능 매칭 문제가 없다. 비밀은 `${ENV}`로만 |
 | 파일 기반 상태 | 메모리 / DB | 인터페이스 간 공유, 재개, 디버깅 |
 | 선택 표현식 + selection.json | 대화형 UI만 | 재현 가능하고 스크립트화 가능. 나중에 기능 추가가 쉬움 |
 | 코어 → CLI → MCP 순서 | MCP 우선 | CLI가 디버깅이 빠르고 end-to-end를 먼저 확인할 수 있음. MCP는 같은 코어의 얇은 껍데기 |

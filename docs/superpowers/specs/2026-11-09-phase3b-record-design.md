@@ -1,7 +1,7 @@
 # 3B 설계: 실제 시스템 녹화(record)와 스펙 대조
 
 작성일: 2026-11-09
-상태: 승인됨(브레인스토밍 완료). 구현 전.
+상태: 구현 완료(2026-11-09).
 상위 문서: [specmock 설계 문서](2026-11-04-specmock-design.md) §10 3단계 "Proxy/녹화".
 코드 조사: `.harness/analyst-3b-survey.md`(HEAD d10311e 기준, 저장소 밖 작업 파일).
 
@@ -170,7 +170,7 @@ interface RecordResult {
   skipped: { featureId: string; reason: "mutating" }[];
   failed: { featureId: string; reason: string }[];
   driftPath: string;
-  applied: { selected: number; generate: GenerateReport } | null;
+  applied: { selected: number; generate: GenerateReport | null } | null;   // generate가 null: generate.json이 없거나 LLM 재생성이 필요해 반영을 미룸
 }
 ```
 
@@ -256,7 +256,7 @@ sequenceDiagram
 - `docs/architecture.md`: 상태 파일 표에 `target.json`·`recorded/`·`drift.md`, 흐름도에 record, 로드맵의 "Proxy/녹화"를 "녹화(record, 3B)"로.
 - 설계 문서 §10(3단계 경계 문단에 3B), §11(결정: 프록시 대신 record 명령), §12(구현 중 변경은 구현 뒤).
 - SKILL.md: 명령 목록에 `record`, MCP 도구 절에 `record_responses`, "키는 셸 env로만" 규칙, 변경 요청 포함 전 사용자 확인.
-- 이 문서 §7 "구현 중 변경"에 리뷰로 바뀐 결정을 기록.
+- 이 문서 §9 "구현 중 변경"에 리뷰로 바뀐 결정을 기록.
 
 ## 7. 구현 순서
 
@@ -276,3 +276,20 @@ sequenceDiagram
 
 - `pnpm record:check`의 대상 공개 API는 구현 때 안정적인 것을 고른다(응답이 자주 바뀌면 drift가 늘 나온다 — 그 자체는 정상 동작이므로 "실행이 끝나고 drift.md가 생기면 OK" 기준).
 - 녹화 파일에 `request.headers`를 남기는 것이 필요한지(마스킹해도 헤더 이름은 남는다). 지금은 "무엇을 보냈는지 재현"을 위해 남기되, 리뷰에서 불필요하다고 보면 이름만 남기거나 뺀다.
+
+## 9. 구현 중 변경
+
+계획 문서 "설계 문서 대비 결정 사항" D1–D18 중 설계와 달라진 것: generate lock에 `inputHash`를 두어 fixture만 바뀐 경우 LLM 없이 다시 씀(D4·D5), `applied.generate`가 `null`일 수 있음(generate 전 녹화, D17), `GET target`에 `example`·`error` 추가(D18). 아래는 리뷰로 바뀐 결정이다.
+
+| 항목 | 설계·초안 | 구현 | 이유 |
+|---|---|---|---|
+| 실패 종류 | 요청 실패를 network·timeout 둘로 | `failure.kind`에 `"invalid"` 추가(`요청 불가:`). 보낼 수 없는 요청은 첫 전송 판정(연결 실패 시 중단)에 세지 않음 | contract path의 `?`·`#` 같은 문제를 연결 실패로 오인하지 않음 |
+| `--refresh` 삭제 시점 | 녹화 전에 `recorded/` 삭제 | 실행이 끝난 뒤 이번에 쓰지 않은 파일만 삭제(중단되면 유지) | 연결 실패·취소로 기존 녹화를 잃지 않음 |
+| 마스킹 범위 | 헤더·쿼리 | 비2xx 응답 본문과 `raw`(비JSON) 본문도 마스킹, `maskHeaders`에 `auth`·`session` 포함 | 오류 응답·평문 본문에 토큰이 실려 올 수 있음 |
+| apply의 선택 재실행 | `selection.selected`를 표현식으로 다시 해석 | 모든 항목이 현재 카탈로그 id와 정확히 일치하면 `literalIds: true` | UI·`--interactive`가 저장한 `all`·`3` 같은 id가 다른 집합이 되는 것을 막음 |
+| apply 오류 | 던져서 결과 버림 | 녹화·drift.md는 남기고 `notes`에 `반영 실패: …`, `applied: null`로 결과 반환. CLI 종료 코드 2 | 이미 쓴 녹화 결과를 잃지 않음 |
+| generate 생략 판단 | mockspec 해시가 다르면 다시 생성 | `inputHash`(fixture 본문·출처·assumptions 제외)가 같으면 scaffold만 다시 씀(D4·D5), 다르거나 옛 lock이면 apply는 LLM을 부르지 않고 안내만 | 녹화는 fixture만 바꾸므로 LLM 비용을 쓰지 않음 |
+| `generate.json` 없음 | 녹화 후 오류 | select까지만 하고 "generate를 실행하면 반영됩니다"(D17) | mock을 만든 적 없어도 녹화·drift는 유용 |
+| `GET target` | 파일 내용 | `example`(TARGET_EXAMPLE)·`error` 포함(D18) | Web UI가 만드는 법과 읽기 실패를 보여 줌 |
+| `joinUrl` | 경로에 `?`·`#` 허용 | 거부(요청 불가) | 쿼리가 path로 섞여 다른 URL로 나가는 것을 막음 |
+| 빈 환경변수 | 빈 문자열로 치환 | `${ENV}`가 비어 있으면 오류(변수 이름만 표시) | 빈 `Authorization`으로 조용히 401이 나는 것을 막음 |
