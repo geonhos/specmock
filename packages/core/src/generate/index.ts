@@ -140,7 +140,7 @@ async function generateUnlocked(ws: Workspace, system: string, opts: GenerateOpt
   }
   const language = opts.profile?.language ?? opts.language ?? previous?.language ?? "ts";
   if (previous && previous.language !== language) {
-    if (!opts.force) throw new Error(`이 디렉터리는 ${previous.language}로 생성됐습니다. 다른 언어로 바꾸려면 --force(기존 소스 삭제) 또는 --out을 쓰세요`);
+    if (!opts.force) throw new Error(`이 디렉터리는 ${previous.language}로 생성됐습니다. 다른 언어로 바꾸려면 강제 덮어쓰기(force: 기존 소스 삭제) 또는 다른 출력 디렉터리를 쓰세요`);
     await assertNoVcsMarkers(outDir);   // 삭제 자체는 생성 성공 뒤(반영 직전)에 한다
   }
   await rm(path.join(outDir, ATTEMPT_DIR), { recursive: true, force: true });

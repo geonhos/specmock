@@ -83,13 +83,22 @@ public final class Main {
         .result(Files.readString(Path.of("fixtures", r.id(), r.status() + ".json")));
   }
 
-  /** path·query 값은 문자열로 온다. 스키마의 type에 맞춰 바꾼다(TS 템플릿의 ajv coerceTypes와 같은 효과). */
+  /** path·query 값은 문자열로 온다. 스키마의 type에 맞춰 바꾼다(TS 템플릿의 ajv coerceTypes와 같은 효과). 바꿀 수 없으면 문자열로 두어 검증이 400을 내게 한다. */
   private static JsonNode coerce(JsonNode shape, String part, String key, String raw) {
     String pointer = "/properties/" + part + "/properties/" + key.replace("~", "~0").replace("/", "~1") + "/type";
-    String type = shape.at(pointer).asText("");
+    JsonNode t = shape.at(pointer);
+    String type = "";
+    if (t.isArray()) {
+      for (JsonNode n : t) if (!n.asText("").equals("null")) { type = n.asText(""); break; }
+    } else {
+      type = t.asText("");
+    }
     try {
       if (type.equals("integer")) return JSON.getNodeFactory().numberNode(Long.parseLong(raw));
-      if (type.equals("number")) return JSON.getNodeFactory().numberNode(Double.parseDouble(raw));
+      if (type.equals("number")) {
+        double d = Double.parseDouble(raw);
+        if (Double.isFinite(d)) return JSON.getNodeFactory().numberNode(d);
+      }
     } catch (NumberFormatException keep) { /* 문자열로 두어 검증이 실패하게 한다 */ }
     if (type.equals("boolean") && (raw.equals("true") || raw.equals("false"))) return JSON.getNodeFactory().booleanNode(raw.equals("true"));
     return JSON.getNodeFactory().textNode(raw);

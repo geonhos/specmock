@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/server";
 import {
-  assertLanguage, defaultMockDir, finalizeGeneration, findFeature, generate, listFeatures, prepareGeneration, readLock, select,
+  assertLanguage, defaultMockDir, finalizeGeneration, findFeature, generate, listFeatures, prepareGeneration, readLock, readSessionMarker, select,
   SUPPORTED_LANGUAGES, verifyMock, type OnEvent, type Workspace,
 } from "@specmock/core";
 import { z } from "zod";
@@ -82,7 +82,7 @@ export function registerMockTools(server: McpServer, ws: Workspace, onEvent: OnE
   }, guard(async ({ system, language, outDir, force }) => {
     if (language !== undefined) assertLanguage(language);
     const target = path.resolve(outDir ?? defaultMockDir(system));
-    const effective = language ?? (await readLock(target))?.language ?? "ts";
+    const effective = language ?? (await readLock(target))?.language ?? (await readSessionMarker(target))?.language ?? "ts";
     if (effective !== "ts") {
       const p = await prepareGeneration(ws, system, { outDir, force, language: effective });
       const head = p.reused ? "지시서가 이미 최신입니다" : "지시서를 썼습니다";

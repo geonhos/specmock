@@ -65,7 +65,7 @@ describe("언어 결정", () => {
     const lock = JSON.parse(await readFile(lockPath, "utf8"));
     await writeFile(lockPath, JSON.stringify({ ...lock, language: "java" }));
     await expect(generate(ws, "petstore", { outDir: out, language: "ts" })).rejects.toThrow(
-      "이 디렉터리는 java로 생성됐습니다. 다른 언어로 바꾸려면 --force(기존 소스 삭제) 또는 --out을 쓰세요",
+      "이 디렉터리는 java로 생성됐습니다. 다른 언어로 바꾸려면 강제 덮어쓰기(force: 기존 소스 삭제) 또는 다른 출력 디렉터리를 쓰세요",
     );
   });
 

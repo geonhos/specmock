@@ -11,7 +11,7 @@ export const javaProfile: LanguageProfile = {
     "Java 17로 컴파일한다(pom.xml의 maven.compiler.release = 17).",
     "의존성은 Javalin 6.7.0(io.javalin:javalin), com.fasterxml.jackson.core:jackson-databind 2.19.4, com.networknt:json-schema-validator 1.5.9, org.slf4j:slf4j-simple 2.0.20만 쓴다. 다른 라이브러리를 더하지 않는다.",
     "빌드 플러그인은 maven-compiler-plugin 3.15.0과 maven-shade-plugin 3.6.2. finalName은 mock이고 shade가 Main-Class 매니페스트를 가진 target/mock.jar 하나를 만든다.",
-    "소스는 패키지 specmock.<system>(영문 소문자·숫자만)에 둔다. 진입점은 그 패키지의 Main 클래스다.",
+    "소스는 패키지 specmock.<name>에 둔다. <name>은 system을 소문자로 바꾸고 [^a-z0-9]를 _로 바꾼 것이며, 숫자로 시작하면 _를 앞에 붙인다(petstore → specmock.petstore). 진입점은 그 패키지의 Main 클래스다.",
     "포트는 환경 변수 PORT(없으면 4010), 바인드 주소는 127.0.0.1이다.",
     "요청 검증은 기능별 validation 스키마({params, query, body})를 networknt(Draft 7)로 한다. path·query 값은 스키마의 type(integer·number·boolean)에 맞춰 바꾼 뒤 검증한다. 실패하면 400 {\"error\":\"validation_failed\",\"details\":[...]}.",
     "응답 바디는 요청마다 작업 디렉터리 기준 fixtures/<기능 id>/<status>.json을 읽어 그대로 보낸다(application/json). 204·205는 바디 없이 상태만 보낸다.",

@@ -10,6 +10,8 @@ import { generate } from "../src/generate/index.js";
 import { ingest } from "../src/ingest/index.js";
 import { ClaudeCodeAdapter } from "../src/llm/claudeCode.js";
 import { select } from "../src/select/index.js";
+import { readLock } from "../src/generate/lock.js";
+import { startMock } from "../src/verify/server.js";
 import { verifyMock } from "../src/service/verify.js";
 import { Workspace } from "../src/workspace.js";
 import { PETSTORE } from "./helpers.js";
@@ -70,4 +72,19 @@ describe.skipIf(!javaVersion)("Java 생성 (JDK·네트워크 필요)", () => {
     expect(r).toMatchObject({ skipped: true, attempts: 0 });
     expect(await readFile(path.join(genDir, "count"), "utf8")).toBe("1");
   }, 900_000);
+
+  it("정수 path 파라미터는 숫자로 바꿔 검증하고, 바꿀 수 없으면 400 validation_failed", async () => {
+    // 선택한 기능(getPet, createPet)에 integer query가 없어 정수 path 파라미터(/pets/{petId})로 확인한다.
+    const lock = (await readLock(out))!;
+    const mock = await startMock(out, lock);
+    try {
+      const ok = await fetch(`http://127.0.0.1:${mock.port}/pets/1`, { headers: { "X-API-Key": "k" } });
+      expect(ok.status).toBe(200);
+      const bad = await fetch(`http://127.0.0.1:${mock.port}/pets/abc`, { headers: { "X-API-Key": "k" } });
+      expect(bad.status).toBe(400);
+      expect(((await bad.json()) as { error: string }).error).toBe("validation_failed");
+    } finally {
+      await mock.stop();
+    }
+  }, 300_000);
 });

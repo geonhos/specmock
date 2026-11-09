@@ -75,6 +75,7 @@ describe("javaProfile", () => {
     expect(javaProfile.rules.join("\n")).toMatch(/Javalin 6\.7\.0/);
     expect(javaProfile.rules.join("\n")).toMatch(/target\/mock\.jar/);
     expect(javaProfile.rules.join("\n")).toMatch(/127\.0\.0\.1/);
+    expect(javaProfile.rules.join("\n")).toContain("specmock.<name>에 둔다. <name>은 system을 소문자로 바꾸고 [^a-z0-9]를 _로 바꾼 것이며, 숫자로 시작하면 _를 앞에 붙인다");
     expect(await readFile(path.join(JAVA_TEMPLATES, ".mvn", "wrapper", "maven-wrapper.properties"), "utf8")).toMatch(/wrapperVersion=3\.3\.4/);
   });
 

@@ -2,6 +2,18 @@ import { assertLanguage, finalizeGeneration, generate, prepareGeneration } from 
 import type { Command } from "commander";
 import { fail, formatGenerate, parseAttempts, printJsonOr, SYSTEM_ARG_HELP, workspaceFrom } from "../context.js";
 
+/** core는 언어 변경 거부 문구를 중립으로 쓴다. CLI에서는 옵션 이름을 덧붙인다. */
+async function withCliHint<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (e) {
+    if (e instanceof Error && e.message.includes("로 생성됐습니다. 다른 언어로 바꾸려면")) {
+      throw new Error(`${e.message} (\`--force\` 또는 \`--out\`)`);
+    }
+    throw e;
+  }
+}
+
 interface Opts { lang?: string; llm: string; model?: string; maxAttempts?: string; finalize: boolean; out?: string; force: boolean; json: boolean }
 
 export function registerGenerate(program: Command): void {
@@ -38,7 +50,7 @@ export function registerGenerate(program: Command): void {
       }
 
       if (opts.llm === "session") {
-        const p = await prepareGeneration(ws, system, { outDir: opts.out, force: opts.force, language: opts.lang });
+        const p = await withCliHint(() => prepareGeneration(ws, system, { outDir: opts.out, force: opts.force, language: opts.lang }));
         printJsonOr(opts.json, p, () => [
           `${p.reused ? "지시서가 이미 최신입니다" : "지시서를 썼습니다"}: ${p.requestPath}`,
           `출력 위치: ${p.outDir} (${p.language})`,
@@ -47,10 +59,10 @@ export function registerGenerate(program: Command): void {
         return;
       }
 
-      const report = await generate(ws, system, {
+      const report = await withCliHint(() => generate(ws, system, {
         outDir: opts.out, force: opts.force, language: opts.lang, model: opts.model, maxAttempts,
         onProgress: (e) => process.stderr.write(e.message + "\n"),
-      });
+      }));
       printJsonOr(opts.json, report, () =>
         `${formatGenerate(report)}\n실행: ${report.launch}\n검증: specmock verify ${system}`,
       );

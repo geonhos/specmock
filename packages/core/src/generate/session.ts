@@ -76,7 +76,7 @@ const SessionMarkerSchema = z.object({
   previous: z.object({ language: z.string(), sourceFiles: z.record(z.string(), z.string()) }).optional(),
 });
 
-async function readMarker(outDir: string): Promise<z.infer<typeof SessionMarkerSchema> | null> {
+export async function readSessionMarker(outDir: string): Promise<z.infer<typeof SessionMarkerSchema> | null> {
   try {
     return SessionMarkerSchema.parse(JSON.parse(await readFile(path.join(outDir, SESSION_MARKER), "utf8")));
   } catch {
@@ -97,7 +97,7 @@ export async function prepareGeneration(ws: Workspace, system: string, opts: Pre
     const profile = opts.profile ?? getProfile(language);
     if (!profile) throw new Error(`'${language}' 언어 프로필이 없습니다.`);
     if (previous && previous.language !== language && !opts.force) {
-      throw new Error(`이 디렉터리는 ${previous.language}로 생성됐습니다. 다른 언어로 바꾸려면 --force(기존 소스 삭제) 또는 --out을 쓰세요`);
+      throw new Error(`이 디렉터리는 ${previous.language}로 생성됐습니다. 다른 언어로 바꾸려면 강제 덮어쓰기(force: 기존 소스 삭제) 또는 다른 출력 디렉터리를 쓰세요`);
     }
     const languageChange = previous !== null && previous.language !== language;
     if (languageChange) await assertNoVcsMarkers(outDir);
@@ -148,7 +148,7 @@ export async function finalizeGeneration(ws: Workspace, system: string, opts: { 
 
     const statics = new Set(profile.staticFiles.map((s) => s.path));
     // --force 언어 변경: 이전 언어의 소스·산출물은 새 소스로 세지 않고, 성공 직전에 지운다.
-    const marker = await readMarker(outDir);
+    const marker = await readSessionMarker(outDir);
     const stale = new Set(marker?.previous ? await languageChangeTargets(outDir, marker.previous) : []);
     const sources = files.filter((rel) => !stale.has(rel) && !statics.has(rel) && rel !== SESSION_MARKER && matchesAny(profile.sourceGlobs, rel) && !matchesAny(profile.protectedPaths, rel));
     if (sources.length === 0) return { ok: false, reason: "no-sources", errors: [`${profile.sourceGlobs.join(", ")} 범위에 파일이 없습니다`] };

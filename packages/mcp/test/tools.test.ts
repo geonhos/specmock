@@ -1,4 +1,4 @@
-import { readFile, realpath, mkdtemp, rm, writeFile, cp, readdir, symlink } from "node:fs/promises";
+import { access, readFile, realpath, mkdtemp, rm, writeFile, cp, readdir, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -286,5 +286,28 @@ describe("generation tools", () => {
     const g = await s.ok("generate_mock", { system: "petstore", language: "ts" });
     expect(g).toMatchObject({ mode: "generated", language: "ts", outDir: path.join(dir, "mock", "petstore") });
     expect(g.launch).toBe(`cd ${path.join(dir, "mock", "petstore")} && npm install && npm start`);
+  });
+
+  it("generate_mock(java) is session mode; omitting language afterwards keeps session mode", async () => {
+    await s.ok("ingest_spec", { system: "petstore", origins: [PETSTORE] });
+    await s.ok("analyze_spec", { system: "petstore" });
+    await s.ok("select_features", { system: "petstore", exprs: ["getPet"] });
+    const out = path.join(dir, "mock", "petstore");
+    const g = await s.ok("generate_mock", { system: "petstore", language: "java" });
+    expect(g).toMatchObject({ mode: "session", language: "java", outDir: out, requestPath: path.join(dir, ".specmock", "petstore", "generate-request.json") });
+    expect(g.nextSteps.length).toBeGreaterThan(0);
+    await access(path.join(out, "mvnw"));
+    await access(path.join(out, ".specmock-session.json"));
+    // lock 없이 표식만 있는 상태에서 language를 생략해도 java 세션으로 이어진다
+    const again = await s.ok("generate_mock", { system: "petstore" });
+    expect(again).toMatchObject({ mode: "session", language: "java", outDir: out });
+  });
+
+  it("generate_mock(java) on a ts outDir without force is a tool error", async () => {
+    await s.ok("ingest_spec", { system: "petstore", origins: [PETSTORE] });
+    await s.ok("analyze_spec", { system: "petstore" });
+    await s.ok("select_features", { system: "petstore", exprs: ["getPet"] });
+    await s.ok("generate_mock", { system: "petstore", language: "ts" });
+    expect(await s.err("generate_mock", { system: "petstore", language: "java" })).toContain("ts로 생성됐습니다");
   });
 });
