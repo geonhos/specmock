@@ -56,6 +56,9 @@ describe("maskHeaders", () => {
       token: "t",
       "X-Client-Secret": "s",
       "x-password-hint": "p",
+      "Proxy-Authorization": "Basic x",
+      "x-auth": "a",
+      "x-session-id": "s",
       "X-Tenant": "dev",
       accept: "application/json",
     })).toEqual({
@@ -66,6 +69,9 @@ describe("maskHeaders", () => {
       token: "***",
       "X-Client-Secret": "***",
       "x-password-hint": "***",
+      "Proxy-Authorization": "***",
+      "x-auth": "***",
+      "x-session-id": "***",
       "X-Tenant": "dev",
       accept: "application/json",
     });

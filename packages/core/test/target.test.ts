@@ -30,6 +30,10 @@ describe("substituteEnv", () => {
   it("없는 변수는 이름만 담아 던진다", () => {
     expect(() => substituteEnv("Bearer ${PETS_TOKEN}", {})).toThrow("환경변수 PETS_TOKEN이 없습니다");
   });
+
+  it("빈 문자열 값도 없는 것과 같이 던진다", () => {
+    expect(() => substituteEnv("Bearer ${PETS_TOKEN}", { PETS_TOKEN: "" })).toThrow("환경변수 PETS_TOKEN이 비어 있습니다");
+  });
 });
 
 describe("readTarget", () => {

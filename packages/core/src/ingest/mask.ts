@@ -14,7 +14,7 @@ export function maskSecrets(text: string): string {
 }
 
 const SECRET_HEADER_EXACT = new Set(["authorization", "cookie", "set-cookie"]);
-const SECRET_HEADER_PART = ["key", "token", "secret", "password"];
+const SECRET_HEADER_PART = ["key", "token", "secret", "password", "auth", "session"];
 
 /** 헤더 이름만 보고 값 전체를 가린다(값 길이·모양은 보지 않는다). 키 대소문자는 그대로 둔다. */
 export function maskHeaders(headers: Record<string, string>): Record<string, string> {

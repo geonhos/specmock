@@ -35,13 +35,14 @@ export interface ContractRun {
   schemaErrors: string[];
   /** verify의 ContractResult.errors와 같은 문구·순서. */
   errors: string[];
-  failure: { kind: "timeout" | "network"; message: string } | null;
+  failure: { kind: "timeout" | "network" | "invalid"; message: string } | null;
 }
 
 const KEEP_HEADERS = ["content-type", "content-length"];
 
 /** baseUrl 경로 뒤에 path를 붙인다. `new URL(path, base)`는 base의 `/v2`를 지우므로 쓰지 않는다. */
 export function joinUrl(baseUrl: string, p: string, query: Record<string, string> = {}): URL {
+  if (/[?#]/.test(p)) throw new Error(`contract path에는 ?나 #를 쓸 수 없습니다: ${p}`);
   const url = new URL(baseUrl);
   url.pathname = url.pathname.replace(/\/+$/, "") + (p.startsWith("/") ? p : `/${p}`);
   url.search = "";
@@ -58,9 +59,14 @@ export function mergeHeaders(...parts: Record<string, string>[]): Record<string,
 }
 
 export async function runContract(baseUrl: string, c: Contract, opts: ContractRunOptions = {}): Promise<ContractRun> {
-  const url = joinUrl(baseUrl, opts.path ?? c.request.path, opts.query ?? c.request.query);
   const errors: string[] = [];
   const schemaErrors: string[] = [];
+  let url: URL;
+  try { url = joinUrl(baseUrl, opts.path ?? c.request.path, opts.query ?? c.request.query); } catch (e) {
+    const message = (e as Error).message;
+    errors.push(`request failed: ${message}`);
+    return { url: "", status: null, headers: {}, kind: null, body: undefined, bytes: 0, schemaErrors, errors, failure: { kind: "invalid", message } };
+  }
   const run: ContractRun = { url: url.toString(), status: null, headers: {}, kind: null, body: undefined, bytes: 0, schemaErrors, errors, failure: null };
   let validate: ReturnType<Ajv["compile"]> | null = null;
   if (c.expect.schema) { try { validate = (opts.ajv ?? makeAjv()).compile(c.expect.schema); } catch (e) { errors.push(`schema: ${(e as Error).message}`); } }

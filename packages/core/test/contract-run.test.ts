@@ -25,7 +25,21 @@ describe("joinUrl", () => {
   });
 });
 
+describe("joinUrl ?·#", () => {
+  it("path에 ?나 #가 있으면 던진다", () => {
+    expect(() => joinUrl("https://h.example", "/pets?x=1")).toThrow("contract path에는 ?나 #를 쓸 수 없습니다: /pets?x=1");
+    expect(() => joinUrl("https://h.example", "/pets#a")).toThrow("?나 #");
+  });
+});
+
 describe("runContract", () => {
+  it("path에 ?가 있으면 요청 없이 request failed로 보고한다", async () => {
+    const r = await runContract("http://127.0.0.1:1", contract({ path: "/pets?x=1" }));
+    expect(r.status).toBeNull();
+    expect(r.errors).toEqual(["request failed: contract path에는 ?나 #를 쓸 수 없습니다: /pets?x=1"]);
+    expect(r.failure?.kind).toBe("invalid");
+  });
+
   it("일치: status·스키마가 맞으면 errors가 비고 content-type·content-length만 남긴다", async () => {
     t = await startFakeTarget(() => ({ status: 200, body: { id: 1 }, headers: { "x-secret": "s" } }));
     const r = await runContract(t.url, contract());

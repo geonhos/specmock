@@ -41,11 +41,12 @@ export interface Target {
 
 const ENV_REF = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 
-/** `${NAME}`을 env[NAME]으로 바꾼다. 없으면 이름만 담아 던진다. */
+/** `${NAME}`을 env[NAME]으로 바꾼다. 없거나 비어 있으면 이름만 담아 던진다. */
 export function substituteEnv(value: string, env: Record<string, string | undefined>): string {
   return value.replace(ENV_REF, (_m, name: string) => {
     const v = env[name];
     if (v === undefined) throw new Error(`환경변수 ${name}이 없습니다`);
+    if (v === "") throw new Error(`환경변수 ${name}이 비어 있습니다`);
     return v;
   });
 }

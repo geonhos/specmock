@@ -91,7 +91,7 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
       if (f.kind === "network" && first) {
         throw new Error(maskSecrets(`실제 시스템에 연결하지 못했습니다(${f.message}): ${target.baseUrl}. baseUrl을 확인하세요`));
       }
-      const reason = maskSecrets(f.kind === "timeout" ? `시간 초과(${target.timeoutMs}ms)` : `연결 실패: ${f.message}`);
+      const reason = maskSecrets(f.kind === "timeout" ? `시간 초과(${target.timeoutMs}ms)` : f.kind === "invalid" ? `요청 불가: ${f.message}` : `연결 실패: ${f.message}`);
       result.failed.push({ featureId, reason });
       entries.push({ ...base, kind: "failed", reason });
       continue;
