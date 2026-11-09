@@ -1,5 +1,5 @@
 import { generateSync } from "json-schema-faker";
-import type { Feature, Fixture, JsonSchema } from "../types.js";
+import type { Feature, Fixture, JsonSchema, Recorded } from "../types.js";
 
 export const FIXTURE_SEED = 42;
 
@@ -29,7 +29,7 @@ function wanted(status: number): boolean {
   return (status >= 200 && status < 300) || (status >= 400 && status < 500);
 }
 
-export function buildFixtures(feature: Feature): { fixtures: Fixture[]; assumptions: string[] } {
+export function buildFixtures(feature: Feature, recorded: Recorded | null = null): { fixtures: Fixture[]; assumptions: string[] } {
   const fixtures: Fixture[] = [];
   const assumptions: string[] = [];
   const statuses = Object.keys(feature.responses).map(Number).filter(wanted).sort((a, b) => a - b);
@@ -57,6 +57,16 @@ export function buildFixtures(feature: Feature): { fixtures: Fixture[]; assumpti
     fixtures.push({ status: 200, body: {}, source: "empty" });
     fixtures.sort((a, b) => a.status - b.status);
     assumptions.push(`${feature.id}: 2xx 응답 정의 없음. 200 빈 객체를 반환한다.`);
+  }
+  if (recorded) {
+    const served = fixtures.filter((x) => x.status >= 200 && x.status < 300).sort((a, b) => a.status - b.status)[0];
+    const r = recorded.response;
+    const skip = (why: string) => assumptions.push(`${feature.id}: ${why} 사용하지 않음(추측 fixture 사용)`);
+    if (r.status !== served.status) skip(`녹화 응답이 ${r.status}라`);
+    else if (r.kind === "json") fixtures[fixtures.indexOf(served)] = { status: served.status, body: r.body, source: "recorded" };
+    else if (r.kind === "truncated") skip("녹화 응답이 1MB를 넘어");
+    else if (r.kind === "raw" || served.status !== 204) skip("녹화 응답 바디가 JSON이 아니라");
+    // 204 + 빈 바디: 기존 empty fixture와 같으므로 그대로 둔다.
   }
   return { fixtures, assumptions };
 }

@@ -96,7 +96,7 @@ export type Selection = z.infer<typeof SelectionSchema>;
 export const FixtureSchema = z.object({
   status: z.number().int(),
   body: z.unknown(),
-  source: z.enum(["spec-example", "doc-sample", "schema-generated", "empty"]),
+  source: z.enum(["recorded", "spec-example", "doc-sample", "schema-generated", "empty"]),
 });
 export type Fixture = z.infer<typeof FixtureSchema>;
 /** `.specmock/<system>/recorded/<featureId>.json` — record가 쓴다(설계 3B §3.2). */

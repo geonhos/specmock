@@ -66,4 +66,11 @@ describe("renderCoverage", () => {
     // 셀 구분자는 헤더와 같은 5열이어야 한다.
     expect(row!.split(/(?<!\\)\|/).length).toBe(7);
   });
+  it("fixture 출처 표의 첫 행은 recorded", () => {
+    const recorded: MockSpec = { ...spec, features: spec.features.map((f) => ({ ...f, fixtures: f.fixtures.map((x) => ({ ...x, source: "recorded" as const })) })) };
+    const md = renderCoverage(recorded, null);
+    const rows = md.split("\n").filter((l) => /^\| (recorded|spec-example|doc-sample|schema-generated|empty) \|/.test(l));
+    expect(rows[0]).toBe(`| recorded | ${spec.features.length} | 실제 시스템 응답을 녹화 |`);
+    expect(rows).toHaveLength(5);
+  });
 });

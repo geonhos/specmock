@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildFixtures } from "../src/select/fixtures.js";
-import type { Feature } from "../src/types.js";
+import type { Feature, Recorded } from "../src/types.js";
 
 function f(responses: Feature["responses"]): Feature {
   return {
@@ -59,5 +59,39 @@ describe("buildFixtures", () => {
     const body = fixtures[0].body as { children: unknown[] };
     expect(body.children.length).toBeGreaterThan(0);
     expect(body.children.every((c) => c === null)).toBe(true);
+  });
+});
+
+function rec(status: number, over: Partial<Recorded["response"]> = {}): Recorded {
+  return {
+    featureId: "x.get", recordedAt: "2026-11-09T00:00:00.000Z", mockspecHash: "h",
+    request: { method: "GET", path: "/x", query: {}, headers: {} },
+    response: { status, kind: "json", headers: {}, body: { real: true }, bytes: 13, ...over },
+    contract: { expectedStatus: 200, statusMatch: status === 200, schemaErrors: [] },
+  };
+}
+const R = { "200": { schema: { type: "object" }, examples: [] }, "404": { schema: { type: "object" }, examples: [] } };
+
+describe("buildFixtures with recording", () => {
+  it("기본 2xx와 status가 같은 JSON 녹화는 recorded fixture가 된다", () => {
+    const { fixtures, assumptions } = buildFixtures(f(R), rec(200));
+    expect(fixtures[0]).toEqual({ status: 200, body: { real: true }, source: "recorded" });
+    expect(fixtures[1].source).toBe("schema-generated");
+    expect(assumptions).toEqual([]);
+  });
+
+  it("status 다름·truncated·비JSON은 무시하고 사유를 남긴다", () => {
+    expect(buildFixtures(f(R), rec(404)).assumptions).toEqual(["x.get: 녹화 응답이 404라 사용하지 않음(추측 fixture 사용)"]);
+    expect(buildFixtures(f(R), rec(200, { kind: "truncated", body: undefined, truncated: true })).assumptions)
+      .toEqual(["x.get: 녹화 응답이 1MB를 넘어 사용하지 않음(추측 fixture 사용)"]);
+    const raw = buildFixtures(f(R), rec(200, { kind: "raw", body: { raw: "<html>", contentType: "text/html" } }));
+    expect(raw.assumptions).toEqual(["x.get: 녹화 응답 바디가 JSON이 아니라 사용하지 않음(추측 fixture 사용)"]);
+    expect(raw.fixtures[0].source).toBe("schema-generated");
+  });
+
+  it("204 빈 녹화는 바꿀 것이 없어 조용히 넘어간다", () => {
+    const { fixtures, assumptions } = buildFixtures(f({ "204": { schema: null, examples: [] } }), rec(204, { kind: "empty", body: null }));
+    expect(fixtures).toEqual([{ status: 204, body: null, source: "empty" }]);
+    expect(assumptions).toEqual([]);
   });
 });

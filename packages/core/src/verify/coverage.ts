@@ -1,7 +1,7 @@
 import type { Fixture, MockSpec } from "../types.js";
 import type { VerifyResult } from "./index.js";
 
-const SOURCES: Fixture["source"][] = ["spec-example", "doc-sample", "schema-generated", "empty"];
+const SOURCES: Fixture["source"][] = ["recorded", "spec-example", "doc-sample", "schema-generated", "empty"];
 
 /** Markdown 표 셀 안에서 줄바꿈과 `|`가 표를 깨뜨리지 않게 한다. */
 const cell = (s: string) => s.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
@@ -26,6 +26,7 @@ export function renderCoverage(spec: MockSpec, result: VerifyResult | null, note
   lines.push("");
   lines.push("| 출처 | 개수 | 의미 |");
   lines.push("|---|---|---|");
+  lines.push(`| recorded | ${bySource["recorded"]} | 실제 시스템 응답을 녹화 |`);
   lines.push(`| spec-example | ${bySource["spec-example"]} | 스펙의 example 그대로. 실제 모양에 가장 가깝다 |`);
   lines.push(`| doc-sample | ${bySource["doc-sample"]} | 문서에서 추출한 샘플 |`);
   lines.push(`| schema-generated | ${bySource["schema-generated"]} | 스키마로 생성. 구조는 맞지만 값은 임의 |`);
