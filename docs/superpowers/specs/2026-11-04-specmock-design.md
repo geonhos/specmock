@@ -533,7 +533,7 @@ specmock/
 - Web UI 서버는 LLM으로 `ClaudeCodeAdapter`를 쓴다.
 - 상세: [2026-11-05-phase2a-mcp-design.md](2026-11-05-phase2a-mcp-design.md), 2B는 [2026-11-06-phase2b-web-ui.md](../plans/2026-11-06-phase2b-web-ui.md) 계획과 실행 기록.
 
-3단계 인터페이스 경계: `Generator` 인터페이스(`generate(mockspec, outDir)`)에 `TsHonoGenerator`(템플릿)와 `LlmGenerator`(언어 인자 + MockSpec + 참조 구현을 프롬프트로)를 둔다. verify는 lock 파일의 기동 명령만 알면 된다.
+3단계 인터페이스 경계: 3A(다른 언어 생성)를 먼저 했다. `generate`는 언어 무관 `scaffold`(fixtures·contracts·lock·보존 판정)와 `LanguageGenerator`(`LanguageOutput`: 파일 · install · start · sourceGlobs)로 나뉜다. TS는 `TsHonoGenerator`(템플릿, 출력 바이트 동일), 그 밖의 언어는 `LlmGenerator`가 언어 프로필(Java: Maven + Javalin) + MockSpec + TS 참조 구현을 프롬프트로 claude에 보내고 임시 디렉터리에서 빌드·contract·런타임 계약(501·404)을 통과한 결과만 반영한다(기본 3회, 실패 시 exit 5). verify는 lock의 install·start만 안다. 세션 모드(`--llm session` → `--finalize`, MCP `finalize_generation`)로 대화 안에서도 생성한다. MCP 도구는 12개. 상세: [2026-11-09-phase3a-java-generator-design.md](2026-11-09-phase3a-java-generator-design.md), [계획](../plans/2026-11-09-phase3a-java-generator.md). Proxy/녹화와 API 키 어댑터는 남은 3단계다.
 
 ## 11. 주요 결정 기록
 
@@ -547,7 +547,7 @@ specmock/
 | 선택 표현식 + selection.json | 대화형 UI만 | 재현 가능하고 스크립트화 가능. 나중에 기능 추가가 쉬움 |
 | 코어 → CLI → MCP 순서 | MCP 우선 | CLI가 디버깅이 빠르고 end-to-end를 먼저 확인할 수 있음. MCP는 같은 코어의 얇은 껍데기 |
 
-## 12. 구현 중 변경 (1A, 1B, 2A)
+## 12. 구현 중 변경 (1A, 1B, 2A, 3A)
 
 리뷰 과정에서 설계를 바꾼 지점. 위 본문에는 반영되어 있고, 여기에는 이유만 남긴다.
 
@@ -596,3 +596,17 @@ specmock/
 | **2A** 청크 제출은 `submitExtraction`(해시 확인 · 엄격 검증 · 원자적 쓰기 · manifest) | 세션 모드 수기 파일은 manifest가 없어 문서가 바뀌어도 예전 결과가 쓰였다. 제출 시점 검증이어야 Claude가 바로 고친다 |
 | **2A** MCP 서버 루트 = 실행 디렉터리(대비책 `--root`) | Claude Code가 플러그인 MCP 서버를 프로젝트 디렉터리에서 띄우는 것을 확인했다 |
 | **2A** 플러그인 `mcpServers`가 `${CLAUDE_PLUGIN_ROOT}/../packages/mcp/dist/server.js` 실행, npm 배포 안 함 | clone해서 쓰는 전제. CLI도 배포하지 않으므로 MCP만 배포할 이득이 없다 |
+| **3A** MCP 도구는 12개(`finalize_generation` 하나 추가) | 3A 설계 §4.2의 "11 → 13"은 오기. `list_languages`는 두지 않고 지원 언어는 오류 메시지와 `generate_mock` 설명에 싣는다 |
+| **3A** Java 참조 발췌를 `core/templates/java/reference/`에 두고, 참조 mock 전문(`test/fixtures/java-petstore/`)과 같은지 테스트로 묶음 | 프롬프트가 런타임에 읽는 파일인데 `test/`는 배포되지 않는다 |
+| **3A** 실행 안내를 `launchCommand(lock)`·`launchHint`로 조합하고 `GenerateReport.launch`에 실음 | `npm install && npm start` 하드코딩이 CLI·MCP·Web(`Generate.tsx`, 설계가 놓친 곳)·스킬에 흩어져 있었다 |
+| **3A** 런타임 계약(501·404)은 `VerifyResult.runtime`·`runtimeFailed`로 contract와 따로 세고, 종료 코드는 `verifyFailed()` | 기존 `total/passed/failed` 단정을 지키면서 LLM 생성물의 라우터 동작을 검사 |
+| **3A** 설치 마커 `.specmock-installed`에 설치 키(`install` + 소스 해시) 기록, lock의 `installCheck`·`installInputs`로 설치 완료·입력을 판정 | Java 설치는 빌드라서 소스가 바뀌면 jar가 낡는다. 키가 다르면 다시 빌드 |
+| **3A** lock에 `installTimeoutMs`, `install`은 없음(옛 lock=npm install)/`null`(설치 없음) 구분, `generator`·`sourceFiles` 기본값 | verify가 lock만 보고 설치 여부·시간 제한을 정하고, 옛 lock을 그대로 읽게 |
+| **3A** 테스트용 `fake` 프로필은 core에 등록하지 않고 `generate(…, { profile })`로 주입. 등록표는 `Map` | 지원 언어 목록(`SUPPORTED_LANGUAGES`)에 테스트 언어가 섞이지 않게. 객체 키 조회의 프로토타입 오염(`constructor` 등)을 피함 |
+| **3A** 세션 진행 표식 `.specmock-session.json`과 `protectedHashes`. 재finalize 때 `protectedHashes`를 갱신 | 지시서를 쓴 outDir은 lock 없이 mvnw가 생겨 다시 부르면 덮어쓰기 거부에 걸렸다. finalize가 보호 파일 변경을 판정하되, 확정 뒤 다시 확정해도 거부하지 않게 |
+| **3A** 환경 오류 패턴(JAVA_HOME·의존성 다운로드 실패 등)은 install 단계 로그에만 적용 | 컴파일 오류 메시지가 우연히 패턴에 걸려 "환경 문제"로 오판하면 재시도 기회를 잃는다 |
+| **3A** 응답에서 빠진 기존 소스는 유지(notes에 기록), 삭제는 `content: null`로만 | 모델이 파일을 빠뜨려 사용자 소스가 사라지는 것을 막기 위해 |
+| **3A** 언어 변경 `--force`의 삭제는 화이트리스트(fixtures·contracts 밖의 프로필 소스·산출물)만, `.git`·`.specmock`이 있으면 거부, 삭제는 생성 성공 뒤에 | 잘못된 경로 지정이 사용자 저장소를 지우는 것을 막고, 생성이 실패해도 기존 디렉터리가 남게 |
+| **3A** 세션 모드의 `--force` 정리는 finalize에서 | 지시서를 쓰는 시점에는 새 소스가 없으므로, 새 소스가 확정되는 순간에 이전 언어 소스를 지운다 |
+| **3A** TS 라우트 정리를 `LanguageOutput.prune`으로 | 쓰지 않은 `src/routes/*.ts`를 지우는 기존 동작 유지 |
+| **3A** 세션 지시서는 `prepareGeneration`·`finalizeGeneration`으로 `generate`와 분리 | `generate`가 늘 `GenerateReport`를 돌려주게(CLI·MCP·Web 출력 단순화) |

@@ -1,7 +1,7 @@
 # 3A 설계: 다른 언어 생성 (Java 프로필)
 
 작성일: 2026-11-09
-상태: 초안 (사용자 검토 대기)
+상태: 구현 완료 (2026-11-09, 계획: [2026-11-09-phase3a-java-generator.md](../plans/2026-11-09-phase3a-java-generator.md), 설계와 달라진 점은 상위 문서 §12 "3A" 행)
 기준 코드: main 0b28529
 상위 문서: [specmock 설계 문서](2026-11-04-specmock-design.md) §10 로드맵 3단계, "3단계 인터페이스 경계"
 
@@ -220,7 +220,7 @@ sequenceDiagram
 - 임시 디렉터리에서 검증하고 통과한 뒤에만 outDir에 반영한다. 왜: 실패한 시도가 사용자의 기존 mock을 깨지 않는다. 증분 생성 때 임시 디렉터리에는 사용자 fixture 수정분도 복사한다(검증은 실제 fixture로).
 - Maven의 로컬 저장소(`~/.m2`)는 시도 간에 공유되므로 두 번째 빌드부터는 빠르다. 임시 디렉터리에는 `target/`만 새로 생긴다.
 - 최종 실패(maxAttempts 초과): 종료 코드 **5**(verify 실패 2와 구분). 마지막 시도의 파일과 오류 요약을 `outDir/.specmock-attempt/`에 남기고 경로를 알려 준다. outDir의 기존 내용은 바꾸지 않는다. 다음 `generate`가 이 디렉터리를 지운다.
-- 환경 오류는 재시도하지 않는다: `java`/`./mvnw` spawn 실패, 또는 **install 단계** 로그에 Maven 해석 실패 문구(`Could not transfer artifact`, `Could not resolve dependencies`, `JAVA_HOME is not defined`, `UnknownHostException`)가 보이고 **컴파일 오류 표식(`COMPILATION ERROR`)은 없을 때** 즉시 "JDK 17 이상과 네트워크가 필요합니다"로 종료(코드 1). 기동 · contract 단계 로그에는 적용하지 않는다. 왜: 모델이 고칠 수 없는 실패에 토큰을 쓰지 않되, 모델 코드가 `UnknownHostException`을 참조해 javac가 그 줄을 되찍는 경우를 환경 오류로 오판하지 않는다(리뷰 Minor).
+- 환경 오류는 재시도하지 않는다: `java`/`./mvnw` spawn 실패, 또는 **install 단계** 로그에 Maven 해석 실패 문구(`Could not transfer artifact`, `Could not resolve dependencies`, `JAVA_HOME is not defined`, `UnknownHostException`) 또는 **mvnw 스크립트 자체의 실패 문구**(`does not exist in PATH nor is JAVA_HOME set` = JDK 없음, `Failed to fetch` = 오프라인 첫 빌드, `release version 17 not supported` = JDK 17 미만)가 보이고 **컴파일 오류 표식(`COMPILATION ERROR`)은 없을 때** 즉시 "JDK 17 이상과 네트워크가 필요합니다"로 종료(코드 1). 기동 · contract 단계 로그에는 적용하지 않는다. 왜: 모델이 고칠 수 없는 실패에 토큰을 쓰지 않되, 모델 코드가 `UnknownHostException`을 참조해 javac가 그 줄을 되찍는 경우를 환경 오류로 오판하지 않는다(리뷰 Minor).
 - `--force`로 언어를 바꾸는 경우, 이전 언어 파일의 삭제(2.3 화이트리스트)는 **생성이 통과한 뒤, 반영 직전**에 한다. 왜: 시도 전에 지우면 생성 실패 시 기존 mock이 깨진다(리뷰 Major).
 - 알려진 한계: 반영 단계(언어 파일 → fixtures/contracts → lock)는 원자적이지 않다. 중간에 실패하면 새 소스 + 옛 lock이 남아 다음 증분 생성이 그 파일을 `userModified`로 볼 수 있다. 드물고 `--force`로 복구된다. `outDir/.specmock-attempt/`에는 빌드 로그 꼬리가 남으므로 outDir을 커밋한다면 `.gitignore`에 넣기를 README에 안내한다.
 - 어댑터: `LlmAdapter.extract` → `complete(req: { prompt, schema, signal?, timeoutMs? })`로 이름과 시그니처를 일반화한다. 기존 호출부는 바꿔 끼운다. 기본 타임아웃은 호출마다 주입(추출 180s 유지, 생성 600s). 그 외(`--json-schema`, 빈 임시 cwd, `--no-session-persistence`, `--tools ""`, 모델 옵션)는 그대로.
@@ -301,7 +301,7 @@ specmock run      <system> <origins...> [--lang ts|java] ...      # 세션 모�
 - 종료 코드: 0 성공, 1 오류(환경 · 입력), 2 verify contract 실패(`verify`), **5** LLM 생성이 maxAttempts 안에 통과하지 못함(`generate`, `run`).
 - `--json` 출력에 `attempts`, `notes`, `userModified`, `skipped`("변경 없음") 추가.
 
-### 4.2 MCP (11 → 13개 도구)
+### 4.2 MCP (11 → 12개 도구)
 
 | 도구 | 변경 |
 |---|---|
@@ -315,8 +315,9 @@ specmock run      <system> <origins...> [--lang ts|java] ...      # 세션 모�
 ### 4.3 Web UI
 
 - Generate 화면: 출력 디렉터리 옆에 **언어 선택**(ts / java). `java`는 claude-code 모드로 작업(job)으로 실행.
-- SSE job 이벤트에 단계(`generating` → `building` → `verifying`)와 `attempt n/maxAttempts`를 실어 진행을 보여 준다. `GenerateProgress`(2.1)를 그대로 흘려보낸다.
-- ui-server `POST /api/systems/:s/generate` body에 `language?`. 결과에 `attempts`, `notes`, `userModified`.
+- SSE job 이벤트에 단계(`generating` → `building` → `verifying`)와 `attempt n/maxAttempts`를 실어 진행을 보여 준다. `GenerateProgress`(2.1)의 `stage` · `attempt` · `maxAttempts` · `message`를 `job-progress`에 싣는다.
+- ui-server `POST /api/systems/:s/generate` body에 `language?`. 결과에 `attempts`, `notes`, `userModified`. 작업 시작 전에 사전 검사: 모르는 언어는 400, 기존 lock과 다른 언어를 `force` 없이 요청하면 409 `language-change-required`(기존 `overwrite-required`와 같은 모양). 화면은 이 코드를 받으면 "기존 소스를 지우고 다시 만들까요? fixtures · contracts 수정은 보존됩니다" 확인 창을 띄우고 `force: true`로 재요청한다. 왜: Web UI에서도 언어를 바꿀 수 있어야 하고, 작업 실패(500)로 보이면 사용자가 원인을 알 수 없다(리뷰 Minor).
+- 생성 작업은 **취소할 수 있다**. LLM 호출 · 빌드 · 검증은 임시 디렉터리에서 돌고 `LlmGenerator`가 abort에 응답하므로, 반영 직전까지는 취소해도 outDir이 변하지 않는다. 왜: Java 생성은 수 분이 걸릴 수 있는데 "파일을 쓰는 중"이라는 이유로 멈출 수 없게 두는 것은 사실과 다르다.
 - 세션 모드는 화면에 없다(대화가 없으므로).
 
 ### 4.4 스킬 문서 (`plugin/skills/specmock/SKILL.md`)
