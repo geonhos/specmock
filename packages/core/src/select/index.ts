@@ -82,6 +82,10 @@ async function selectUnlocked(ws: Workspace, system: string, exprs: string[], op
     const feature = byId.get(id)!;
     let rec: Recorded | null = null;
     try { rec = await readRecorded(ws, system, id); } catch { assumptions.push(`${id}: 녹화 파일을 읽지 못해 사용하지 않음`); }
+    if (rec && rec.featureId !== id) {
+      assumptions.push(`${id}: 녹화 파일의 featureId가 파일 이름과 다릅니다. 사용하지 않음`);
+      rec = null;
+    }
     if (rec) recordings.push(rec);
     const built = buildFixtures(feature, rec);
     assumptions.push(...built.assumptions);

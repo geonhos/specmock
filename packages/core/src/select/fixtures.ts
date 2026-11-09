@@ -65,7 +65,8 @@ export function buildFixtures(feature: Feature, recorded: Recorded | null = null
     if (r.status !== served.status) skip(`녹화 응답이 ${r.status}라`);
     else if (r.kind === "json") fixtures[fixtures.indexOf(served)] = { status: served.status, body: r.body, source: "recorded" };
     else if (r.kind === "truncated") skip("녹화 응답이 1MB를 넘어");
-    else if (r.kind === "raw" || served.status !== 204) skip("녹화 응답 바디가 JSON이 아니라");
+    else if (r.kind === "raw") skip("녹화 응답 바디가 JSON이 아니라");
+    else if (served.status !== 204) skip("녹화 응답 바디가 비어 있어");
     // 204 + 빈 바디: 기존 empty fixture와 같으므로 그대로 둔다.
   }
   return { fixtures, assumptions };

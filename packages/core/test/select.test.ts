@@ -134,4 +134,16 @@ describe("select with recordings", () => {
     expect(spec.features.find((x) => x.id === "listPets")!.fixtures[0].source).not.toBe("recorded");
     expect(spec.assumptions).toContain("listPets: 녹화 파일을 읽지 못해 사용하지 않음");
   });
+
+  it("파일 이름과 featureId가 다른 녹화는 무시하고 사유를 남긴다", async () => {
+    await select(ws, "petstore", ["all"]);
+    const before = await ws.read("petstore", "mockspec.json", MockSpecSchema);
+    await writeRec("listPets", [{ id: 7, name: "Real" }], featureInputHash(before, "listPets"));
+    const rec = await ws.read("petstore", "recorded/listPets.json", RecordedSchema);
+    await ws.write("petstore", "recorded/listPets.json", RecordedSchema, { ...rec, featureId: "getPet" });
+    await select(ws, "petstore", ["all"]);
+    const spec = await ws.read("petstore", "mockspec.json", MockSpecSchema);
+    expect(spec.features.find((x) => x.id === "listPets")!.fixtures[0].source).not.toBe("recorded");
+    expect(spec.assumptions).toContain("listPets: 녹화 파일의 featureId가 파일 이름과 다릅니다. 사용하지 않음");
+  });
 });

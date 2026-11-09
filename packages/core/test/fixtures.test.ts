@@ -94,4 +94,11 @@ describe("buildFixtures with recording", () => {
     expect(fixtures).toEqual([{ status: 204, body: null, source: "empty" }]);
     expect(assumptions).toEqual([]);
   });
+
+  it("빈 바디 녹화(200)는 비어 있다는 사유로 쓰지 않는다", () => {
+    const { fixtures, assumptions } = buildFixtures(f({ "200": { schema: null, examples: [] } }), rec(200, { kind: "empty", body: null }));
+    expect(fixtures.every((x) => x.source !== "recorded")).toBe(true);
+    expect(assumptions.some((a) => a.includes("녹화 응답 바디가 비어 있어"))).toBe(true);
+    expect(assumptions.some((a) => a.includes("JSON이 아니라"))).toBe(false);
+  });
 });

@@ -130,7 +130,7 @@ describe("record", () => {
     expect(t.requests).toHaveLength(1);
   });
 
-  it("refresh는 기존 녹화를 지우고, 없으면 대상만 덮어쓴다", async () => {
+  it("refresh는 실행이 끝난 뒤 이번에 쓰지 않은 녹화만 지운다", async () => {
     t = await startFakeTarget(strip(ok));
     await ws.writeText(SYS, "recorded/old.json", "{}");
     await record(ws, SYS, spec, target(t.url), { features: ["getPet"] });
@@ -138,5 +138,70 @@ describe("record", () => {
     await record(ws, SYS, spec, target(t.url), { features: ["getPet"], refresh: true });
     expect(await ws.exists(SYS, "recorded/old.json")).toBe(false);
     expect(await ws.exists(SYS, "recorded/getPet.json")).toBe(true);
+  });
+
+  it("refresh + 첫 요청 연결 실패면 기존 녹화를 유지한다", async () => {
+    await ws.writeText(SYS, "recorded/old.json", "{}");
+    await expect(record(ws, SYS, spec, target(await closedPortUrl()), { refresh: true })).rejects.toThrow("baseUrl을 확인하세요");
+    expect(await ws.exists(SYS, "recorded/old.json")).toBe(true);
+  });
+
+  it("비2xx 응답과 raw 바디의 비밀은 녹화 파일에서 가린다", async () => {
+    const tok = "Bearer abcdefghijklmnop1234567890";
+    t = await startFakeTarget(strip((q) => {
+      if (q.path === "/pets") return { status: 401, body: { message: `bad ${tok}` } };
+      if (q.path === "/store/inventory") return { status: 200, raw: `echo ${tok}`, contentType: "text/plain" };
+      return ok(q);
+    }));
+    await record(ws, SYS, spec, target(t.url, { params: { petId: "1" } }));
+    const unauth = await readFile(ws.file(SYS, "recorded/listPets.json"), "utf8");
+    expect(unauth).not.toContain("abcdefghijklmnop");
+    expect(unauth).toContain("***");
+    const raw = await readFile(ws.file(SYS, "recorded/inventory.list.json"), "utf8");
+    expect(raw).not.toContain("abcdefghijklmnop");
+    const good = await ws.read(SYS, "recorded/getPet.json", RecordedSchema);
+    expect(good.response.body).toEqual(PET);
+  });
+
+  it("경계: HEAD 200 빈 바디, 정확히 1MiB, 403 힌트, OPTIONS 건너뜀, 스키마 없는 contract", async () => {
+    // HEAD 200 빈 바디 → empty, 실패 아님
+    const headSpec: MockSpec = { ...spec, contracts: spec.contracts.map((c) => (c.featureId === "getPet" && c.name === "정상 요청" ? { ...c, request: { ...c.request, method: "HEAD" as const } } : c)) };
+    t = await startFakeTarget(strip(ok));
+    const h = await record(ws, SYS, headSpec, target(t.url, { params: { petId: "1" } }), { features: ["getPet"] });
+    expect(h.result.failed).toEqual([]);
+    expect((await ws.read(SYS, "recorded/getPet.json", RecordedSchema)).response.kind).toBe("empty");
+    await t.close();
+
+    // 정확히 1,048,576바이트는 truncated 아님, 1바이트 초과는 truncated
+    const body = (n: number) => { const pad = n - Buffer.byteLength(JSON.stringify({ id: 1, name: "" })); return { id: 1, name: "x".repeat(pad) }; };
+    t = await startFakeTarget(strip((q) => (q.path.startsWith("/pets/") ? { status: 200, body: body(1_048_576) } : ok(q))));
+    let r = await record(ws, SYS, spec, target(t.url), { features: ["getPet"] });
+    expect(r.result.matched).toEqual(["getPet"]);
+    expect((await ws.read(SYS, "recorded/getPet.json", RecordedSchema)).response.kind).toBe("json");
+    await t.close();
+    t = await startFakeTarget(strip((q) => (q.path.startsWith("/pets/") ? { status: 200, body: body(1_048_577) } : ok(q))));
+    r = await record(ws, SYS, spec, target(t.url), { features: ["getPet"] });
+    expect(r.result.failed[0].reason).toContain("1MB");
+    expect((await ws.read(SYS, "recorded/getPet.json", RecordedSchema)).response.kind).toBe("truncated");
+    await t.close();
+
+    // 403 힌트
+    t = await startFakeTarget(strip(() => ({ status: 403 })));
+    r = await record(ws, SYS, spec, target(t.url), { features: ["listPets"] });
+    expect(r.result.statusMismatch[0]).toMatchObject({ actual: 403 });
+    expect(r.result.statusMismatch[0].hint).toBeTruthy();
+    await t.close();
+
+    // OPTIONS는 기본으로 건너뜀
+    const optSpec: MockSpec = { ...spec, contracts: spec.contracts.map((c) => (c.featureId === "listPets" && c.name === "정상 요청" ? { ...c, request: { ...c.request, method: "OPTIONS" as const } } : c)) };
+    t = await startFakeTarget(strip(ok));
+    r = await record(ws, SYS, optSpec, target(t.url), { features: ["listPets"] });
+    expect(r.result.skipped).toEqual([{ featureId: "listPets", reason: "mutating" }]);
+    expect(t.requests).toHaveLength(0);
+
+    // 스키마 없는 contract: status가 맞으면 일치
+    const noSchema: MockSpec = { ...spec, contracts: spec.contracts.map((c) => (c.featureId === "listPets" && c.name === "정상 요청" ? { ...c, expect: { ...c.expect, schema: null } } : c)) };
+    r = await record(ws, SYS, noSchema, target(t.url), { features: ["listPets"] });
+    expect(r.result.matched).toEqual(["listPets"]);
   });
 });

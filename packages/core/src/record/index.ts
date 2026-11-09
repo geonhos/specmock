@@ -8,7 +8,7 @@ import { featureInputHash } from "../util/specHash.js";
 import { mergeHeaders, runContract } from "../verify/contracts.js";
 import type { Workspace } from "../workspace.js";
 import { DRIFT_FILE, renderDrift, statusHint, type DriftEntry } from "./drift.js";
-import { clearRecorded, recordedName } from "./recorded.js";
+import { pruneRecorded, recordedName } from "./recorded.js";
 import { applyParams, type Target } from "./target.js";
 
 export const MAX_RECORD_BYTES = 1_048_576;
@@ -20,7 +20,7 @@ export interface RecordOptions {
   allowMutating?: boolean;
   /** 이 기능만. 현재 mockspec에 없는 id는 오류. */
   features?: string[];
-  /** 기존 recorded/ 전부 삭제 후 녹화. */
+  /** 실행이 끝난 뒤 이번에 쓰지 않은 기존 녹화를 지운다(중단되면 유지). */
   refresh?: boolean;
   onEvent?: OnEvent;
   signal?: AbortSignal;
@@ -44,6 +44,17 @@ export interface RecordResult {
 
 export interface RecordRun { result: RecordResult; driftMarkdown: string }
 
+/** 바디 텍스트에 비밀이 섞였을 수 있을 때: JSON이면 문자열화→마스킹→재파싱, 실패하면 raw로. */
+function maskBody(kind: "json" | "raw" | "empty" | "truncated", body: unknown, contentType: string): { kind: "json" | "raw"; body: unknown } | null {
+  if (kind === "raw") {
+    const b = body as { raw: string; contentType: string };
+    return { kind: "raw", body: { raw: maskSecrets(b.raw), contentType: b.contentType } };
+  }
+  if (kind !== "json") return null;
+  const masked = maskSecrets(JSON.stringify(body));
+  try { return { kind: "json", body: JSON.parse(masked) }; } catch { return { kind: "raw", body: { raw: masked, contentType } }; }
+}
+
 function display(p: string, query: Record<string, string>): string {
   const qs = new URLSearchParams(query).toString();
   return qs ? `${p}?${qs}` : p;
@@ -60,7 +71,6 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
   const byId = new Map(spec.features.map((f) => [f.id, f]));
   const targets = spec.contracts.filter((c) => c.name === NORMAL_CONTRACT && (!want || want.has(c.featureId)));
   for (const c of targets) recordedName(c.featureId);   // 안전하지 않은 id는 요청 전에 거부
-  if (opts.refresh) await clearRecorded(ws, system);
 
   const now = opts.now ?? (() => new Date());
   const ajv = makeAjv();
@@ -97,14 +107,17 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
       continue;
     }
     const statusMatch = r.status === c.expect.status;
+    const masked = r.kind === "raw" || !statusMatch ? maskBody(r.kind, r.body, r.headers["content-type"] ?? "") : null;
+    const kind = masked?.kind ?? r.kind;
+    const body = masked ? masked.body : r.body;
     await ws.write(system, recordedName(featureId), RecordedSchema, {
       featureId,
       recordedAt: now().toISOString(),
       mockspecHash: featureInputHash(spec, featureId),
       request: { method, path: p, query: maskHeaders(query), headers: maskHeaders(mergeHeaders(c.request.headers, target.headers)) },
       response: {
-        status: r.status, kind: r.kind, headers: r.headers, bytes: r.bytes,
-        ...(r.kind === "truncated" ? { truncated: true as const } : { body: r.body }),
+        status: r.status, kind, headers: r.headers, bytes: r.bytes,
+        ...(kind === "truncated" ? { truncated: true as const } : { body }),
       },
       contract: { expectedStatus: c.expect.status, statusMatch, schemaErrors: r.schemaErrors.map(maskSecrets) },
     });
@@ -129,6 +142,7 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
       entries.push({ ...base, kind: "matched" });
     }
   }
+  if (opts.refresh) await pruneRecorded(ws, system, new Set(result.recorded));
   const driftMarkdown = renderDrift(system, target.baseUrl, now(), entries);
   await ws.writeText(system, DRIFT_FILE, driftMarkdown);
   return { result, driftMarkdown };
