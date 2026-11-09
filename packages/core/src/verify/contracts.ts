@@ -51,7 +51,7 @@ export function joinUrl(baseUrl: string, p: string, query: Record<string, string
 }
 
 /** 키를 소문자로 맞춰 합친다. 뒤의 것이 이긴다. */
-function mergeHeaders(...parts: Record<string, string>[]): Record<string, string> {
+export function mergeHeaders(...parts: Record<string, string>[]): Record<string, string> {
   const out: Record<string, string> = {};
   for (const p of parts) for (const [k, v] of Object.entries(p)) out[k.toLowerCase()] = v;
   return out;

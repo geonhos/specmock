@@ -3,7 +3,7 @@ import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 
 export interface FakeReq { method: string; path: string; query: Record<string, string>; headers: IncomingHttpHeaders }
 /** body가 있으면 JSON으로, raw가 있으면 그대로 보낸다. delayMs만큼 늦게 응답한다. */
-export interface FakeRes { status: number; body?: unknown; raw?: string; contentType?: string; delayMs?: number; headers?: Record<string, string> }
+export interface FakeRes { status: number; body?: unknown; raw?: string; contentType?: string; delayMs?: number; headers?: Record<string, string>; /** true면 응답 없이 소켓을 끊는다(연결 실패 재현). */ destroy?: boolean }
 export interface FakeTarget {
   url: string;
   requests: FakeReq[];
@@ -25,6 +25,7 @@ export async function startFakeTarget(handler: (req: FakeReq) => FakeRes): Promi
     req.on("end", () => {
       const out = handler(fr);
       setTimeout(() => {
+        if (out.destroy) { active--; res.socket?.destroy(); return; }
         const text = out.raw ?? (out.body === undefined ? "" : JSON.stringify(out.body));
         res.writeHead(out.status, { "content-type": out.contentType ?? "application/json", "content-length": String(Buffer.byteLength(text)), ...out.headers });
         res.end(text, () => { active--; });
