@@ -99,6 +99,36 @@ export const FixtureSchema = z.object({
   source: z.enum(["spec-example", "doc-sample", "schema-generated", "empty"]),
 });
 export type Fixture = z.infer<typeof FixtureSchema>;
+/** `.specmock/<system>/recorded/<featureId>.json` — record가 쓴다(설계 3B §3.2). */
+export const RecordedSchema = z.object({
+  featureId: z.string().min(1),
+  recordedAt: z.string(),
+  /** 녹화 시점 mockspec의 featureInputHash(그 기능만, fixture 본문 제외). */
+  mockspecHash: z.string(),
+  request: z.object({
+    method: HttpMethod,
+    path: z.string(),
+    query: z.record(z.string(), z.string()),
+    /** maskHeaders를 거친 값. 재전송용이 아니다. */
+    headers: z.record(z.string(), z.string()),
+  }),
+  response: z.object({
+    status: z.number().int(),
+    /** json: body가 파싱 값 · raw: body가 { raw, contentType } · empty: body null · truncated: body 없음. */
+    kind: z.enum(["json", "raw", "empty", "truncated"]),
+    /** content-type·content-length만. */
+    headers: z.record(z.string(), z.string()),
+    body: z.unknown().optional(),
+    truncated: z.literal(true).optional(),
+    bytes: z.number().int().nonnegative(),
+  }),
+  contract: z.object({
+    expectedStatus: z.number().int(),
+    statusMatch: z.boolean(),
+    schemaErrors: z.array(z.string()),
+  }),
+});
+export type Recorded = z.infer<typeof RecordedSchema>;
 
 export const ContractSchema = z.object({
   featureId: z.string(),
