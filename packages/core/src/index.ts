@@ -23,6 +23,8 @@ export { select, type SelectOptions, type SelectResult } from "./select/index.js
 export { generate, defaultMockDir, type GenerateOptions } from "./generate/index.js";
 export { readLock, launchCommand, launchHint, type Lock } from "./generate/lock.js";
 export type { GenerateReport, GenerateProgress, LanguageOutput } from "./generate/generator.js";
+export { prepareGeneration, finalizeGeneration, REQUEST_FILE, SESSION_MARKER, type PrepareGenerationOptions, type PrepareGenerationResult, type FinalizeResult, type FinalizeReason } from "./generate/session.js";
+export { SUPPORTED_LANGUAGES, assertLanguage } from "./generate/profiles/index.js";
 export { LlmGenerator, ATTEMPT_DIR, type LlmGeneratorOptions } from "./generate/llm.js";
 export { GenerationFailedError, EnvironmentError } from "./generate/errors.js";
 export { verify, verifyFailed, loadContracts, type VerifyOptions, type VerifyResult, type ContractResult } from "./verify/index.js";

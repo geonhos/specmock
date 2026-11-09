@@ -64,10 +64,13 @@ export function defaultMockDir(system: string): string {
   return path.resolve("mock", system);
 }
 
-/** 비어 있지 않고 specmock이 만든 흔적(lock)이 없는 디렉터리는 force 없이 덮어쓰지 않는다. 실패 시도 디렉터리만 있으면 specmock 것으로 본다. */
-async function assertSafeOutDir(outDir: string): Promise<void> {
+/** 세션 모드 지시서 작성 뒤 outDir에 남기는 표식. finalize가 지운다. */
+export const SESSION_MARKER = ".specmock-session.json";
+
+/** 비어 있지 않고 specmock이 만든 흔적(lock 또는 세션 표식)이 없는 디렉터리는 force 없이 덮어쓰지 않는다. 실패 시도 디렉터리만 있으면 specmock 것으로 본다. */
+export async function assertSafeOutDir(outDir: string): Promise<void> {
   const names = (await readdir(outDir).catch(() => [] as string[])).filter((n) => n !== ATTEMPT_DIR);
-  if (names.length > 0 && !names.includes(LOCK_FILE)) {
+  if (names.length > 0 && !names.includes(LOCK_FILE) && !names.includes(SESSION_MARKER)) {
     throw new Error(`${outDir}은(는) specmock이 만든 디렉터리가 아닙니다(${LOCK_FILE} 없음). 덮어쓰려면 --force`);
   }
 }
@@ -75,7 +78,7 @@ async function assertSafeOutDir(outDir: string): Promise<void> {
 const SKIP_DIRS = new Set(["node_modules", "target", ".git", ATTEMPT_DIR]);
 
 /** outDir 아래 파일의 상대 경로(`/` 구분). 빌드 산출물 디렉터리는 건너뛴다. */
-async function listFiles(root: string, rel = ""): Promise<string[]> {
+export async function listFiles(root: string, rel = ""): Promise<string[]> {
   const entries = await readdir(path.join(root, rel), { withFileTypes: true }).catch(() => []);
   const out: string[] = [];
   for (const e of entries) {
@@ -87,7 +90,7 @@ async function listFiles(root: string, rel = ""): Promise<string[]> {
 }
 
 /** 증분 입력: sourceGlobs 안·보호 경로 밖·정적 파일 아닌 기존 파일. lock.sourceFiles 해시와 다르면 userModified. */
-async function readExisting(outDir: string, profile: LanguageProfile, previous: Lock): Promise<ExistingSources> {
+export async function readExisting(outDir: string, profile: LanguageProfile, previous: Lock): Promise<ExistingSources> {
   const statics = new Set(profile.staticFiles.map((s) => s.path));
   const files: ExistingSources["files"] = [];
   for (const rel of await listFiles(outDir)) {
@@ -162,6 +165,7 @@ async function generateUnlocked(ws: Workspace, system: string, opts: GenerateOpt
     fixtureHashes: s.fixtureHashes,
     sourceFiles,
   });
+  await rm(path.join(outDir, SESSION_MARKER), { force: true });
   const attempts = output.attempts ?? 0;
   // verify가 --dir 없이도 마지막 생성 위치를 찾을 수 있도록 기록한다.
   await ws.write(system, "generate.json", GenerateInfoSchema, { outDir, generatedAt: new Date().toISOString(), language, notes: output.notes, attempts });
