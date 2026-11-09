@@ -1,9 +1,9 @@
-import type { Ajv } from "ajv";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { readLock } from "../generate/lock.js";
 import { ContractSchema, type Contract } from "../types.js";
 import { makeAjv } from "../util/ajv.js";
+import { runContract, type ContractRun } from "./contracts.js";
 import { runRuntimeChecks, type RuntimeCheck, type RuntimeSpec } from "./runtime.js";
 import { startMock } from "./server.js";
 
@@ -44,42 +44,8 @@ export async function loadContracts(mockDir: string): Promise<Contract[]> {
   return out;
 }
 
-async function runContract(base: string, ajv: Ajv, c: Contract): Promise<ContractResult> {
-  const url = new URL(c.request.path, base);
-  for (const [k, v] of Object.entries(c.request.query)) url.searchParams.set(k, v);
-  const errors: string[] = [];
-  let actualStatus: number | null = null;
-
-  // 스키마 컴파일 실패는 요청 실패와 구분해서 보고한다.
-  let validate: ReturnType<Ajv["compile"]> | null = null;
-  if (c.expect.schema) {
-    try {
-      validate = ajv.compile(c.expect.schema);
-    } catch (e) {
-      errors.push(`schema: ${(e as Error).message}`);
-    }
-  }
-
-  try {
-    const res = await fetch(url, {
-      method: c.request.method,
-      headers: { ...(c.request.body !== null ? { "content-type": "application/json" } : {}), ...c.request.headers },
-      body: c.request.body !== null ? JSON.stringify(c.request.body) : undefined,
-    });
-    actualStatus = res.status;
-    if (res.status !== c.expect.status) errors.push(`status: expected ${c.expect.status}, got ${res.status}`);
-    if (validate && res.status === c.expect.status) {
-      const text = await res.text();
-      let body: unknown;
-      try { body = JSON.parse(text); } catch { errors.push(`body is not JSON: ${text.slice(0, 200)}`); }
-      if (body !== undefined && !validate(body)) {
-        errors.push(...(validate.errors ?? []).map((e) => `${e.instancePath || "/"} ${e.message ?? ""}`.trim()));
-      }
-    }
-  } catch (e) {
-    errors.push(`request failed: ${(e as Error).message}`);
-  }
-  return { featureId: c.featureId, name: c.name, passed: errors.length === 0, expectedStatus: c.expect.status, actualStatus, errors };
+function toResult(c: Contract, r: ContractRun): ContractResult {
+  return { featureId: c.featureId, name: c.name, passed: r.errors.length === 0, expectedStatus: c.expect.status, actualStatus: r.status, errors: r.errors };
 }
 
 export interface VerifyOptions {
@@ -103,7 +69,7 @@ export async function verify(mockDir: string, opts: VerifyOptions = {}): Promise
   try {
     for (const c of contracts) {
       opts.signal?.throwIfAborted();
-      results.push(await runContract(base, ajv, c));
+      results.push(toResult(c, await runContract(base, c, { ajv })));
     }
     opts.signal?.throwIfAborted();
     runtime = await runRuntimeChecks(base, opts.runtime);
