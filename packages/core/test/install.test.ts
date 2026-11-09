@@ -21,9 +21,9 @@ if (process.env.FAIL_OUT) { process.stdout.write("[ERROR] COMPILATION ERROR : Ma
   return { command: process.execPath, args: [script], log };
 }
 
-function lockWith(install: Lock["install"], sourceFiles: Record<string, string> = {}, installCheck: string | null = null): Lock {
+function lockWith(install: Lock["install"], sourceFiles: Record<string, string> = {}, installCheck: string | null = null, installInputs: string[] = Object.keys(sourceFiles)): Lock {
   return LockSchema.parse({
-    system: "s", language: "fake", mockspecHash: "h", generatedAt: "t", install, installCheck,
+    system: "s", language: "fake", mockspecHash: "h", generatedAt: "t", install, installCheck, installInputs,
     start: { command: "true", args: [] }, healthPath: "/h", fixtureHashes: {}, sourceFiles,
   });
 }
@@ -47,6 +47,45 @@ describe("ensureInstalled(lock)", () => {
     await writeFile(path.join(dir, "src", "Main.java"), "b");
     await ensureInstalled(dir, { lock });
     expect((await readFile(inst.log, "utf8")).trim().split("\n")).toHaveLength(2);
+  });
+
+  it("installInputs에 없는 sourceFiles 변경은 재설치하지 않고, 입력(package.json)이 바뀌면 재설치한다", async () => {
+    const inst = await fakeInstaller();
+    await mkdir(path.join(dir, "src"));
+    await writeFile(path.join(dir, "src", "a.ts"), "a");
+    await writeFile(path.join(dir, "package.json"), "{}");
+    const lock = lockWith({ command: inst.command, args: inst.args }, { "src/a.ts": "x", "package.json": "y" }, null, ["package.json"]);
+    await ensureInstalled(dir, { lock });
+    await writeFile(path.join(dir, "src", "a.ts"), "changed");
+    await ensureInstalled(dir, { lock });
+    expect((await readFile(inst.log, "utf8")).trim().split("\n")).toHaveLength(1);
+    await writeFile(path.join(dir, "package.json"), '{"a":1}');
+    await ensureInstalled(dir, { lock });
+    expect((await readFile(inst.log, "utf8")).trim().split("\n")).toHaveLength(2);
+  });
+
+  it("installInputs는 glob도 받는다(src/**)", async () => {
+    const inst = await fakeInstaller();
+    await mkdir(path.join(dir, "src"));
+    await writeFile(path.join(dir, "src", "Main.java"), "a");
+    const lock = lockWith({ command: inst.command, args: inst.args }, { "src/Main.java": "x" }, null, ["pom.xml", "src/**"]);
+    await ensureInstalled(dir, { lock });
+    await writeFile(path.join(dir, "src", "Main.java"), "b");
+    await ensureInstalled(dir, { lock });
+    expect((await readFile(inst.log, "utf8")).trim().split("\n")).toHaveLength(2);
+  });
+
+  it("옛 lock(installInputs 없음)은 명령만 해시한다", async () => {
+    const inst = await fakeInstaller();
+    await writeFile(path.join(dir, "package.json"), "1");
+    const lock = LockSchema.parse({
+      system: "s", language: "ts", mockspecHash: "h", generatedAt: "t", install: { command: inst.command, args: inst.args },
+      installCheck: null, start: { command: "true", args: [] }, healthPath: "/h", fixtureHashes: {}, sourceFiles: { "package.json": "x" },
+    });
+    await ensureInstalled(dir, { lock });
+    await writeFile(path.join(dir, "package.json"), "2");
+    await ensureInstalled(dir, { lock });
+    expect((await readFile(inst.log, "utf8")).trim().split("\n")).toHaveLength(1);
   });
 
   it("install이 null이면 아무것도 실행하지 않는다", async () => {

@@ -52,6 +52,15 @@ async function clearForLanguageChange(outDir: string, previous: Lock): Promise<v
   for (const a of getEntry(previous.language)?.artifacts ?? []) targets.add(a);
   targets.add(INSTALLED_MARKER);
   const dirs = new Set<string>();
+  const root = path.resolve(outDir);
+  for (const rel of [...targets]) {
+    // 방어: lock(손상·조작)이 outDir 밖을 가리켜도 지우지 않는다.
+    const r = path.relative(root, path.resolve(root, rel));
+    if (r === "" || r.startsWith("..") || path.isAbsolute(r)) {
+      console.warn(`경고: outDir 밖 경로라 삭제하지 않습니다: ${rel}`);
+      targets.delete(rel);
+    }
+  }
   for (const rel of targets) {
     await rm(path.join(outDir, rel), { recursive: true, force: true });
     for (let d = path.posix.dirname(rel); d !== "." && d !== "/"; d = path.posix.dirname(d)) dirs.add(d);
@@ -158,6 +167,7 @@ async function generateUnlocked(ws: Workspace, system: string, opts: GenerateOpt
     generatedAt: new Date().toISOString(),
     install: output.install,
     installCheck: output.installCheck ?? null,
+    installInputs: output.installInputs ?? [],
     start: output.start,
     healthPath: output.healthPath,
     startTimeoutMs: output.startTimeoutMs,

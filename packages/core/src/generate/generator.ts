@@ -30,6 +30,8 @@ export interface LanguageOutput {
   install: Command | null;
   /** 설치 뒤 outDir 상대 경로로 존재해야 하는 결과물. 없으면(undefined) lock에 null로 기록한다. */
   installCheck?: string | null;
+  /** 설치 키 입력(outDir 상대 경로 또는 glob). 없으면 []. */
+  installInputs?: string[];
   start: Command;
   healthPath: string;
   startTimeoutMs?: number;

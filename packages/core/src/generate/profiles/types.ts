@@ -16,6 +16,8 @@ export interface LanguageProfile {
   installTimeoutMs: number;
   /** 설치 뒤 있어야 하는 결과물(outDir 상대). */
   installCheck?: string | null;
+  /** 설치 키 입력(outDir 상대 경로 또는 glob). Java: pom.xml, src/**. */
+  installInputs?: string[];
   /** 언어 변경(--force) 때 지우는 빌드 산출물(outDir 상대). */
   artifacts: string[];
   /** 모델이 쓸 수 있는 곳이자 증분 생성 때 기존 소스로 읽는 범위. */

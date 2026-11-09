@@ -103,6 +103,7 @@ export class TsHonoGenerator implements LanguageGenerator {
       files: renderTsHonoFiles(ctx.spec),
       install: NPM_INSTALL,
       installCheck: "node_modules",
+      installInputs: ["package.json"],
       start: { command: "npx", args: ["tsx", "src/server.ts"] },
       healthPath: "/__specmock/health",
       notes: [],

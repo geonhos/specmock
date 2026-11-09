@@ -139,6 +139,7 @@ export async function finalizeGeneration(ws: Workspace, system: string, opts: { 
       generatedAt: new Date().toISOString(),
       install: profile.install(process.platform),
       installCheck: profile.installCheck ?? null,
+      installInputs: profile.installInputs ?? [],
       start: profile.start,
       healthPath: profile.healthPath,
       startTimeoutMs: profile.startTimeoutMs,

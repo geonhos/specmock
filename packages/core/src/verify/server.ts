@@ -1,7 +1,8 @@
 import { access, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import getPort from "get-port";
-import { resolveInstall, resolveInstallCheck, type Lock } from "../generate/lock.js";
+import { matchesAny } from "../generate/glob.js";
+import { resolveInstall, resolveInstallCheck, resolveInstallInputs, type Lock } from "../generate/lock.js";
 import { hashJson, hashText } from "../util/hash.js";
 import { killGroup, spawnGroup } from "../util/procGroup.js";
 
@@ -54,10 +55,12 @@ function sleepAbortable(ms: number, signal?: AbortSignal): Promise<void> {
 const INSTALLED_MARKER = ".specmock-installed";
 const DEFAULT_INSTALL_TIMEOUT_MS = 600_000;
 
-/** 설치 키: install 명령 + lock.sourceFiles에 적힌 파일의 현재 내용 해시. 소스가 바뀌면(Java 빌드) 다시 설치한다. */
+/** 설치 키: install 명령 + lock.installInputs에 맞는 sourceFiles 파일의 현재 내용 해시. 입력(TS의 package.json, Java의 pom.xml·src)이 바뀌면 다시 설치한다. */
 export async function installKey(dir: string, lock: Lock): Promise<string> {
   const files: Record<string, string | null> = {};
+  const inputs = resolveInstallInputs(lock);
   for (const rel of Object.keys(lock.sourceFiles).sort()) {
+    if (!matchesAny(inputs, rel)) continue;
     files[rel] = await readFile(path.join(dir, rel), "utf8").then(hashText, () => null);
   }
   return hashJson({ install: resolveInstall(lock), files });

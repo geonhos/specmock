@@ -9,8 +9,9 @@ import { NPM_INSTALL, launchCommand, launchHint, readLock, resolveInstall } from
 import { ingest } from "../src/ingest/index.js";
 import { select } from "../src/select/index.js";
 import { MockSpecSchema } from "../src/types.js";
+import { installKey } from "../src/verify/server.js";
 import { Workspace } from "../src/workspace.js";
-import { registerLanguageForTest } from "../src/generate/profiles/index.js";
+import { assertLanguage, getEntry, registerLanguageForTest } from "../src/generate/profiles/index.js";
 import { PETSTORE } from "./helpers.js";
 
 let dir: string;
@@ -116,6 +117,31 @@ describe("언어 결정", () => {
       expect((await readLock(out))!.language).toBe("ts");
     });
 
+    it("sourceFiles에 outDir 밖 경로가 있는 손상 lock은 오류이고 바깥 파일은 남는다", async () => {
+      await generate(ws, "petstore", { outDir: out });
+      const outside = path.join(path.dirname(out), "outside-victim.txt");
+      await writeFile(outside, "keep");
+      const lockPath = path.join(out, "specmock.lock.json");
+      const lock = JSON.parse(await readFile(lockPath, "utf8"));
+      for (const bad of ["../outside-victim.txt", "/etc/hosts", "a\\b", "a/../../x"]) {
+        await writeFile(lockPath, JSON.stringify({ ...lock, language: "java", sourceFiles: { ...lock.sourceFiles, [bad]: "h" } }));
+        await expect(generate(ws, "petstore", { outDir: out, language: "ts", force: true })).rejects.toThrow("손상");
+      }
+      expect(await readFile(outside, "utf8")).toBe("keep");
+      await rm(outside, { force: true });
+    });
+
+    it("등록표 조회는 프로토타입 키를 통과시키지 않는다", async () => {
+      expect(() => assertLanguage("constructor")).toThrow("지원하지 않습니다");
+      expect(() => assertLanguage("__proto__")).toThrow("지원하지 않습니다");
+      expect(getEntry("constructor")).toBeNull();
+      await generate(ws, "petstore", { outDir: out });
+      const lockPath = path.join(out, "specmock.lock.json");
+      const lock = JSON.parse(await readFile(lockPath, "utf8"));
+      await writeFile(lockPath, JSON.stringify({ ...lock, language: "__proto__" }));
+      await expect(generate(ws, "petstore", { outDir: out, force: true })).rejects.toThrow("지원하지 않습니다");
+    });
+
     it(".git이나 .specmock이 있으면 거부하고 아무것도 지우지 않는다", async () => {
       for (const marker of [".git", ".specmock"]) {
         await rm(out, { recursive: true, force: true });
@@ -140,6 +166,20 @@ describe("언어 결정", () => {
       expect(await exists("package-lock.json")).toBe(false);
       expect(await readFile(path.join(out, "stray.txt"), "utf8")).toBe("x");
     });
+  });
+});
+
+describe("TS 설치 키 입력", () => {
+  it("lock.installInputs는 package.json이고, route만 바뀌어도 설치 키는 같다", async () => {
+    await generate(ws, "petstore", { outDir: out });
+    const lock = (await readLock(out))!;
+    expect(lock.installInputs).toEqual(["package.json"]);
+    const before = await installKey(out, lock);
+    const route = Object.keys(lock.sourceFiles).find((f) => f.startsWith("src/routes/"))!;
+    await writeFile(path.join(out, route), "// edited");
+    expect(await installKey(out, lock)).toBe(before);
+    await writeFile(path.join(out, "package.json"), '{"changed":true}');
+    expect(await installKey(out, lock)).not.toBe(before);
   });
 });
 

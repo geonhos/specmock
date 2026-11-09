@@ -110,6 +110,7 @@ export class LlmGenerator implements LanguageGenerator {
         files: [...files, ...staticFiles],
         install,
         installCheck: profile.installCheck ?? null,
+        installInputs: profile.installInputs ?? [],
         start: profile.start,
         healthPath: profile.healthPath,
         startTimeoutMs: profile.startTimeoutMs,
@@ -141,7 +142,7 @@ export class LlmGenerator implements LanguageGenerator {
       await writeLock(tmp, {
         system: spec.system, language: this.profile.language, generator: "llm",
         mockspecHash: hashJson(spec), generatedAt: new Date().toISOString(),
-        install: output.install, installCheck: output.installCheck ?? null, start: output.start, healthPath: output.healthPath,
+        install: output.install, installCheck: output.installCheck ?? null, installInputs: output.installInputs ?? [], start: output.start, healthPath: output.healthPath,
         startTimeoutMs: output.startTimeoutMs, installTimeoutMs: output.installTimeoutMs,
         fixtureHashes: s.fixtureHashes, sourceFiles,
       });
