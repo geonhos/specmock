@@ -16,8 +16,10 @@ export class ShuttingDownError extends Error {
   readonly code = "shutting-down" as const;
   constructor() { super("서버를 끄는 중이에요"); this.name = "ShuttingDownError"; }
 }
-/** generate는 도중에 멈출 수 없다(파일을 쓰는 중). 나머지는 signal을 따른다. */
-const CANCELLABLE: Record<JobKind, boolean> = { extract: true, verify: true, generate: false };
+/** 모든 작업이 signal을 따른다. generate는 임시 디렉터리에서만 만들고 마지막에 outDir에 쓰므로 도중 취소가 안전하다. */
+const CANCELLABLE: Record<JobKind, boolean> = { extract: true, verify: true, generate: true };
+/** 화면이 단계 표시에 쓰는 generate 진행 단계. 다른 작업의 stage는 progress에 싣지 않는다. */
+const GENERATE_STAGES = new Set<string>(["generating", "building", "verifying"]);
 export interface JobContext { signal: AbortSignal; onEvent: OnEvent }
 
 /** 시스템당 작업 하나. 진행·결과는 EventBus로 알린다. */
@@ -43,7 +45,7 @@ export class JobManager {
       // done/total이 없는 이벤트(병합 중 등)는 이전 값을 유지한다. 화면 진행 막대가 0으로 되돌아가지 않게 한다.
       const done = e.done ?? job.progress?.done;
       const total = e.total ?? job.progress?.total;
-      job.progress = { message: e.message, ...(done !== undefined ? { done } : {}), ...(total !== undefined ? { total } : {}) };
+      job.progress = { message: e.message, ...(GENERATE_STAGES.has(e.stage) ? { stage: e.stage } : {}), ...(done !== undefined ? { done } : {}), ...(total !== undefined ? { total } : {}) };
       this.bus.publish("job-progress", snap());
     };
     const task = (async () => {

@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import path from "node:path";
-import { analyzeSpec, assertLanguage, CatalogSchema, ClaudeCodeAdapter, findFeature, generate, ingestSpec, listFeatures, select, summarizeChunks, verifyMock, Workspace } from "@specmock/core";
+import { analyzeSpec, assertLanguage, CatalogSchema, ClaudeCodeAdapter, findFeature, generate, ingestSpec, listFeatures, readLock, select, summarizeChunks, verifyMock, Workspace } from "@specmock/core";
 import { streamSSE } from "hono/streaming";
 import { EventBus, pushBounded, type BusEvent } from "./bus.js";
 import { BusyJobError, JobManager, NotCancellableError, ShuttingDownError } from "./jobs.js";
@@ -117,10 +117,15 @@ export function createApp(opts: AppOptions) {
     await assertRegistered(ws, system);
     const outDir = resolveFromRoot(b.outDir) ?? (await defaultOutDir(ws, opts.root, system));
     const input = { outDir, ...(b.language ? { language: b.language } : {}) };
-    return accepted(c, jobs.start(system, "generate", ({ onEvent }) => generate(ws, system, {
-      outDir, force: b.force, language: b.language,
+    // 언어를 바꾸는 요청은 force 없이는 작업을 만들지 않고 409로 돌려준다(화면이 확인 창을 연다).
+    const previous = b.force || b.language === undefined ? null : await readLock(outDir);
+    if (previous && previous.language !== b.language) {
+      return c.json(errorBody("language-change-required", `이 디렉터리는 ${previous.language}로 만들어졌어요. ${b.language}로 바꾸려면 기존 소스를 지워야 해요 (현재 ${previous.language} → 요청 ${b.language}).`, "fixtures·contracts의 수정은 보존돼요. 확인하면 기존 소스를 지우고 다시 만들어요."), 409);
+    }
+    return accepted(c, jobs.start(system, "generate", ({ signal, onEvent }) => generate(ws, system, {
+      outDir, force: b.force, language: b.language, signal,
       adapter: new ClaudeCodeAdapter({ command: claudeCommand }),
-      onProgress: (e) => onEvent({ stage: "generate", message: e.message, done: e.attempt, total: e.maxAttempts }),
+      onProgress: (e) => onEvent({ stage: e.stage, message: e.message, done: e.attempt, total: e.maxAttempts }),
     }), input).id);
   });
   app.post("/api/systems/:s/verify", async (c) => {

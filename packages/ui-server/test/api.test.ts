@@ -2,7 +2,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -283,5 +283,24 @@ describe("Task 9 리뷰 수정", () => {
     const r = await c.post("/systems/petstore/generate", { outDir: out, language: "ts" });
     const list = (await c.get("/jobs")).body.data as { running: { id: string; input?: unknown }[]; recent: { id: string; input?: unknown }[] };
     expect([...list.running, ...list.recent].find((x) => x.id === r.body.data.jobId)!.input).toEqual({ outDir: out, language: "ts" });
+  });
+
+  it("언어를 바꾸는 generate는 force 없이 409 language-change-required, 작업은 만들지 않는다. force면 202", async () => {
+    const c = client();
+    await c.post("/systems", { system: "petstore", origins: [PETSTORE] });
+    await c.post("/systems/petstore/analyze");
+    const id = (await c.get("/systems/petstore/features")).body.data.rows[0].id;
+    await c.post("/systems/petstore/selection", { ids: [id] });
+    const out = path.join(root, "out-lang");
+    await c.post("/systems/petstore/generate", { outDir: out, language: "ts" });
+    await vi.waitFor(async () => expect((await c.get("/jobs")).body.data.recent).toHaveLength(1));
+    const r = await c.post("/systems/petstore/generate", { outDir: out, language: "java" });
+    expect(r.status).toBe(409);
+    expect(r.body).toMatchObject({ ok: false, error: { code: "language-change-required", message: expect.stringMatching(/ts.*java/) } });
+    expect((await c.get("/jobs")).body.data.recent).toHaveLength(1);
+    const forced = await c.post("/systems/petstore/generate", { outDir: out, language: "java", force: true });
+    expect(forced.status).toBe(202);
+    await c.post(`/jobs/${forced.body.data.jobId}/cancel`); // 실제 claude를 부르지 않게 끊고, 정리 전에 끝나길 기다린다
+    await vi.waitFor(async () => expect((await c.get("/jobs")).body.data.running).toHaveLength(0), { timeout: 10_000 });
   });
 });

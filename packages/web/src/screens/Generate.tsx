@@ -30,7 +30,7 @@ export function Generate({ system, jobs, tick, go, refreshJobs }: Props) {
   const [busy, setBusy] = useState(false);
   const [language, setLanguage] = useState("");
   // 확인 창은 실패한 작업 하나에 한 번만 연다(취소한 뒤 같은 작업으로 다시 열리지 않게 id를 기억).
-  const [ask, setAsk] = useState<{ id: string; dir: string; language: string; message: string } | null>(null);
+  const [ask, setAsk] = useState<{ id: string; kind: "overwrite" | "language"; dir: string; language: string; message: string; from?: string } | null>(null);
   const [declined, setDeclined] = useState(false); // 덮어쓰기를 취소했다: 이전 결과를 남기고 안내한다
   const asked = useRef(new Set<string>());
   const sent = useRef<string>("");
@@ -46,7 +46,7 @@ export function Generate({ system, jobs, tick, go, refreshJobs }: Props) {
   useEffect(() => {
     if (!failedId || asked.current.has(failedId)) return;
     asked.current.add(failedId);
-    setAsk({ id: failedId, dir: seen?.input?.outDir ?? sent.current, language: seen?.input?.language ?? sentLang.current, message: seen?.error?.message ?? "" });
+    setAsk({ id: failedId, kind: "overwrite", dir: seen?.input?.outDir ?? sent.current, language: seen?.input?.language ?? sentLang.current, message: seen?.error?.message ?? "" });
   }, [failedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const start = async (dir: string, force: boolean, lang: string) => {
@@ -54,8 +54,14 @@ export function Generate({ system, jobs, tick, go, refreshJobs }: Props) {
     try { const r = await api.generate(system, dir, force, lang || undefined); watch(r.jobId); refreshJobs(); } catch (e) {
       const err = asError(e);
       if (err.code === "busy" && err.jobId) watch(err.jobId);
+      // 언어를 바꾸는 요청은 작업이 만들어지기 전에 409로 온다: 확인 창을 연다(확인하면 force로 다시 요청).
+      if (err.code === "language-change-required") { setAsk({ id: `lang-${Date.now()}`, kind: "language", dir, language: lang, message: err.message, from: /이 디렉터리는 (\S+)로/.exec(err.message)?.[1] }); refreshJobs(); return; }
       setError(err); refreshJobs();
     } finally { setBusy(false); }
+  };
+  const cancel = async (id: string) => {
+    setBusy(true); setError(null);
+    try { await api.cancel(id); } catch (e) { setError(asError(e)); refreshJobs(); } finally { setBusy(false); }
   };
 
   if (!overview || outDir === null) return error ? <Notice message={error.message} hint={error.hint} /> : <p className="muted">불러오는 중이에요</p>;
@@ -70,6 +76,7 @@ export function Generate({ system, jobs, tick, go, refreshJobs }: Props) {
     <div className="analyze">
       {error ? <Notice message={error.message} hint={error.hint} /> : null}
       {failed ? <Notice message={failed.error?.message ?? "생성에 실패했어요"} hint={failed.error?.hint} /> : null}
+      {seen?.state === "cancelled" ? <p role="status" className="muted">생성을 취소했어요. 출력 디렉터리는 그대로예요.</p> : null}
       {declined ? <p role="status" className="muted">덮어쓰지 않았어요. 기존 파일은 그대로예요.</p> : null}
       {other ? <p role="status" className="muted">다른 작업({jobKindLabel(other.kind)})이 진행 중이에요. 끝나면 이어서 할 수 있어요.</p> : null}
       <label className="field">출력 디렉터리
@@ -82,9 +89,10 @@ export function Generate({ system, jobs, tick, go, refreshJobs }: Props) {
       </label>
       <div className="action-row">
         <button type="button" className="btn-primary" disabled={locked} onClick={() => void start(outDir.trim(), false, language)}>생성</button>
+        {running?.cancellable ? <button type="button" className="btn-ghost" onClick={() => void cancel(running.id)}>취소</button> : null}
         {running ? (
           <span role="status" className="muted">
-            생성 중이에요. 파일을 쓰는 중이라 멈출 수 없어요.
+            생성 중이에요.
             {running.progress?.message ? ` · ${running.progress.message}` : ""}
             {running.progress?.total ? ` · 시도 ${running.progress.done ?? 0}/${running.progress.total}` : ""}
           </span>
@@ -106,9 +114,11 @@ export function Generate({ system, jobs, tick, go, refreshJobs }: Props) {
           <div><button type="button" className="btn-primary" onClick={() => go(pathFor("verify", system))}>⑤ 검증으로 →</button></div>
         </section>
       ) : null}
-      <ConfirmDialog open={!!ask} title="덮어쓸까요?" confirmLabel="덮어쓰기" onCancel={() => { setAsk(null); setDeclined(true); }} onConfirm={() => { const a = ask!; setAsk(null); void start(a.dir, true, a.language); }}>
+      <ConfirmDialog open={!!ask} title={ask?.kind === "language" ? "언어를 바꿀까요?" : "덮어쓸까요?"} confirmLabel={ask?.kind === "language" ? "언어 바꾸기" : "덮어쓰기"} onCancel={() => { setAsk(null); setDeclined(true); }} onConfirm={() => { const a = ask!; setAsk(null); void start(a.dir, true, a.language); }}>
         <p><code>{ask?.dir}</code></p>
-        <p>{ask?.message}</p>
+        {ask?.kind === "language"
+          ? <p>이 디렉터리는 {ask.from ?? "다른 언어"}로 만들어졌습니다. 기존 소스를 지우고 {ask.language}로 다시 만들까요? fixtures·contracts의 수정은 보존됩니다.</p>
+          : <p>{ask?.message}</p>}
       </ConfirmDialog>
     </div>
   );

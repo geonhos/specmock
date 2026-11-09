@@ -130,7 +130,7 @@ it("OpenAPI 시스템: 생성 작업 → done, 같은 곳에 덮어쓰기 거부
   expect(j2).toMatchObject({ state: "failed", error: { code: "overwrite-required" } });
 });
 
-it("취소 불가 작업(generate)에 cancel → 409 not-cancellable, 작업은 계속된다", async () => {
+it("generate 작업에 cancel → 200, 이미 끝났으면 상태만. cancellable: true", async () => {
   const c = make();
   await c.post("/systems", { system: "petstore", origins: [PETSTORE] });
   await c.post("/systems/petstore/analyze");
@@ -138,10 +138,10 @@ it("취소 불가 작업(generate)에 cancel → 409 not-cancellable, 작업은 
   await c.post("/systems/petstore/selection", { ids: [id] });
   const { jobId } = (await c.post("/systems/petstore/generate", { outDir: path.join(root, "out") })).body.data;
   const r = await c.post(`/jobs/${jobId}/cancel`);
-  if (r.status === 409) expect(r.body).toMatchObject({ ok: false, error: { code: "not-cancellable", message: "이 작업은 취소할 수 없어요" } });
-  else expect(r.body).toEqual({ ok: true, data: { state: "done" } }); // 이미 끝났으면 상태만
+  expect(r.status).toBe(200);
   const j = await until(async () => (await c.get("/jobs")).body.data.recent[0]);
-  expect(j).toMatchObject({ kind: "generate", state: "done", cancellable: false });
+  expect(j).toMatchObject({ kind: "generate", cancellable: true });
+  expect(["done", "cancelled"]).toContain(j.state);
 });
 
 it("SSE 큐 상한: 넘치면 오래된 job-progress부터 버리고 job-done은 남는다", async () => {
@@ -179,7 +179,7 @@ it("java 생성: 진행이 job-progress(시도 n/max)로 오고, 시도를 다 �
   expect((await c.post("/systems/petstore/generate", { outDir, language: "java" })).status).toBe(202);
   const j = await until(async () => (await c.get("/jobs")).body.data.recent.find((x: { kind: string }) => x.kind === "generate"), 20_000);
   expect(j).toMatchObject({ state: "failed", input: { outDir, language: "java" }, error: { message: expect.stringContaining("3번 시도했지만 검증을 통과하는 mock을 만들지 못했습니다") } });
-  expect(progress).toContainEqual({ message: "코드 생성 중 (1/3)", done: 1, total: 3 });
-  expect(progress.at(-1)).toEqual({ message: "코드 생성 중 (3/3)", done: 3, total: 3 });
+  expect(progress).toContainEqual({ message: "코드 생성 중 (1/3)", stage: "generating", done: 1, total: 3 });
+  expect(progress.at(-1)).toEqual({ message: "코드 생성 중 (3/3)", stage: "generating", done: 3, total: 3 });
   await expect(readFile(path.join(outDir, "specmock.lock.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 }, 30_000);

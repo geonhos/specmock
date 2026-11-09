@@ -17,7 +17,7 @@ flowchart LR
 
 Node 22.19 이상, pnpm 12가 필요합니다.
 
-Java mock을 만들려면(`--lang java`) JDK 17 이상과 로그인된 `claude` CLI가 필요합니다. Maven은 설치하지 않아도 됩니다(생성물의 `./mvnw`가 받습니다). 첫 빌드는 Maven 배포본과 의존성을 내려받으므로 **네트워크가 필요**하고 수 분 걸립니다. `unzip`이 없으면 mvnw가 `tar`로 풉니다. Windows(`mvnw.cmd`)는 동작하도록 작성했지만 검증하지 않았습니다.
+Java mock을 만들려면(`--lang java`) JDK 17 이상과 로그인된 `claude` CLI가 필요합니다. Maven은 설치하지 않아도 됩니다(생성물의 `./mvnw`가 받습니다). 첫 빌드는 Maven 배포본과 의존성을 내려받으므로 **네트워크가 필요**하고 수 분 걸립니다. `unzip`이 없으면 mvnw가 `tar`로 풉니다. JDK가 없거나 JDK 17 미만이거나 오프라인이면 모델을 다시 부르지 않고 종료 코드 1로 즉시 끝납니다. Windows(`mvnw.cmd`)는 동작하도록 작성했지만 검증하지 않았습니다.
 
 ```bash
 git clone https://github.com/geonhos/specmock.git && cd specmock
@@ -174,7 +174,7 @@ pnpm specmock ui               # 브라우저가 열립니다. --port 4517 로 �
 Claude Code 대화에서는 "화면으로 하고 싶어"라고 하면 Claude가 `open_ui` 도구로 같은 화면을 띄우고 URL을 알려 줍니다. 이 화면은 대화와 같은 프로젝트 루트·`.specmock/`를 씁니다. 화면에서 한 선택은 CLI·대화와 같은 파일(`selection.json`)에 저장되고, 대화에서 제출한 추출 결과나 선택 변경은 화면에 바로 반영됩니다.
 
 - 문서(Markdown·PDF·웹) 추출은 `claude` CLI가 있으면 화면에서 바로 시작할 수 있습니다. 없으면 화면이 안내하는 대로 Claude Code 대화에서 추출하세요.
-- 생성 화면에서 언어(기존 유지 · TypeScript · Java)를 고를 수 있고, Java는 단계와 시도 n/max를 보여 줍니다. Web UI는 claude-code로만 생성합니다(세션 모드 없음).
+- 생성 화면에서 언어(기존 유지 · TypeScript · Java)를 고를 수 있고, Java는 단계와 시도 n/max를 보여 줍니다. 생성 도중 취소할 수 있고(반영 직전까지는 출력 디렉터리가 바뀌지 않습니다), 이미 만들어진 디렉터리의 언어를 바꾸면 확인 창이 먼저 뜹니다. Web UI는 claude-code로만 생성합니다(세션 모드 없음).
 - 화면 서버와 MCP 서버, CLI가 같은 작업 공간에 동시에 써도 파일 잠금으로 보호됩니다.
 - E2E: Playwright로 화면 두 경로(OpenAPI 등록부터 검증까지, 가짜 `claude`로 문서 추출)를 확인합니다. 기본 `pnpm test`에는 들어 있지 않습니다.
 

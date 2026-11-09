@@ -105,6 +105,23 @@ describe("LlmGenerator", () => {
     expect(await calls()).toBe(1);
   }, 30_000);
 
+  it("빌드 중 abort: outDir은 그대로(생성 안 됨), 임시 디렉터리 삭제, 자식 프로세스 종료", async () => {
+    await respond(1, good());
+    const probe = path.join(dir, "probe.json");
+    const script = `require("fs").writeFileSync(${JSON.stringify(probe)}, JSON.stringify({cwd: process.cwd(), pid: process.pid})); setInterval(() => {}, 1000)`;
+    const profile = { ...fakeProfile, install: () => ({ command: process.execPath, args: ["-e", script] }) };
+    const ac = new AbortController();
+    const p = new LlmGenerator(profile, adapter()).generate({ spec, outDir: out, existing: null, signal: ac.signal });
+    const seen = (async () => { for (;;) { try { return JSON.parse(await readFile(probe, "utf8")) as { cwd: string; pid: number }; } catch { await new Promise((r) => setTimeout(r, 50)); } } })();
+    const { cwd, pid } = await seen;
+    ac.abort();
+    await expect(p).rejects.toThrow();
+    await expect(access(out)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(cwd)).rejects.toMatchObject({ code: "ENOENT" });
+    await new Promise((r) => setTimeout(r, 200));
+    expect(() => process.kill(pid, 0)).toThrow();
+  }, 30_000);
+
   describe("환경 오류 패턴은 install 단계 출력에만 적용된다", () => {
     const installFailing = (log: string) => ({ command: process.execPath, args: ["-e", `console.error(${JSON.stringify(log)}); process.exit(1)`] });
 
