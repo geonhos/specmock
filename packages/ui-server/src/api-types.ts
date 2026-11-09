@@ -29,7 +29,7 @@ export type FeatureListRow = FeatureRow & { summary: string; codes: string[] };
 export type FeatureList = { total: number; rows: FeatureListRow[]; groups: string[] };
 export type { AnalyzeSpecResult, ChunkSummary, Feature, FeatureRow, GenerateInfo, IngestSpecResult, Selection, SelectResult, SourceInput } from "@specmock/core";
 
-export type JobKind = "extract" | "generate" | "verify";
+export type JobKind = "extract" | "generate" | "verify" | "record";
 export type Job = {
   id: string; system: string; kind: JobKind;
   state: "running" | "done" | "failed" | "cancelled";

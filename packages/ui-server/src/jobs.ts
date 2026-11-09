@@ -17,7 +17,7 @@ export class ShuttingDownError extends Error {
   constructor() { super("서버를 끄는 중이에요"); this.name = "ShuttingDownError"; }
 }
 /** 모든 작업이 signal을 따른다. generate는 임시 디렉터리에서만 만들고 마지막에 outDir에 쓰므로 도중 취소가 안전하다. */
-const CANCELLABLE: Record<JobKind, boolean> = { extract: true, verify: true, generate: true };
+const CANCELLABLE: Record<JobKind, boolean> = { extract: true, verify: true, generate: true, record: true };
 /** 화면이 단계 표시에 쓰는 generate 진행 단계. 다른 작업의 stage는 progress에 싣지 않는다. */
 const GENERATE_STAGES = new Set<string>(["generating", "building", "verifying"]);
 export interface JobContext { signal: AbortSignal; onEvent: OnEvent }

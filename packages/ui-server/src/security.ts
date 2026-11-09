@@ -18,7 +18,7 @@ export function localOnly(port: () => number): MiddlewareHandler {
 }
 
 const ALLOWED_METHODS = new Set(["GET", "HEAD", "POST"]);
-const POST_ONLY = /^\/api\/(?:systems\/[^/]+\/(?:analyze|extract|generate|verify)|jobs\/[^/]+\/cancel)\/?$/;
+const POST_ONLY = /^\/api\/(?:systems\/[^/]+\/(?:analyze|extract|generate|verify|record)|jobs\/[^/]+\/cancel)\/?$/;
 
 /** 이 API는 GET·POST만 쓴다. PUT·PATCH·DELETE 등과, POST 전용 경로의 GET은 405. */
 export const methodGuard: MiddlewareHandler = async (c, next) => {
