@@ -120,6 +120,19 @@ describe("재finalize와 언어 변경", () => {
     expect(await finP()).toMatchObject({ ok: true });
   }, 60_000);
 
+  it("finalize 뒤 지시서의 protectedHashes가 낡아도 prepare(reused)가 갱신해 finalize가 ok", async () => {
+    await prep();
+    await put("server.mjs", fakeServerSource(await spec()));
+    expect(await fin()).toMatchObject({ ok: true });
+    const stale = await ws.read("petstore", "generate-request.json", GenerateRequestSchema);
+    await ws.write("petstore", "generate-request.json", GenerateRequestSchema, { ...stale, protectedHashes: { ...stale.protectedHashes, "fixtures/getPet/200.json": "0".repeat(64) } });
+    expect(await prep()).toMatchObject({ reused: true });
+    const fresh = await ws.read("petstore", "generate-request.json", GenerateRequestSchema);
+    expect(fresh.protectedHashes).toEqual(stale.protectedHashes);
+    await put("lib/a.mjs", "export {};\n");
+    expect(await fin()).toMatchObject({ ok: true });
+  }, 60_000);
+
   it("finalize 사이에 사용자가 fixture를 고치면 여전히 protected-path-modified", async () => {
     await prep();
     await put("server.mjs", fakeServerSource(await spec()));

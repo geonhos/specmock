@@ -2,7 +2,7 @@
 // pnpm llm:check [model] --java   Petstore를 Java로 생성하고 verify까지 돌린다(JDK 17 필요, 수 분 걸림)
 // 로컬 claude CLI가 구조화 출력을 제대로 내는지 확인한다. 구독 호출이 발생한다.
 import { execFileSync } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,7 +25,14 @@ if (!java) {
 }
 
 try {
-  execFileSync("java", ["-version"], { stdio: "ignore" });
+  // java -version은 stderr로 나온다. 주 버전: "17.0.17", "1.8.0_392"(→8), "21".
+  const out = execFileSync("java", ["-version"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const m = /version "(\d+)(?:\.(\d+))?/.exec(out);
+  const major = m ? (m[1] === "1" ? Number(m[2]) : Number(m[1])) : NaN;
+  if (!(major >= 17)) {
+    console.log(`SKIP: JDK 17 이상이 필요합니다(감지된 주 버전: ${Number.isNaN(major) ? "알 수 없음" : major}).`);
+    process.exit(0);
+  }
 } catch {
   console.log("SKIP: java -version이 실패했습니다. JDK 17 이상을 설치한 뒤 다시 실행하세요.");
   process.exit(0);
@@ -49,6 +56,7 @@ try {
   const v = r.verify!;
   console.log(`contract: 통과 ${v.passed} / 실패 ${v.failed} / 전체 ${v.total}, runtime 실패 ${v.runtimeFailed}`);
   const ok = !verifyFailed(v) && g.language === "java";
+  if (ok) await rm(root, { recursive: true, force: true });
   console.log(ok ? `OK (${elapsed()}, model=${model ?? "default"})` : `FAIL: verify 실패. ${outDir}을 확인하세요.`);
   process.exit(ok ? 0 : 1);
 } catch (e) {

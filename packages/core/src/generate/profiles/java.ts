@@ -45,5 +45,9 @@ export const javaProfile: LanguageProfile = {
     /Could not resolve dependencies/,
     /JAVA_HOME (environment variable )?is not defined/,
     /UnknownHostException/,
+    // mvnw 자체 문구(templates/java/mvnw 75·196·199행)와 javac의 JDK 버전 오류
+    /does not exist in PATH nor is JAVA_HOME set/,
+    /Failed to fetch/,
+    /release version 17 not supported/,
   ],
 };

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { analyze } from "../src/analyze/index.js";
 import { EnvironmentError, GenerationFailedError } from "../src/generate/errors.js";
 import { ATTEMPT_DIR, LlmGenerator } from "../src/generate/llm.js";
+import { javaProfile } from "../src/generate/profiles/java.js";
 import { ingest } from "../src/ingest/index.js";
 import { ClaudeCodeAdapter } from "../src/llm/claudeCode.js";
 import { select } from "../src/select/index.js";
@@ -118,6 +119,18 @@ describe("LlmGenerator", () => {
     it("Could not transfer artifact만 있으면 EnvironmentError", async () => {
       await respond(1, good());
       const profile = { ...fakeProfile, install: () => installFailing("Could not transfer artifact io.javalin:javalin:pom:6.7.0"), environmentErrors: [/Could not transfer artifact/] };
+      await expect(new LlmGenerator(profile, adapter()).generate({ spec, outDir: out, existing: null })).rejects.toBeInstanceOf(EnvironmentError);
+      expect(await calls()).toBe(1);
+    }, 30_000);
+
+    // mvnw 실제 문구와 대조: templates/java/mvnw 75·199행, javac 오류.
+    it.each([
+      "The java/javac command does not exist in PATH nor is JAVA_HOME set, so mvnw cannot run.",
+      "curl: Failed to fetch https://repo.maven.apache.org/x.zip",
+      "[ERROR] Fatal error compiling: error: release version 17 not supported",
+    ])("javaProfile 패턴: install 로그 %s → EnvironmentError", async (log) => {
+      await respond(1, good());
+      const profile = { ...fakeProfile, install: () => installFailing(log), environmentErrors: javaProfile.environmentErrors };
       await expect(new LlmGenerator(profile, adapter()).generate({ spec, outDir: out, existing: null })).rejects.toBeInstanceOf(EnvironmentError);
       expect(await calls()).toBe(1);
     }, 30_000);

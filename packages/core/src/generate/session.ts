@@ -107,6 +107,11 @@ export async function prepareGeneration(ws: Workspace, system: string, opts: Pre
     if (await ws.exists(system, REQUEST_FILE)) {
       const old = await ws.read(system, REQUEST_FILE, GenerateRequestSchema);
       if (old.mockspecHash === mockspecHash && old.language === language && old.outDir === outDir) {
+        // 복구 경로: 이전 finalize 뒤 보호 파일이 달라졌을 수 있으니 해시를 다시 계산해 지시서를 갱신한다.
+        const hashes = await protectedHashes(outDir, profile);
+        if (JSON.stringify(hashes) !== JSON.stringify(old.protectedHashes)) {
+          await ws.write(system, REQUEST_FILE, GenerateRequestSchema, { ...old, protectedHashes: hashes });
+        }
         return { mode: "session", requestPath, outDir, language, reused: true, nextSteps: nextSteps(system, requestPath, outDir, profile) };
       }
     }
