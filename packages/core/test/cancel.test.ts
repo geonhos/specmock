@@ -151,7 +151,7 @@ it("청크 0 완료 후 청크 1 중 취소해도 청크 0 결과는 남는다",
   let calls = 0;
   const adapter = {
     name: "claude-code" as const,
-    extract: (r: { signal?: AbortSignal }) => {
+    complete: (r: { signal?: AbortSignal }) => {
       if (++calls === 1) return Promise.resolve({ endpoints: [] });
       return new Promise<never>((_, reject) => {
         r.signal!.addEventListener("abort", () => reject(r.signal!.reason), { once: true });
@@ -224,7 +224,7 @@ it("spawn 직전 비동기 구간에서 abort되면(리스너를 달기 전) ins
 it("extract 중 spawn 직전(cwd 임시 디렉터리 생성 await)에 abort되면 claude 자식을 죽이고 AbortError로 끝난다", async () => {
   const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-pid"), env: { PID_FILE: pidFile } });
   const ac = new AbortController();
-  const run = adapter.extract({ prompt: "x", schema: {}, signal: ac.signal } as never);
+  const run = adapter.complete({ prompt: "x", schema: {}, signal: ac.signal } as never);
   ac.abort();
   const err = await Promise.race([run.catch((e) => e), new Promise((r) => setTimeout(() => r("hang"), 3000))]);
   expect((err as Error).name).toBe("AbortError");

@@ -55,7 +55,7 @@ export async function extract(ws: Workspace, system: string, adapter: LlmAdapter
     if (!opts.refresh && fileExists && !stale) { result.skipped += 1; report("skipped"); continue; }
     try {
       const body = await load();
-      const raw = await adapter.extract({ prompt: buildChunkPrompt(body), schema: request.schema, signal: opts.signal });
+      const raw = await adapter.complete({ prompt: buildChunkPrompt(body), schema: request.schema, signal: opts.signal });
       const r = await submitExtraction(
         ws, system,
         { index: chunk.index, contentHash: chunk.contentHash ?? hashText(body), result: raw },

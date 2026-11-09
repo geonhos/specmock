@@ -6,7 +6,7 @@ const model = process.argv[2];
 const adapter = new ClaudeCodeAdapter({ model, timeoutMs: 120_000 });
 const chunk = "## Get a pet\n\n`GET /pets/{petId}` returns one pet.\n\n```json\n{\"id\": 1, \"name\": \"Rex\"}\n```\n";
 const started = Date.now();
-const out = await adapter.extract({ prompt: buildChunkPrompt(chunk), schema: extractionJsonSchema() });
+const out = await adapter.complete({ prompt: buildChunkPrompt(chunk), schema: extractionJsonSchema() });
 const parsed = ExtractionResultSchema.safeParse(out);
 console.log(JSON.stringify(out, null, 2));
 console.log(parsed.success ? `OK (${Date.now() - started}ms, model=${model ?? "default"})` : `스키마 불일치: ${parsed.error.message}`);

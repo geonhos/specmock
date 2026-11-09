@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { killGroup, spawnGroup } from "../util/procGroup.js";
-import type { ExtractRequest, LlmAdapter } from "./adapter.js";
+import type { CompleteRequest, LlmAdapter } from "./adapter.js";
 
 export interface ClaudeCodeOptions {
   command?: string;        // 기본 "claude"
@@ -29,14 +29,14 @@ export class ClaudeCodeAdapter implements LlmAdapter {
   readonly name = "claude-code" as const;
   constructor(private readonly opts: ClaudeCodeOptions = {}) {}
 
-  async extract(req: ExtractRequest): Promise<unknown> {
+  async complete(req: CompleteRequest): Promise<unknown> {
     req.signal?.throwIfAborted();
     const args = ["--print", "--output-format", "json", "--json-schema", JSON.stringify(req.schema), "--no-session-persistence"];
     if (this.opts.model) args.push("--model", this.opts.model);
     args.push("--tools", "");   // 마지막 고정 플래그. 뒤에는 extraArgs 옵션만 온다.
     args.push(...(this.opts.extraArgs ?? []));
     const command = this.opts.command ?? "claude";
-    const timeoutMs = this.opts.timeoutMs ?? 180_000;
+    const timeoutMs = req.timeoutMs ?? this.opts.timeoutMs ?? 180_000;
 
     const ownCwd = this.opts.cwd === undefined;
     const cwd = this.opts.cwd ?? (await mkdtemp(path.join(os.tmpdir(), "specmock-claude-")));
