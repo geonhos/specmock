@@ -26,6 +26,7 @@ specmock 플러그인을 로드하면 specmock MCP 서버의 도구 12개가 함
 | `generate_mock` | mock 서버 생성 (`./mock/<system>/`). `language`(ts·java). java는 지시서를 쓰고 멈춤(`mode: "session"`) |
 | `finalize_generation` | 세션에서 쓴 파일 확정(보호 경로·범위 검사, fixtures·contracts·lock 작성). 실패면 `ok: false`와 `reason` |
 | `verify_mock` | contract test + coverage.md |
+| `record_responses` | `target.json`의 실제 시스템에 정상 요청을 보내 녹화 + drift.md, mock fixture에 반영 (`allowMutating`, `features`, `refresh`, `apply`) |
 | `open_ui` | 브라우저 화면 서버를 띄우고 URL만 돌려줌(두 번 불러도 같은 URL) |
 
 흐름:
@@ -46,6 +47,7 @@ specmock 플러그인을 로드하면 specmock MCP 서버의 도구 12개가 함
      3. `outDir`에서 `./mvnw -q -DskipTests package`로 컴파일을 확인하고 오류를 고친다(JDK 17 이상, 첫 실행은 Maven 다운로드로 오래 걸린다).
      4. `finalize_generation` → `verify_mock`. 실패하면 소스를 고치고 `finalize_generation` → `verify_mock`을 다시 한다. `reason: "stale-request"`면 선택이 바뀐 것이므로 `generate_mock`부터 다시.
    - 사용자가 "화면으로 고르고 싶다"고 하면 `open_ui`를 불러 URL을 알려 주고 열어 달라고 안내한다. 화면에서 끝낸 뒤 돌아오면 `list_features`로 선택 상태를 다시 읽는다.
+   - 사용자가 "실제 응답으로 바꾸고 싶다" · "실제 시스템과 비교해 달라"고 하면 `record_responses`. `target.json`이 없다는 오류면 예시를 보여 주고 사용자에게 만들어 달라고 한다(비밀 값은 `${환경변수}`로만). `driftSummary`를 보여 주고 다름·불일치가 있으면 스펙과 실제 중 어느 쪽이 맞는지 묻는다.
 5. 도구가 `isError`로 답하면 메시지의 다음 단계 안내(예: "먼저 `analyze_spec`")를 따른다. 사용자 입력 오류(잘못된 표현식, 없는 id)는 사용자에게 다시 묻는다.
 
 안전 규칙:
@@ -54,6 +56,7 @@ specmock 플러그인을 로드하면 specmock MCP 서버의 도구 12개가 함
 - `generate_mock`이 "이 디렉터리는 …로 생성됐습니다"로 실패하면 언어를 바꾸려는 것이다(ts→java, java→ts 모두). `force: true`는 이전 언어의 소스·빌드 산출물을 지운다고(fixtures의 수정은 보존, contracts는 다시 생성) 알리고 확인받은 뒤에만 쓴다. 아니면 `outDir`을 다른 곳으로 준다.
 - `outDir`은 사용자가 위치를 지정했을 때만 준다. 아니면 생략해 기본 `mock/<system>`을 쓴다.
 - `submit_extraction`의 `ok: false`는 실패가 아니라 고쳐서 다시 내라는 뜻이다. `errors`를 읽고 같은 청크를 고쳐 제출한다.
+- `record_responses`의 `allowMutating: true`는 실제 시스템에 생성·삭제 요청을 보낸다. 대상 `baseUrl`과 건너뛴 기능(`skipped`)을 알리고 확인받은 뒤에만 쓴다. `target.json` 헤더의 `${ENV}`는 Claude Code를 실행한 셸에 있어야 한다. 없다는 오류면 그 셸에서 변수를 설정하고 Claude Code를 다시 띄우라고 안내한다. 사용자에게 키 값을 대화에 붙여 넣으라고 하지 않는다.
 
 추출 규칙(근거 인용은 원문 그대로, 청크에 없는 엔드포인트를 보태지 않음)은 CLI 흐름과 같다. [extraction.md](references/extraction.md).
 
@@ -113,6 +116,7 @@ specmock generate <system> --lang java --llm claude-code [--model sonnet] [--max
 specmock generate <system> --lang java --llm session    # 지시서만 쓴다. 대화에서 pom.xml·src/** 작성 후
 specmock generate <system> --finalize                    # 확정 → specmock verify <system>
 specmock verify <system>            # mock 기동 → contract test → coverage.md
+specmock record <system> [--allow-mutating] [--feature <id>] [--refresh] [--no-apply] [--json]   # 실제 시스템 녹화 → drift.md, 종료 코드 2 = drift
 ```
 
 verify 결과(`contract: 통과 N / 실패 M`)와 `coverage.md` 상단 요약(fixture 출처 비율, 가정 목록)을 보여준다.
