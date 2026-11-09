@@ -12,7 +12,8 @@ import { ClaudeCodeAdapter } from "../src/llm/claudeCode.js";
 import { select } from "../src/select/index.js";
 import { verifyMock } from "../src/service/verify.js";
 import { GenerateInfoSchema, MockSpecSchema, type MockSpec } from "../src/types.js";
-import { hashText } from "../src/util/hash.js";
+import { hashJson, hashText } from "../src/util/hash.js";
+import { specInputHash } from "../src/util/specHash.js";
 import { Workspace } from "../src/workspace.js";
 import { fakeProfile, fakeServerSource } from "./fakeProfile.js";
 import { PETSTORE } from "./helpers.js";
@@ -74,6 +75,39 @@ describe("generate (LLM 생성기)", () => {
     await generate(ws, "petstore", opts());
     const r = await generate(ws, "petstore", { ...opts(), force: true });
     expect(r.skipped).toBe(false);
+    expect(await calls()).toBe(2);
+  }, 60_000);
+
+  it("fixture만 바뀌면 LLM 없이 scaffold만 다시 쓴다", async () => {
+    await respond(1, answer(await specNow()));
+    await generate(ws, "petstore", opts());
+    expect((await readLock(out))!.inputHash).toBe(specInputHash(await specNow()));
+    const spec = await specNow();
+    const changed: MockSpec = {
+      ...spec,
+      features: spec.features.map((f) => f.id !== "getPet" ? f : { ...f, fixtures: f.fixtures.map((x) => x.status === 200 ? { status: 200, body: { id: 9, name: "Real" }, source: "recorded" as const } : x) }),
+    };
+    await ws.write("petstore", "mockspec.json", MockSpecSchema, changed);
+    const r = await generate(ws, "petstore", opts());
+    expect(r).toMatchObject({ skipped: false, attempts: 0, notes: ["fixture만 바뀌어 LLM을 다시 부르지 않았습니다"], userModified: [] });
+    expect(r.written).toContain("fixtures/getPet/200.json");
+    expect(await calls()).toBe(1);
+    expect(JSON.parse(await readFile(path.join(out, "fixtures/getPet/200.json"), "utf8"))).toEqual({ id: 9, name: "Real" });
+    const lock = (await readLock(out))!;
+    expect(lock.mockspecHash).toBe(hashJson(changed));
+    expect(lock.sourceFiles).toEqual({ "server.mjs": hashText(await readFile(path.join(out, "server.mjs"), "utf8")) });
+    expect((await ws.read("petstore", "generate.json", GenerateInfoSchema)).notes).toEqual(["가정: 인증 없음"]);
+    // 같은 내용으로 한 번 더: 이제는 mockspecHash가 같아 skipped
+    expect((await generate(ws, "petstore", opts())).skipped).toBe(true);
+  }, 60_000);
+
+  it("기능 정의가 바뀌면(inputHash 다름) LLM을 다시 부른다", async () => {
+    await respond(1, answer(await specNow()));
+    await generate(ws, "petstore", opts());
+    await select(ws, "petstore", ["getPet"]);
+    await respond(2, answer(await specNow()));
+    const r = await generate(ws, "petstore", opts());
+    expect(r.attempts).toBe(1);
     expect(await calls()).toBe(2);
   }, 60_000);
 

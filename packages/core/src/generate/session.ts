@@ -4,6 +4,7 @@ import path from "node:path";
 import { z } from "zod";
 import { GenerateInfoSchema, MockSpecSchema } from "../types.js";
 import { hashJson, hashText } from "../util/hash.js";
+import { specInputHash } from "../util/specHash.js";
 import type { Workspace } from "../workspace.js";
 import { withSystemLock } from "../workspaceLock.js";
 import { matchesAny } from "./glob.js";
@@ -173,6 +174,7 @@ export async function finalizeGeneration(ws: Workspace, system: string, opts: { 
       language: profile.language,
       generator: "llm",
       mockspecHash,
+      inputHash: specInputHash(spec),
       generatedAt: new Date().toISOString(),
       install: profile.install(process.platform),
       installCheck: profile.installCheck ?? null,
