@@ -142,7 +142,7 @@ dialog h2 { margin: 0 0 8px; font-size: var(--fs-dialog-title); }
 .result { display: flex; flex-direction: column; gap: 8px; }
 .result p, .verify .summary { margin: 0; }
 .files { margin: 0; padding: 8px 12px; list-style: none; max-height: 240px; overflow: auto; background: var(--surface-2); border-radius: var(--radius-sm); }
-.cmd, .coverage { margin: 0; padding: 10px 12px; background: var(--surface-2); border-radius: var(--radius-sm); font-family: var(--mono); font-size: var(--fs-num); white-space: pre-wrap; overflow-x: auto; }
+.cmd, .coverage, .record-example, .drift { margin: 0; padding: 10px 12px; background: var(--surface-2); border-radius: var(--radius-sm); font-family: var(--mono); font-size: var(--fs-num); white-space: pre-wrap; overflow-x: auto; }
 .stale-note { margin: 0; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--surface-2); border-left: 3px solid var(--accent); font-weight: 600; }
 .verify { max-width: 840px; }
 .results .st { width: auto; white-space: nowrap; }

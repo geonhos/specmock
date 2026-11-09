@@ -30,6 +30,7 @@ function setup(stale: Record<string, boolean> = {}, coverage: string | null = nu
     "GET /api/systems/petstore": ok(overview(stale, coverage)),
     "POST /api/systems/petstore/verify": () => ({ status: 202, body: { ok: true, data: { jobId: "v1" } } }),
     "POST /api/jobs/v1/cancel": ok({ state: "cancelled" }),
+    "GET /api/systems/petstore/target": ok({ exists: false, example: "{\n  \"baseUrl\": \"https://api.example.com/v2\"\n}" }),
     ...extra,
   });
 }
@@ -159,4 +160,38 @@ it("모르는 형식의 coverage는 원문 그대로 보인다", async () => {
   setup({}, "# 아무 글\n\n본문\n\n## contract test\n\n뒤");
   render(<App />);
   await vi.waitFor(() => expect(document.querySelector("pre.coverage")?.textContent).toContain("본문"));
+});
+
+it("target.json이 없으면 만들라는 안내와 예시, 녹화 버튼 없음", async () => {
+  setup();
+  render(<App />);
+  const card = await screen.findByRole("region", { name: "실제 시스템" });
+  expect(await within(card).findByText(/target\.json/)).toBeTruthy();
+  expect(card.querySelector("pre.record-example")!.textContent).toContain("https://api.example.com/v2");
+  expect(within(card).getByRole("button", { name: "예시 복사" })).toBeTruthy();
+  expect(within(card).queryByRole("button", { name: "녹화" })).toBeNull();
+});
+
+it("녹화: 변경 요청 포함 → POST /record {allowMutating:true}, 끝나면 요약·drift 본문", async () => {
+  const api = setup({}, null, {
+    "GET /api/systems/petstore/target": ok({ exists: true, baseUrl: "https://real.example.com/v2", example: "{}" }),
+    "POST /api/systems/petstore/record": () => ({ status: 202, body: { ok: true, data: { jobId: "r1" } } }),
+  });
+  render(<App />);
+  const card = await screen.findByRole("region", { name: "실제 시스템" });
+  expect(await within(card).findByText("https://real.example.com/v2")).toBeTruthy();
+  fireEvent.click(within(card).getByRole("checkbox", { name: /변경 요청 포함/ }));
+  fireEvent.click(within(card).getByRole("button", { name: "녹화" }));
+  await vi.waitFor(() => expect(api.calls).toContain("POST /api/systems/petstore/record"));
+  expect(api.bodies[api.calls.indexOf("POST /api/systems/petstore/record")]).toEqual({ allowMutating: true });
+  const rj = { id: "r1", system: "petstore", kind: "record", state: "running", cancellable: true, startedAt: "t" };
+  emit("job-started", rj);
+  expect(await within(card).findByRole("button", { name: "녹화 취소" })).toBeTruthy();
+  emit("job-done", { ...rj, state: "done", result: {
+    result: { baseUrl: "https://real.example.com/v2", matched: ["getPet"], drifted: [{ featureId: "listPets", errors: ["body.id 없음"] }], statusMismatch: [], skipped: [{ featureId: "createPet", reason: "mutating" }], failed: [] },
+    driftPath: "drift.md", driftMarkdown: "# petstore 실제 시스템 대조 (t, https://real.example.com/v2)\n\n## 스펙과 다름\n\n- `listPets`: body.id 없음", notes: ["generate를 실행하면 반영됩니다"],
+  } });
+  expect(await within(card).findByText("일치 1 · 스펙과 다름 1 · 상태 불일치 0 · 건너뜀 1 · 실패 0")).toBeTruthy();
+  expect(card.querySelector("pre.drift")!.textContent).toContain("body.id 없음");
+  expect(within(card).getByText("generate를 실행하면 반영됩니다")).toBeTruthy();
 });

@@ -5,6 +5,9 @@ export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string, readonly hint?: string, readonly jobId?: string, readonly from?: string, readonly to?: string) { super(message); this.name = "ApiError"; }
 }
 
+/** GET /api/systems/:s/target. headers·params는 서버가 싣지 않는다. */
+export interface TargetInfo { exists: boolean; baseUrl?: string; error?: string; example: string }
+
 async function call<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
   const r = await fetch(path, { method, headers: body === undefined ? {} : { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
   const j = (await r.json()) as ApiOk<T> | (ApiErr & { jobId?: string });
@@ -28,6 +31,8 @@ export const api = {
   generate: (name: string, outDir: string, force = false, language?: string) =>
     call<{ jobId: string }>("POST", `${s(name)}/generate`, { outDir, force, ...(language ? { language } : {}) }),
   verify: (name: string) => call<{ jobId: string }>("POST", `${s(name)}/verify`, {}),
+  target: (name: string) => call<TargetInfo>("GET", `${s(name)}/target`),
+  record: (name: string, allowMutating: boolean) => call<{ jobId: string }>("POST", `${s(name)}/record`, { allowMutating }),
   jobs: () => call<JobList>("GET", "/api/jobs"),
   cancel: (id: string) => call<{ state: Job["state"] }>("POST", `/api/jobs/${id}/cancel`),
 };
