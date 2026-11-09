@@ -24,7 +24,7 @@ export { generate, defaultMockDir, type GenerateOptions } from "./generate/index
 export { readLock, type Lock } from "./generate/lock.js";
 export type { GenerateReport, GenerateProgress, LanguageOutput } from "./generate/generator.js";
 export { verify, loadContracts, type VerifyOptions, type VerifyResult, type ContractResult } from "./verify/index.js";
-export { startMock, ensureInstalled, type RunningMock, type StartMockOptions } from "./verify/server.js";
+export { startMock, ensureInstalled, installKey, markInstalled, type RunningMock, type StartMockOptions, type EnsureInstalledOptions } from "./verify/server.js";
 export { renderCoverage } from "./verify/coverage.js";
 export { extract, type ExtractOptions, type ExtractProgress, type ExtractResult } from "./analyze/extract.js";
 export { submitExtraction, type SubmitExtractionInput, type SubmitExtractionResult, type SubmitExtractionOptions, type SubmitError } from "./analyze/submit.js";

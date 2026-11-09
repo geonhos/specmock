@@ -14,6 +14,8 @@ import { resolveMockDir, verifyMock } from "../src/service/verify.js";
 import { prepare } from "../src/analyze/prepare.js";
 import { submitExtraction } from "../src/analyze/submit.js";
 import { generate } from "../src/generate/index.js";
+import { readLock } from "../src/generate/lock.js";
+import { markInstalled } from "../src/verify/server.js";
 import { select } from "../src/select/index.js";
 import { Workspace } from "../src/workspace.js";
 import { PETSTORE, ROOT_NODE_MODULES } from "./helpers.js";
@@ -174,6 +176,7 @@ describe("verify", () => {
     const out = path.join(dir, "mock", "petstore");
     await generate(ws, "petstore", { outDir: out });
     await symlink(ROOT_NODE_MODULES, path.join(out, "node_modules"), "dir");
+    await markInstalled(out, (await readLock(out))!);
     const v = await verifyMock(ws, "petstore", { onEvent });
     expect(v.dir).toBe(out);
     expect(v.result.failed).toBe(0);

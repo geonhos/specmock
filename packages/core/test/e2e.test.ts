@@ -9,7 +9,7 @@ import { ingest } from "../src/ingest/index.js";
 import { select } from "../src/select/index.js";
 import { renderCoverage } from "../src/verify/coverage.js";
 import { verify } from "../src/verify/index.js";
-import { startMock } from "../src/verify/server.js";
+import { markInstalled, startMock } from "../src/verify/server.js";
 import { MockSpecSchema } from "../src/types.js";
 import { Workspace } from "../src/workspace.js";
 import { PETSTORE, ROOT_NODE_MODULES } from "./helpers.js";
@@ -28,6 +28,8 @@ afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
 
 async function linkNodeModules() {
   await symlink(ROOT_NODE_MODULES, path.join(out, "node_modules"), "dir");
+  // 루트 node_modules를 쓰므로 npm install을 건너뛴다(마커는 outDir마다 따로 생긴다).
+  await markInstalled(out, (await readLock(out))!);
 }
 
 describe("e2e: ingest → analyze → select → generate → verify", () => {

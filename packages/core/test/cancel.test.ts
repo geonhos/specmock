@@ -110,7 +110,7 @@ it("npm install 취소 시 손자 프로세스도 죽고, 다음 verify는 insta
     await waitFor(async () => !isAlive(gc));
     // 취소해도 node_modules는 지우지 않지만, 완료 마커는 없어야 다음에 다시 설치한다.
     await access(path.join(out, "node_modules"));
-    await expect(access(path.join(out, "node_modules", ".specmock-installed"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(path.join(out, ".specmock-installed"))).rejects.toMatchObject({ code: "ENOENT" });
   });
   // 다음 verify는 install을 다시 시도한다(가짜 npm이 이번에는 바로 성공).
   await withEnv({ PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`, FAST: "1", INSTALL_LOG: log }, async () => {

@@ -2,6 +2,7 @@ import { readFile, realpath, mkdtemp, rm, writeFile, cp, readdir, symlink } from
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { markInstalled, readLock } from "@specmock/core";
 import { TOOL_NAMES } from "../src/names.js";
 import { connect, DOCS_SAMPLE, PETSTORE, ROOT_NODE_MODULES, type Session } from "./helpers.js";
 
@@ -141,6 +142,7 @@ describe("generate_mock output directory guard", () => {
 
 async function linkNodeModules(outDir: string) {
   await symlink(ROOT_NODE_MODULES, path.join(outDir, "node_modules"), "dir");
+  await markInstalled(outDir, (await readLock(outDir))!);
 }
 
 describe("OpenAPI path: ingest → analyze → list → show → select → generate → verify", () => {
