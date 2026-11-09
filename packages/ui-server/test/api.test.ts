@@ -270,4 +270,18 @@ describe("Task 9 리뷰 수정", () => {
     const j = [...list.running, ...list.recent].find((x) => x.id === r.body.data.jobId)!;
     expect(j.input).toEqual({ outDir: out });
   });
+
+  it("generate body의 language는 job 입력에 실리고, 모르는 언어는 400 invalid", async () => {
+    const c = client();
+    await c.post("/systems", { system: "petstore", origins: [PETSTORE] });
+    await c.post("/systems/petstore/analyze");
+    const bad = await c.post("/systems/petstore/generate", { outDir: path.join(root, "o"), language: "cobol" });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toMatchObject({ code: "invalid", message: expect.stringContaining("지원 언어: ts, java") });
+    expect((await c.get("/jobs")).body.data).toEqual({ running: [], recent: [] });
+    const out = path.join(root, "out-ts");
+    const r = await c.post("/systems/petstore/generate", { outDir: out, language: "ts" });
+    const list = (await c.get("/jobs")).body.data as { running: { id: string; input?: unknown }[]; recent: { id: string; input?: unknown }[] };
+    expect([...list.running, ...list.recent].find((x) => x.id === r.body.data.jobId)!.input).toEqual({ outDir: out, language: "ts" });
+  });
 });

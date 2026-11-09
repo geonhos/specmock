@@ -25,7 +25,8 @@ export const api = {
   selection: (name: string) => call<Selection | null>("GET", `${s(name)}/selection`),
   saveSelection: (name: string, ids: string[]) => call<{ selected: string[] }>("POST", `${s(name)}/selection`, { ids }),
   extract: (name: string, refresh = false) => call<{ jobId: string }>("POST", `${s(name)}/extract`, { refresh }),
-  generate: (name: string, outDir: string, force = false) => call<{ jobId: string }>("POST", `${s(name)}/generate`, { outDir, force }),
+  generate: (name: string, outDir: string, force = false, language?: string) =>
+    call<{ jobId: string }>("POST", `${s(name)}/generate`, { outDir, force, ...(language ? { language } : {}) }),
   verify: (name: string) => call<{ jobId: string }>("POST", `${s(name)}/verify`, {}),
   jobs: () => call<JobList>("GET", "/api/jobs"),
   cancel: (id: string) => call<{ state: Job["state"] }>("POST", `/api/jobs/${id}/cancel`),

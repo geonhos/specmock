@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import path from "node:path";
-import { analyzeSpec, CatalogSchema, ClaudeCodeAdapter, findFeature, generate, ingestSpec, listFeatures, select, summarizeChunks, verifyMock, Workspace } from "@specmock/core";
+import { analyzeSpec, assertLanguage, CatalogSchema, ClaudeCodeAdapter, findFeature, generate, ingestSpec, listFeatures, select, summarizeChunks, verifyMock, Workspace } from "@specmock/core";
 import { streamSSE } from "hono/streaming";
 import { EventBus, pushBounded, type BusEvent } from "./bus.js";
 import { BusyJobError, JobManager, NotCancellableError, ShuttingDownError } from "./jobs.js";
@@ -14,7 +14,7 @@ import { findExecutable } from "./which.js";
 
 const IngestBody = z.object({ system: z.string().min(1), origins: z.array(z.string().min(1)).min(1), refresh: z.boolean().optional() });
 const ExtractBody = z.object({ refresh: z.boolean().optional() });
-const GenerateBody = z.object({ outDir: z.string().min(1).optional(), force: z.boolean().optional() });
+const GenerateBody = z.object({ outDir: z.string().min(1).optional(), force: z.boolean().optional(), language: z.string().min(1).optional() });
 const VerifyBody = z.object({ dir: z.string().min(1).optional() });
 const SelectionBody = z.object({ ids: z.array(z.string()) });
 
@@ -110,9 +110,18 @@ export function createApp(opts: AppOptions) {
   app.post("/api/systems/:s/generate", async (c) => {
     const system = c.req.param("s");
     const b = await optionalBody(c, GenerateBody);
+    // 모르는 언어는 작업을 만들기 전에 400으로 돌려준다(toApiError는 이 메시지를 500으로 본다).
+    if (b.language !== undefined) {
+      try { assertLanguage(b.language); } catch (e) { throw new InvalidRequest((e as Error).message); }
+    }
     await assertRegistered(ws, system);
     const outDir = resolveFromRoot(b.outDir) ?? (await defaultOutDir(ws, opts.root, system));
-    return accepted(c, jobs.start(system, "generate", () => generate(ws, system, { outDir, force: b.force }), { outDir }).id);
+    const input = { outDir, ...(b.language ? { language: b.language } : {}) };
+    return accepted(c, jobs.start(system, "generate", ({ onEvent }) => generate(ws, system, {
+      outDir, force: b.force, language: b.language,
+      adapter: new ClaudeCodeAdapter({ command: claudeCommand }),
+      onProgress: (e) => onEvent({ stage: "generate", message: e.message, done: e.attempt, total: e.maxAttempts }),
+    }), input).id);
   });
   app.post("/api/systems/:s/verify", async (c) => {
     const system = c.req.param("s");

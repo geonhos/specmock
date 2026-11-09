@@ -122,6 +122,7 @@ it("OpenAPI 시스템: 생성 작업 → done, 같은 곳에 덮어쓰기 거부
   expect((await c.post("/systems/petstore/generate", { outDir })).status).toBe(202);
   const j1 = await until(async () => (await c.get("/jobs")).body.data.recent.find((j: { kind: string }) => j.kind === "generate"));
   expect(j1.state).toBe("done");
+  expect(j1.result).toMatchObject({ language: "ts", attempts: 0, notes: [], userModified: [], skipped: false, launch: `cd ${outDir} && npm install && npm start` });
   expect((await c.get("/systems/petstore")).body.data.defaultOutDir).toBe(outDir); // 마지막 생성 위치
   // root는 비어 있지 않고 specmock 표식이 없다
   expect((await c.post("/systems/petstore/generate", { outDir: root })).status).toBe(202);
@@ -162,3 +163,23 @@ it("SSE 큐 상한: 넘치면 오래된 job-progress부터 버리고 job-done은
   const last = [...text.matchAll(/"n":(\d+)/g)].map((m) => Number(m[1]));
   expect(last.at(-1)).toBe(49); // 최신 진행은 남는다
 });
+
+it("java 생성: 진행이 job-progress(시도 n/max)로 오고, 시도를 다 쓰면 failed와 마지막 attempt 위치", async () => {
+  const c = make("claude-fail");
+  await c.post("/systems", { system: "petstore", origins: [PETSTORE] });
+  await c.post("/systems/petstore/analyze");
+  const id = (await c.get("/systems/petstore/features")).body.data.rows[0].id;
+  await c.post("/systems/petstore/selection", { ids: [id] });
+  const progress: unknown[] = [];
+  c.bus.subscribe((e) => {
+    const d = e.data as { kind?: string; progress?: unknown };
+    if (e.event === "job-progress" && d.kind === "generate") progress.push(d.progress);
+  });
+  const outDir = path.join(root, "out-java");
+  expect((await c.post("/systems/petstore/generate", { outDir, language: "java" })).status).toBe(202);
+  const j = await until(async () => (await c.get("/jobs")).body.data.recent.find((x: { kind: string }) => x.kind === "generate"), 20_000);
+  expect(j).toMatchObject({ state: "failed", input: { outDir, language: "java" }, error: { message: expect.stringContaining("3번 시도했지만 검증을 통과하는 mock을 만들지 못했습니다") } });
+  expect(progress).toContainEqual({ message: "코드 생성 중 (1/3)", done: 1, total: 3 });
+  expect(progress.at(-1)).toEqual({ message: "코드 생성 중 (3/3)", done: 3, total: 3 });
+  await expect(readFile(path.join(outDir, "specmock.lock.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+}, 30_000);

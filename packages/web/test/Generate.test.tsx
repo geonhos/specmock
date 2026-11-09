@@ -151,3 +151,48 @@ it("다른 화면에서 시작한 작업이 overwrite-required로 끝나도 창�
   expect(dialog.textContent).toContain("/elsewhere/out");
   fireEvent.click(within(dialog).getByRole("button", { name: "덮어쓰기" }));
 });
+
+it("언어 선택: 기본은 '기존 언어 유지', Java를 고르면 body에 language:'java'. 덮어쓰기 재호출에도 실린다", async () => {
+  const api = setup({ "POST /api/systems/petstore/generate": accepted });
+  render(<App />);
+  const sel = (await screen.findByLabelText("언어")) as HTMLSelectElement;
+  expect(sel.value).toBe("");
+  expect([...sel.options].map((o) => o.textContent)).toEqual(["기존 언어 유지(없으면 TypeScript)", "TypeScript (Hono)", "Java (Maven + Javalin)"]);
+  fireEvent.change(sel, { target: { value: "java" } });
+  fireEvent.click(screen.getByRole("button", { name: "생성" }));
+  await vi.waitFor(() => expect(api.calls).toContain("POST /api/systems/petstore/generate"));
+  expect(api.bodies[api.calls.indexOf("POST /api/systems/petstore/generate")]).toEqual({ outDir: "/r/mock/petstore", force: false, language: "java" });
+  emit("job-started", job());
+  emit("job-failed", job({ state: "failed", error: { code: "overwrite-required", message: "비어 있지 않아요" } }));
+  fireEvent.click(within(await screen.findByRole("dialog", { name: "덮어쓸까요?" })).getByRole("button", { name: "덮어쓰기" }));
+  await vi.waitFor(() => expect(api.calls.filter((c) => c === "POST /api/systems/petstore/generate")).toHaveLength(2));
+  expect(api.bodies.at(-1)).toEqual({ outDir: "/r/mock/petstore", force: true, language: "java" });
+});
+
+it("생성 중 진행: job-progress의 단계 메시지와 '시도 n/max'를 보인다", async () => {
+  setup({ "POST /api/systems/petstore/generate": accepted });
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "생성" }));
+  await vi.waitFor(() => expect(FakeEventSource.last).toBeTruthy());
+  emit("job-started", job());
+  emit("job-progress", job({ progress: { message: "빌드 중 (2/3)", done: 2, total: 3 } }));
+  const status = await screen.findByText(/빌드 중 \(2\/3\)/);
+  expect(status.textContent).toContain("시도 2/3");
+});
+
+it("java 결과: 시도 횟수·참고·사용자가 고쳤는데 바뀐 파일 목록과 launch 명령. 건너뛴 생성은 '변경 없음'", async () => {
+  const api = setup({ "POST /api/systems/petstore/generate": accepted });
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "생성" }));
+  await vi.waitFor(() => expect(api.calls).toContain("POST /api/systems/petstore/generate"));
+  emit("job-started", job());
+  const launch = "cd /r/mock/petstore && ./mvnw -q -DskipTests package && java -jar target/mock.jar";
+  emit("job-done", job({ state: "done", endedAt: "t1", result: { outDir: "/r/mock/petstore", language: "java", written: ["pom.xml", "src/main/java/mock/Main.java"], preserved: [], orphaned: [], launch, attempts: 2, notes: ["POST /pets 검증 규칙을 단순화"], userModified: ["src/main/java/mock/Custom.java"], skipped: false } }));
+  expect(await screen.findByText(/생성 완료: \/r\/mock\/petstore \(2개 파일\)/)).toBeTruthy();
+  expect(screen.getByText("LLM 시도 2회")).toBeTruthy();
+  expect(screen.getByText("POST /pets 검증 규칙을 단순화")).toBeTruthy();
+  expect(screen.getByText(/이번 생성이 바꾼 것 1개 \(확인하세요\): src\/main\/java\/mock\/Custom\.java/)).toBeTruthy();
+  expect(document.body.textContent).toContain(launch);
+  emit("job-done", job({ id: "j2", state: "done", endedAt: "t2", result: { outDir: "/r/mock/petstore", language: "java", written: [], preserved: [], orphaned: [], launch, attempts: 0, notes: [], userModified: [], skipped: true } }));
+  expect(await screen.findByText(/변경 없음: \/r\/mock\/petstore/)).toBeTruthy();
+});
