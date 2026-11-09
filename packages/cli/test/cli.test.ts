@@ -333,12 +333,25 @@ describe("Phase 3B CLI (record)", () => {
     expect(stdout).toContain("- generate를 실행하면 반영됩니다");
   });
 
-  it("--json은 RecordResult만 출력한다", async () => {
+  it("--json은 RecordResult에 notes를 더해 출력한다", async () => {
     await selected({ baseUrl: await realSystem({ id: 1, name: "Real" }) });
     const { stdout } = await specmock("record", "petstore", "--json", "--no-apply");
     const j = JSON.parse(stdout);
     expect(j).toMatchObject({ system: "petstore", matched: ["getPet"], recorded: ["getPet"], applied: null });
     expect(j.skipped).toEqual([{ featureId: "createPet", reason: "mutating" }]);
+    expect(j.notes).toEqual([]);
+  });
+
+  it("--json에도 반영 안내·반영 실패 notes가 실린다", async () => {
+    await selected({ baseUrl: await realSystem({ id: 1, name: "Real" }) });
+    const later = JSON.parse((await specmock("record", "petstore", "--json")).stdout);
+    expect(later.notes).toEqual(["generate를 실행하면 반영됩니다"]);
+    const selPath = path.join(dir, ".specmock", "petstore", "selection.json");
+    const sel = JSON.parse(await readFile(selPath, "utf8"));
+    await writeFile(selPath, JSON.stringify({ ...sel, selected: ["getPet", "gonePet"] }));
+    const err = await specmock("record", "petstore", "--json", "--feature", "getPet").catch((e: { code: number; stdout: string }) => e) as { code: number; stdout: string };
+    expect(err.code).toBe(2);
+    expect(JSON.parse(err.stdout).notes[0]).toMatch(/^반영 실패: /);
   });
 
   it("스펙과 다르면 종료 코드 2", async () => {

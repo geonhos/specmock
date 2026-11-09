@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/server";
 import {
-  assertLanguage, defaultMockDir, finalizeGeneration, findFeature, generate, listFeatures, prepareGeneration, readLock, readSessionMarker, recordResponses, select,
+  assertLanguage, defaultMockDir, finalizeGeneration, findFeature, generate, listFeatures, prepareGeneration, readLock, readSessionMarker, recordResponses, APPLY_FAILED, select,
   SUPPORTED_LANGUAGES, verifyMock, type OnEvent, type Workspace,
 } from "@specmock/core";
 import { z } from "zod";
@@ -171,6 +171,7 @@ export function registerMockTools(server: McpServer, ws: Workspace, onEvent: OnE
       applied: r.applied ? { selected: r.applied.selected, generated: g !== null, outDir: g?.outDir ?? null, preserved: g?.preserved ?? [] } : null,
       notes: v.notes, driftPath: absPath(ws.dir(system), v.driftPath), driftSummary,
     };
-    return ok(`${driftSummary}\n\ndrift: ${data.driftPath}${v.notes.length ? `\n${v.notes.map((n) => `- ${n}`).join("\n")}` : ""}`, data);
+    const failedNote = v.notes.find((n) => n.startsWith(APPLY_FAILED));
+    return ok(`${failedNote ? `⚠ ${failedNote}\n\n` : ""}${driftSummary}\n\ndrift: ${data.driftPath}${v.notes.length ? `\n${v.notes.map((n) => `- ${n}`).join("\n")}` : ""}`, data);
   }));
 }

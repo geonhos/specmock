@@ -38,7 +38,7 @@ export function registerRecord(program: Command): void {
     .option("--feature <id...>", "이 기능만 녹화")
     .option("--refresh", "대상 기능의 기존 녹화를 버리고 다시 녹화(중단되면 유지)", false)
     .option("--no-apply", "녹화·drift만 하고 select·generate를 다시 실행하지 않는다")
-    .option("--json", "RecordResult를 JSON으로 출력", false)
+    .option("--json", "RecordResult와 notes를 JSON으로 출력", false)
     .action(async (system: string, opts: { allowMutating: boolean; feature?: string[]; refresh: boolean; apply: boolean; json: boolean }, cmd: Command) => {
       const ws = workspaceFrom(cmd);
       let v: RecordResponsesResult;
@@ -48,7 +48,7 @@ export function registerRecord(program: Command): void {
           onEvent: (e) => process.stderr.write(e.message + "\n"),
         });
       } catch (e) { fail((e as Error).message); }
-      printJsonOr(opts.json, v.result, () => formatRecord(v));
+      printJsonOr(opts.json, { ...v.result, notes: v.notes }, () => formatRecord(v));
       // verify와 같이 exitCode만 설정한다(stdout 파이프 잘림 방지).
       if (recordFailed(v.result) || applyFailed(v)) process.exitCode = 2;
     });

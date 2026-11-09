@@ -108,7 +108,7 @@ async function selectUnlocked(ws: Workspace, system: string, exprs: string[], op
   }
 
   const selectionFile = await ws.write(system, "selection.json", SelectionSchema, {
-    system, catalogHash, selected, resolved, catalogIds: currentIds, updatedAt: new Date().toISOString(),
+    system, catalogHash, selected, resolved, catalogIds: currentIds, literal: opts.literalIds === true, updatedAt: new Date().toISOString(),
   });
   const mockspecFile = await ws.write(system, "mockspec.json", MockSpecSchema, {
     system, baseUrl: "/", features, notMocked, contracts, assumptions,

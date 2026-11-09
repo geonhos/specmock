@@ -128,4 +128,44 @@ describe("recordResponses", () => {
     expect(r.notes).toEqual([expect.stringMatching(/^반영 실패: .*알 수 없는 기능 id|^반영 실패: .*gonePet/)]);
     expect(await ws.exists(SYS, "drift.md")).toBe(true);
   });
+
+  it("표현식 `all` 선택은 카탈로그에 id `all`이 있어도 apply 뒤 전체 선택을 유지한다(literal: false 저장)", async () => {
+    const cat = await ws.read(SYS, "catalog.json", CatalogSchema);
+    const get = cat.features.find((f) => f.id === "getPet")!;
+    await ws.write(SYS, "catalog.json", CatalogSchema, { ...cat, features: cat.features.map((f) => (f.id === "getPet" ? { ...get, id: "all" } : f)) });
+    await select(ws, SYS, ["all"]);
+    const before = await ws.read(SYS, "selection.json", SelectionSchema);
+    expect(before.literal).toBe(false);
+    expect(before.resolved.length).toBe(cat.features.length);
+    await recordResponses(ws, SYS, { features: ["all"] });
+    const after = await ws.read(SYS, "selection.json", SelectionSchema);
+    expect(after.resolved).toEqual(before.resolved);
+    expect(after.literal).toBe(false);
+  });
+
+  it("literalIds로 저장하면 literal: true, literal이 없는 옛 파일은 추정한다", async () => {
+    await select(ws, SYS, ["getPet"], { literalIds: true });
+    const sel = await ws.read(SYS, "selection.json", SelectionSchema);
+    expect(sel.literal).toBe(true);
+    const { literal: _l, ...old } = sel;
+    await ws.write(SYS, "selection.json", SelectionSchema, old);
+    await recordResponses(ws, SYS);
+    expect((await ws.read(SYS, "selection.json", SelectionSchema)).resolved).toEqual(["getPet"]);
+  });
+
+  it("프로그래밍 오류(TypeError)는 삼키지 않고 다시 던진다", async () => {
+    await generateFake();
+    const onEvent = (e: { message: string }) => { if (e.message.startsWith("generate")) (null as unknown as { x: number }).x; };
+    await expect(recordResponses(ws, SYS, { profile: fakeProfile, adapter: adapter(), onEvent })).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it("select 뒤 generate가 실패하면 mock은 아직이라고 안내한다", async () => {
+    await generateFake();
+    // fixtures 자리에 파일을 두어 generate의 쓰기를 실패시킨다.
+    await rm(path.join(out, "fixtures"), { recursive: true, force: true });
+    await writeFile(path.join(out, "fixtures"), "x");
+    const r = await recordResponses(ws, SYS, { profile: fakeProfile, adapter: adapter() });
+    expect(r.result.applied).toBeNull();
+    expect(r.notes).toEqual([expect.stringMatching(/^반영 실패: .*mockspec은 갱신됐고 mock은 아직/)]);
+  });
 });

@@ -17,7 +17,7 @@ try {
   console.log(driftMarkdown);
   const sent = result.matched.length + result.drifted.length + result.statusMismatch.length + result.failed.length;
   console.log(`요청 ${sent} · 녹화 ${result.recorded.length} · 건너뜀(변경 요청) ${result.skipped.length}`);
-  process.exit(sent > 0 && result.recorded.length > 0 ? 0 : 1);
+  process.exitCode = sent > 0 && result.recorded.length > 0 ? 0 : 1;
 } finally {
   await rm(root, { recursive: true, force: true });
 }

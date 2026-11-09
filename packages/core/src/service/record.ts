@@ -43,14 +43,16 @@ export async function recordResponses(ws: Workspace, system: string, opts: Recor
   });
   const notes: string[] = [];
   if (opts.apply !== false) {
+    let selectDone = false;
     try {
       opts.onEvent?.({ stage: "record", message: "select 다시 실행(녹화 반영)" });
       const selection = await ws.read(system, "selection.json", SelectionSchema);
       const catalog = await ws.read(system, "catalog.json", CatalogSchema);
-      // 저장된 selected가 전부 현재 id와 정확히 일치하면 UI·--interactive가 고른 literal id 목록이다. 표현식으로 다시 풀면 `all`·`3` 같은 id가 다른 집합이 된다.
+      // literal이 저장돼 있으면 그 값. 옛 파일은 selected가 전부 현재 id와 정확히 일치하면 UI·--interactive가 고른 literal id 목록이다. 표현식으로 다시 풀면 `all`·`3` 같은 id가 다른 집합이 된다.
       const ids = new Set(catalog.features.map((f) => f.id));
-      const literal = selection.selected.length > 0 && selection.selected.every((id) => ids.has(id));
+      const literal = selection.literal ?? (selection.selected.length > 0 && selection.selected.every((id) => ids.has(id)));
       const sel = await select(ws, system, selection.selected, { literalIds: literal });
+      selectDone = true;
       let generated: GenerateReport | null = null;
       const info = (await ws.exists(system, "generate.json")) ? await ws.read(system, "generate.json", GenerateInfoSchema) : null;
       const outDir = info ? path.resolve(info.outDir) : null;
@@ -68,8 +70,10 @@ export async function recordResponses(ws: Workspace, system: string, opts: Recor
       result.applied = { selected: sel.resolved.length, generate: generated };
     } catch (e) {
       if (opts.signal?.aborted) throw e;
+      // 프로그래밍 오류(Error가 아니거나 TypeError·RangeError)는 삼키지 않는다.
+      if (!(e instanceof Error) || e instanceof TypeError || e instanceof RangeError) throw e;
       // 녹화·drift.md는 이미 썼다. 결과를 버리지 않고 반영 실패를 알린다.
-      notes.push(`${APPLY_FAILED}${maskSecrets((e as Error).message)}`);
+      notes.push(`${APPLY_FAILED}${maskSecrets(e.message)}${selectDone ? " — mockspec은 갱신됐고 mock은 아직입니다. `specmock generate <system>`으로 반영하세요" : ""}`);
       result.applied = null;
     }
   }
