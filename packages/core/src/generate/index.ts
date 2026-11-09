@@ -1,10 +1,13 @@
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { GenerateInfoSchema, MockSpecSchema } from "../types.js";
+import { hashJson } from "../util/hash.js";
 import type { Workspace } from "../workspace.js";
 import { withSystemLock } from "../workspaceLock.js";
-import { LOCK_FILE } from "./lock.js";
-import { renderTsHono, type GenerateReport } from "./tsHono.js";
+import type { GenerateReport } from "./generator.js";
+import { LOCK_FILE, readLock, writeLock } from "./lock.js";
+import { writeLanguageFiles, writeScaffold } from "./scaffold.js";
+import { TsHonoGenerator } from "./tsHono.js";
 
 export interface GenerateOptions {
   outDir?: string;
@@ -31,8 +34,25 @@ async function generateUnlocked(ws: Workspace, system: string, opts: GenerateOpt
   const spec = await ws.read(system, "mockspec.json", MockSpecSchema);
   const outDir = path.resolve(opts.outDir ?? defaultMockDir(system));
   if (!opts.force) await assertSafeOutDir(outDir);
-  const report = await renderTsHono(spec, outDir, { force: opts.force });
+  const previous = await readLock(outDir);
+  const output = await new TsHonoGenerator().generate({ spec, outDir, existing: null });
+  const written: string[] = [];
+  await writeLanguageFiles(outDir, output, written);
+  const s = await writeScaffold(spec, outDir, previous, { force: opts.force }, written);
+  await writeLock(outDir, {
+    system: spec.system,
+    language: "ts",
+    mockspecHash: hashJson(spec),
+    generatedAt: new Date().toISOString(),
+    start: output.start,
+    healthPath: output.healthPath,
+    fixtureHashes: s.fixtureHashes,
+  });
   // verify가 --dir 없이도 마지막 생성 위치를 찾을 수 있도록 기록한다.
   await ws.write(system, "generate.json", GenerateInfoSchema, { outDir, generatedAt: new Date().toISOString() });
-  return report;
+  return {
+    outDir, language: "ts", written, preserved: s.preserved, orphaned: s.orphaned,
+    launch: `cd ${outDir} && npm install && npm start`,
+    attempts: 0, notes: [], userModified: [], skipped: false,
+  };
 }

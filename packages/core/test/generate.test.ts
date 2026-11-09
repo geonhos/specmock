@@ -9,7 +9,8 @@ import { generate } from "../src/generate/index.js";
 import { readLock } from "../src/generate/lock.js";
 import { ingest } from "../src/ingest/index.js";
 import { select } from "../src/select/index.js";
-import { GenerateInfoSchema } from "../src/types.js";
+import { TsHonoGenerator } from "../src/generate/tsHono.js";
+import { GenerateInfoSchema, MockSpecSchema } from "../src/types.js";
 import { Workspace } from "../src/workspace.js";
 import { PETSTORE, ROOT_NODE_MODULES } from "./helpers.js";
 
@@ -174,5 +175,19 @@ describe("generate(ts-hono)", () => {
       .then((r) => ({ code: 0, ...r }))
       .catch((e: { code?: number; stdout?: string; stderr?: string }) => ({ code: e.code ?? 1, stdout: e.stdout ?? "", stderr: e.stderr ?? "" }));
     expect(result.code, `tsc failed\n${result.stdout}\n${result.stderr}`).toBe(0);
+  });
+});
+
+describe("TsHonoGenerator", () => {
+  it("언어 종속 파일만 돌려주고 디스크에 쓰지 않는다", async () => {
+    const spec = await ws.read("petstore", "mockspec.json", MockSpecSchema);
+    const output = await new TsHonoGenerator().generate({ spec, outDir: out, existing: null });
+    expect(output.files.map((f) => f.path)).toEqual([
+      "package.json", "tsconfig.json", "README.md", "src/server.ts", "src/notMocked.ts", "src/fixtures.ts", "src/validate.ts", "src/routes/pets.ts",
+    ]);
+    expect(output.start).toEqual({ command: "npx", args: ["tsx", "src/server.ts"] });
+    expect(output.healthPath).toBe("/__specmock/health");
+    expect(output.prune).toEqual([{ dir: "src/routes", ext: ".ts" }]);
+    expect(await exists(out)).toBe(false);
   });
 });

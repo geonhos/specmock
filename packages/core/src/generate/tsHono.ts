@@ -1,22 +1,10 @@
 import { Eta } from "eta";
-import { mkdir, readdir, readFile, rm, rmdir, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Contract, MockFeature, MockSpec } from "../types.js";
-import { hashJson, hashText } from "../util/hash.js";
-import { readLock, writeLock, type Lock } from "./lock.js";
+import type { MockFeature, MockSpec } from "../types.js";
+import type { GenerateContext, LanguageGenerator, LanguageOutput } from "./generator.js";
+import { lowest2xxStatus } from "./scaffold.js";
 
 const TEMPLATES = fileURLToPath(new URL("../../templates/ts-hono/", import.meta.url));
-
-export interface GenerateReport {
-  outDir: string;
-  /** 이번 실행에서 쓴 파일 (outDir 기준 상대 경로). */
-  written: string[];
-  /** 사용자가 수정해 덮어쓰지 않은 fixture. */
-  preserved: string[];
-  /** 더 이상 선택되지 않은 기능의 fixture 중 사용자가 수정해 남겨둔 것. */
-  orphaned: string[];
-}
 
 export function safeName(s: string): string {
   return s.replace(/[^A-Za-z0-9_]/g, "_");
@@ -44,10 +32,6 @@ export function honoPath(p: string): string {
   return p.replace(/\{([^}]+)\}/g, ":$1");
 }
 
-function lowest2xxStatus(f: MockFeature): number {
-  return f.fixtures.filter((x) => x.status >= 200 && x.status < 300).map((x) => x.status).sort((a, b) => a - b)[0] ?? 200;
-}
-
 function paramsSchema(entries: Record<string, { schema: Record<string, unknown> | null; required: boolean }>) {
   return {
     type: "object",
@@ -68,28 +52,11 @@ export function validationSchema(f: MockFeature) {
   };
 }
 
-async function writeOut(outDir: string, rel: string, text: string, written: string[]): Promise<void> {
-  const file = path.join(outDir, rel);
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, text, "utf8");
-  written.push(rel);
-}
+export const TS_FIXED_FILES = ["package.json", "tsconfig.json", "README.md", "src/server.ts", "src/notMocked.ts", "src/fixtures.ts", "src/validate.ts"];
 
-/** dir 안에서 stale(name)이 참인 항목을 지운다. dir이 없으면 아무 일도 하지 않는다. */
-async function removeStale(dir: string, stale: (name: string) => boolean): Promise<void> {
-  const names = await readdir(dir).catch(() => [] as string[]);
-  for (const name of names) {
-    if (stale(name)) await rm(path.join(dir, name), { recursive: true, force: true });
-  }
-}
-
-export async function renderTsHono(spec: MockSpec, outDir: string, opts: { force?: boolean } = {}): Promise<GenerateReport> {
+/** 기존 eta 템플릿으로 TS(Hono) 파일을 렌더한다. 디스크에 쓰지 않는다. */
+export function renderTsHonoFiles(spec: MockSpec): { path: string; content: string }[] {
   const eta = new Eta({ views: TEMPLATES, autoEscape: false, autoTrim: false });
-  const previous = await readLock(outDir);
-  const written: string[] = [];
-  const preserved: string[] = [];
-  const orphaned: string[] = [];
-
   const groupNames = new NameRegistry();
   const featureNames = new NameRegistry();
   const groups = [...new Set(spec.features.map((f) => f.group))].sort().map((name) => ({
@@ -97,7 +64,7 @@ export async function renderTsHono(spec: MockSpec, outDir: string, opts: { force
     safe: groupNames.claim(name),
     features: spec.features
       .filter((f) => f.group === name)
-      .map((f) => ({
+      .map((f: MockFeature) => ({
         id: f.id,
         safe: featureNames.claim(f.id),
         title: f.title,
@@ -108,7 +75,6 @@ export async function renderTsHono(spec: MockSpec, outDir: string, opts: { force
         validation: validationSchema(f),
       })),
   }));
-
   const view = {
     system: spec.system,
     featureCount: spec.features.length,
@@ -119,70 +85,27 @@ export async function renderTsHono(spec: MockSpec, outDir: string, opts: { force
       fixtureSource: f.fixtures.find((x) => x.status === lowest2xxStatus(f))?.source ?? "empty",
     })),
   };
-
   // Eta는 이름에 확장자가 이미 있으면 .eta를 붙이지 않으므로 명시한다.
   const render = (name: string, data: object = view) => eta.render(`${name}.eta`, data);
-  for (const name of ["package.json", "tsconfig.json", "README.md", "src/server.ts", "src/notMocked.ts", "src/fixtures.ts", "src/validate.ts"]) {
-    await writeOut(outDir, name, render(name), written);
-  }
+  const files = TS_FIXED_FILES.map((name) => ({ path: name, content: render(name) }));
   for (const g of groups) {
-    await writeOut(outDir, `src/routes/${g.safe}.ts`, render("src/route.ts", { ...view, group: g.name, features: g.features }), written);
+    files.push({ path: `src/routes/${g.safe}.ts`, content: render("src/route.ts", { ...view, group: g.name, features: g.features }) });
   }
-  // 이전 실행이 만든 라우트 파일 중 이번에 쓰지 않은 것(그룹이 사라진 경우)을 지운다.
-  const routeFiles = new Set(groups.map((g) => `${g.safe}.ts`));
-  await removeStale(path.join(outDir, "src", "routes"), (name) => name.endsWith(".ts") && !routeFiles.has(name));
+  return files;
+}
 
-  // lock의 fixtureHashes에는 "생성기가 썼을 내용"의 해시를 기록한다.
-  // 사용자가 수정한 파일을 보존할 때도 생성 텍스트의 해시를 남겨야 다음 재생성에서 다시 수정으로 인식한다.
-  // 라우트는 가장 낮은 2xx 하나만 서빙하므로 그 fixture만 파일로 쓴다. 나머지(4xx 등)는 mockspec에만 남아 coverage 집계에 쓰인다.
-  const fixtureHashes: Record<string, string> = {};
-  for (const f of spec.features) {
-    const served = lowest2xxStatus(f);
-    for (const fx of f.fixtures) {
-      if (fx.status !== served) continue;
-      const rel = `fixtures/${f.id}/${fx.status}.json`;
-      const text = JSON.stringify(fx.body, null, 2) + "\n";
-      const file = path.join(outDir, rel);
-      const current = await readFile(file, "utf8").catch(() => null);
-      const recorded = previous?.fixtureHashes[rel];
-      const userEdited = current !== null && recorded !== undefined && hashText(current) !== recorded;
-      fixtureHashes[rel] = hashText(text);
-      if (userEdited && !opts.force) {
-        preserved.push(rel);
-        continue;
-      }
-      await writeOut(outDir, rel, text, written);
-    }
-    const contracts: Contract[] = spec.contracts.filter((c) => c.featureId === f.id);
-    await writeOut(outDir, `contracts/${f.id}.json`, JSON.stringify(contracts, null, 2) + "\n", written);
+export class TsHonoGenerator implements LanguageGenerator {
+  readonly language = "ts";
+  readonly generator = "template" as const;
+  async generate(ctx: GenerateContext): Promise<LanguageOutput> {
+    return {
+      files: renderTsHonoFiles(ctx.spec),
+      install: null,
+      start: { command: "npx", args: ["tsx", "src/server.ts"] },
+      healthPath: "/__specmock/health",
+      notes: [],
+      prune: [{ dir: "src/routes", ext: ".ts" }],
+      attempts: 0,
+    };
   }
-  // 선택에서 빠진 기능의 contract를 지운다. verify는 contracts/*.json을 모두 읽으므로 남겨두면 실패한다.
-  const featureIds = new Set(spec.features.map((f) => f.id));
-  await removeStale(path.join(outDir, "contracts"), (name) => name.endsWith(".json") && !featureIds.has(name.slice(0, -".json".length)));
-
-  // 선택에서 빠진 기능의 fixture: 수정하지 않았으면 지우고, 수정했으면 남겨두고 보고한다.
-  for (const [rel, recorded] of Object.entries(previous?.fixtureHashes ?? {})) {
-    if (rel in fixtureHashes) continue;
-    const file = path.join(outDir, rel);
-    const current = await readFile(file, "utf8").catch(() => null);
-    if (current === null) continue;
-    if (hashText(current) === recorded) {
-      await rm(file, { force: true });
-      await rmdir(path.dirname(file)).catch(() => undefined); // 비어 있을 때만 지워진다.
-    } else {
-      orphaned.push(rel);
-    }
-  }
-
-  const lock: Lock = {
-    system: spec.system,
-    language: "ts",
-    mockspecHash: hashJson(spec),
-    generatedAt: new Date().toISOString(),
-    start: { command: "npx", args: ["tsx", "src/server.ts"] },
-    healthPath: "/__specmock/health",
-    fixtureHashes,
-  };
-  await writeLock(outDir, lock);
-  return { outDir, written, preserved, orphaned };
 }

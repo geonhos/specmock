@@ -2,7 +2,7 @@ import { analyze } from "../analyze/index.js";
 import type { ExtractResult } from "../analyze/extract.js";
 import type { MergeResult } from "../analyze/merge.js";
 import { generate } from "../generate/index.js";
-import type { GenerateReport } from "../generate/tsHono.js";
+import type { GenerateReport } from "../generate/generator.js";
 import type { LlmAdapter } from "../llm/adapter.js";
 import { select, type SelectResult } from "../select/index.js";
 import { CatalogSchema, type Catalog, type CatalogDiff } from "../types.js";
