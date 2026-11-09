@@ -26,12 +26,16 @@ function toRegex(p: string): RegExp {
 }
 const fill = (p: string) => p.replace(/\{[^}]+\}/g, "1");
 
-/** 요청 경로가 선택된 같은 method 기능과 겹치지 않는 첫 notMocked 항목. HEAD(바디 없음)·OPTIONS(프레임워크가 가로챌 수 있음)는 제외한다. */
+/**
+ * 요청 경로가 선택된 같은 method 기능과도, 다른 notMocked 항목의 패턴과도 겹치지 않는 첫 항목.
+ * 템플릿 notMocked.ts는 첫 매칭 항목을 고르므로 겹치면 body.feature가 달라 거짓 실패한다. HEAD(바디 없음)·OPTIONS(프레임워크가 가로챌 수 있음)는 제외한다. */
 export function pickNotMocked(rt: RuntimeSpec): RuntimeSpec["notMocked"][number] | null {
   for (const n of rt.notMocked) {
     if (n.method === "HEAD" || n.method === "OPTIONS") continue;
     const url = fill(n.path);
-    if (!rt.features.some((f) => f.method === n.method && toRegex(f.path).test(url))) return n;
+    if (rt.features.some((f) => f.method === n.method && toRegex(f.path).test(url))) continue;
+    if (rt.notMocked.some((o) => o !== n && o.method === n.method && toRegex(o.path).test(url))) continue;
+    return n;
   }
   return null;
 }

@@ -4,11 +4,11 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { analyze } from "../src/analyze/index.js";
 import { generate } from "../src/generate/index.js";
-import { readLock } from "../src/generate/lock.js";
+import { readLock, writeLock } from "../src/generate/lock.js";
 import { ingest } from "../src/ingest/index.js";
 import { select } from "../src/select/index.js";
 import { renderCoverage } from "../src/verify/coverage.js";
-import { verify } from "../src/verify/index.js";
+import { verify, verifyFailed } from "../src/verify/index.js";
 import { markInstalled, startMock } from "../src/verify/server.js";
 import { MockSpecSchema } from "../src/types.js";
 import { Workspace } from "../src/workspace.js";
@@ -103,6 +103,26 @@ describe("e2e: ingest → analyze → select → generate → verify", () => {
     expect(rt.runtime.map((c) => [c.id, c.passed]), JSON.stringify(rt.runtime, null, 2)).toEqual([["not_mocked", true], ["unknown_path", true]]);
     expect(rt.runtimeFailed).toBe(0);
     expect(rt.total).toBe(1);
+  });
+
+  it("501을 내지 않는 서버는 verify()에서 런타임 계약 실패가 되고 contract 결과는 따로 센다", async () => {
+    await select(ws, "petstore", ["getPet"]);
+    await generate(ws, "petstore", { outDir: out });
+    await linkNodeModules();
+    // 모든 경로 200(헬스 포함), /pets/* 는 fixture를 그대로 준다. 501·404는 절대 내지 않는다.
+    await writeFile(path.join(out, "always200.mjs"), `import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
+const fx = readFileSync("fixtures/getPet/200.json", "utf8");
+createServer((req, res) => { res.writeHead(200, { "content-type": "application/json" }); res.end(req.url.startsWith("/pets/") ? fx : "{}"); }).listen(Number(process.env.PORT), "127.0.0.1");
+`);
+    const lock = (await readLock(out))!;
+    await writeLock(out, { ...lock, start: { command: process.execPath, args: ["always200.mjs"] } });
+    const spec = await ws.read("petstore", "mockspec.json", MockSpecSchema);
+    const result = await verify(out, { runtime: { notMocked: spec.notMocked, features: spec.features.map((f) => ({ method: f.method, path: f.path })) } });
+    expect(result.failed, JSON.stringify(result.results, null, 2)).toBe(0);
+    expect(result.runtimeFailed).toBeGreaterThan(0);
+    expect(result.runtime.filter((c) => !c.passed).map((c) => c.id)).toContain("unknown_path");
+    expect(verifyFailed(result)).toBe(true);
   });
 
   it("fails fast with a clear message when the start command cannot be spawned", async () => {

@@ -36,7 +36,7 @@ function setup(stale: Record<string, boolean> = {}, coverage: string | null = nu
 const result = {
   dir: "/r/mock/petstore", coverageFile: "/c.md", coverageMarkdown: COVERAGE,
   result: {
-    mockDir: "/r/mock/petstore", total: 3, passed: 2, failed: 1,
+    mockDir: "/r/mock/petstore", total: 3, passed: 2, failed: 1, runtime: [], runtimeFailed: 1,
     results: [
       { featureId: "listPets", name: "List pets", passed: true, expectedStatus: 200, actualStatus: 200, errors: [] },
       { featureId: "getPet", name: "Get a pet", passed: true, expectedStatus: 200, actualStatus: 200, errors: [] },
@@ -69,7 +69,7 @@ it("job-done: 통과 N · 실패 M, 커버리지 요약(## contract test 앞), �
   render(<App />);
   await start(api);
   emit("job-done", job({ state: "done", result }));
-  expect(await screen.findByText("통과 2 · 실패 1")).toBeTruthy();
+  expect(await screen.findByText("contract 통과 2 · 실패 1 · 런타임 계약 실패 1")).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
   expect(document.querySelector("pre.coverage")).toBeNull();
   const cov = screen.getByRole("region", { name: "커버리지" });

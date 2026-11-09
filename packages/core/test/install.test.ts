@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { LockSchema, type Lock } from "../src/generate/lock.js";
+import { LockSchema, resolveInstallCheck, type Lock } from "../src/generate/lock.js";
 import { ensureInstalled, installKey, markInstalled } from "../src/verify/server.js";
 
 let dir: string;
@@ -21,9 +21,9 @@ if (process.env.FAIL_OUT) { process.stdout.write("[ERROR] COMPILATION ERROR : Ma
   return { command: process.execPath, args: [script], log };
 }
 
-function lockWith(install: Lock["install"], sourceFiles: Record<string, string> = {}): Lock {
+function lockWith(install: Lock["install"], sourceFiles: Record<string, string> = {}, installCheck: string | null = null): Lock {
   return LockSchema.parse({
-    system: "s", language: "fake", mockspecHash: "h", generatedAt: "t", install,
+    system: "s", language: "fake", mockspecHash: "h", generatedAt: "t", install, installCheck,
     start: { command: "true", args: [] }, healthPath: "/h", fixtureHashes: {}, sourceFiles,
   });
 }
@@ -75,5 +75,38 @@ describe("ensureInstalled(lock)", () => {
     await markInstalled(dir, lock);
     await ensureInstalled(dir, { lock });
     await expect(readFile(inst.log, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("마커가 맞아도 installCheck 경로가 없으면 다시 설치한다", async () => {
+    const inst = await fakeInstaller();
+    const lock = lockWith({ command: inst.command, args: inst.args }, {}, "node_modules");
+    await markInstalled(dir, lock);
+    await ensureInstalled(dir, { lock });   // node_modules 없음 → 설치
+    await mkdir(path.join(dir, "node_modules"));
+    await ensureInstalled(dir, { lock });   // 있음 → 건너뜀
+    expect((await readFile(inst.log, "utf8")).trim().split("\n")).toHaveLength(1);
+    await rm(path.join(dir, "node_modules"), { recursive: true });
+    await ensureInstalled(dir, { lock });   // 지우면 다시
+    expect((await readFile(inst.log, "utf8")).trim().split("\n")).toHaveLength(2);
+  });
+
+  it("installCheck가 null이면 존재 검사 없이 키만 본다", async () => {
+    const inst = await fakeInstaller();
+    const lock = lockWith({ command: inst.command, args: inst.args }, {}, null);
+    await markInstalled(dir, lock);
+    await ensureInstalled(dir, { lock });
+    await expect(readFile(inst.log, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("옛 lock(installCheck 필드 없음)은 node_modules를 본다", async () => {
+    const inst = await fakeInstaller();
+    const lock = LockSchema.parse({
+      system: "s", language: "ts", mockspecHash: "h", generatedAt: "t", install: { command: inst.command, args: inst.args },
+      start: { command: "true", args: [] }, healthPath: "/h", fixtureHashes: {},
+    });
+    expect(resolveInstallCheck(lock)).toBe("node_modules");
+    await markInstalled(dir, lock);
+    await ensureInstalled(dir, { lock });
+    expect((await readFile(inst.log, "utf8")).trim().split("\n")).toHaveLength(1);
   });
 });

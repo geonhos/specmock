@@ -28,6 +28,18 @@ describe("pickNotMocked", () => {
     };
     expect(pickNotMocked(rt)?.id).toBe("listPets");
   });
+  it("다른 notMocked 패턴에도 매칭되는 항목은 건너뛰고, 안전한 항목이 없으면 null", () => {
+    const rt = {
+      features: [{ method: "GET" as const, path: "/a/1" }],
+      notMocked: [
+        { id: "byX", method: "GET" as const, path: "/a/{x}" },
+        { id: "two", method: "GET" as const, path: "/a/2" },
+      ],
+    };
+    // /a/2는 /a/{x}에도 매칭, /a/{x}는 채우면 /a/1이 되어 선택 기능과 겹친다.
+    expect(pickNotMocked(rt)).toBeNull();
+    expect(pickNotMocked({ ...rt, notMocked: [...rt.notMocked, { id: "other", method: "GET" as const, path: "/b" }] })?.id).toBe("other");
+  });
   it("고를 항목이 없으면 null", () => {
     expect(pickNotMocked({ features: [], notMocked: [] })).toBeNull();
   });

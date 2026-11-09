@@ -8,6 +8,7 @@ export const fakeProfile: LanguageProfile = {
   displayName: "Fake (Node http)",
   rules: ["Node 내장 http만 쓴다.", "server.mjs 하나에 모든 라우트를 둔다."],
   staticFiles: [],
+  artifacts: [],
   install: () => null,
   start: { command: "node", args: ["server.mjs"] },
   healthPath: "/__specmock/health",

@@ -8,8 +8,9 @@ import { useJob } from "../useJob";
 import { parseCoverage, type CoverageData } from "../coverage";
 
 interface ContractResult { featureId: string; name: string; passed: boolean; expectedStatus: number; actualStatus: number | null; errors: string[] }
-/** core VerifyMockResult(service/verify.ts). */
-interface VerifyResult { dir: string; coverageMarkdown: string; result: { total: number; passed: number; failed: number; results: ContractResult[] } }
+interface RuntimeCheck { id: string; name: string; passed: boolean; skipped: boolean; request: string | null; errors: string[] }
+/** core VerifyMockResult(service/verify.ts). runtime*은 3A에서 더해졌다(없으면 0). */
+interface VerifyResult { dir: string; coverageMarkdown: string; result: { total: number; passed: number; failed: number; results: ContractResult[]; runtime?: RuntimeCheck[]; runtimeFailed?: number } }
 interface Props { system: string; jobs: Job[]; tick: number; go: (path: string) => void; refreshJobs: () => void; onChanged: () => void }
 
 const asError = (e: unknown) => (e instanceof ApiError ? e : new ApiError(0, "failed", String(e)));
@@ -114,7 +115,7 @@ export function Verify({ system, jobs, tick, go, refreshJobs }: Props) {
       )}
       {done ? (
         <>
-          <p className="summary"><strong>통과 {done.result.passed} · 실패 {done.result.failed}</strong></p>
+          <p className="summary"><strong>contract 통과 {done.result.passed} · 실패 {done.result.failed} · 런타임 계약 실패 {done.result.runtimeFailed ?? 0}</strong></p>
           <table className="chunks results" aria-label="기능별 결과">
             <thead><tr><th scope="col">기능</th><th scope="col" className="num">기대</th><th scope="col" className="num">실제</th><th scope="col" className="st">결과</th></tr></thead>
             <tbody>

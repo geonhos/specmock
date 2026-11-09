@@ -16,6 +16,8 @@ export const LockSchema = z.object({
   generatedAt: z.string(),
   /** 없음(undefined) = 2단계 lock = npm install. null = 설치 단계 없음. */
   install: CommandSchema.nullable().optional(),
+  /** 설치 뒤 outDir 상대 경로로 존재해야 하는 파일/디렉터리. undefined = 옛 lock(node_modules), null = 검사 없음. */
+  installCheck: z.string().nullable().optional(),
   start: CommandSchema,
   healthPath: z.string(),
   startTimeoutMs: z.number().int().positive().optional(),
@@ -32,6 +34,11 @@ export const NPM_INSTALL = { command: "npm", args: ["install", "--no-audit", "--
 /** lock의 설치 명령. 옛 lock(install 필드 없음)은 npm install. */
 export function resolveInstall(lock: Lock): { command: string; args: string[] } | null {
   return lock.install === undefined ? NPM_INSTALL : lock.install;
+}
+
+/** 설치 뒤 있어야 하는 경로. 옛 lock(installCheck 없음)은 node_modules, null이면 검사하지 않는다. */
+export function resolveInstallCheck(lock: Pick<Lock, "installCheck">): string | null {
+  return lock.installCheck === undefined ? "node_modules" : lock.installCheck;
 }
 
 /** lock 파일을 읽는다. 없으면 null, 있는데 손상됐으면 던진다(조용히 무시하면 보존 판단이 틀어진다). */

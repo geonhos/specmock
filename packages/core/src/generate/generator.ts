@@ -28,6 +28,8 @@ export interface LanguageOutput {
   /** 언어 종속 파일만. outDir 상대 경로. content가 null이면 삭제(LLM 증분). */
   files: { path: string; content: string | null }[];
   install: Command | null;
+  /** 설치 뒤 outDir 상대 경로로 존재해야 하는 결과물. 없으면(undefined) lock에 null로 기록한다. */
+  installCheck?: string | null;
   start: Command;
   healthPath: string;
   startTimeoutMs?: number;

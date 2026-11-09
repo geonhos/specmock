@@ -1,7 +1,7 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import getPort from "get-port";
-import { resolveInstall, type Lock } from "../generate/lock.js";
+import { resolveInstall, resolveInstallCheck, type Lock } from "../generate/lock.js";
 import { hashJson, hashText } from "../util/hash.js";
 import { killGroup, spawnGroup } from "../util/procGroup.js";
 
@@ -68,9 +68,11 @@ export async function markInstalled(dir: string, lock: Lock): Promise<void> {
   await writeFile(path.join(dir, INSTALLED_MARKER), await installKey(dir, lock));
 }
 
-/** 설치 완료는 성공 뒤에 쓰는 마커(내용 = 설치 키)로 판정한다. 2단계의 node_modules 안 마커는 보지 않는다(한 번 다시 설치). */
-async function isInstalled(dir: string, key: string): Promise<boolean> {
-  return (await readFile(path.join(dir, INSTALLED_MARKER), "utf8").catch(() => null)) === key;
+/** 설치 완료 = 마커 키 일치 AND 결과물(installCheck)이 있음. node_modules 삭제·새 clone(마커 커밋됨)에서도 다시 설치한다. */
+async function isInstalled(dir: string, lock: Lock, key: string): Promise<boolean> {
+  if ((await readFile(path.join(dir, INSTALLED_MARKER), "utf8").catch(() => null)) !== key) return false;
+  const check = resolveInstallCheck(lock);
+  return check === null || (await access(path.join(dir, check)).then(() => true, () => false));
 }
 
 export interface EnsureInstalledOptions {
@@ -96,7 +98,7 @@ export async function ensureInstalled(dir: string, opts: EnsureInstalledOptions 
   const install = resolveInstall(lock);
   if (!install) return;
   const key = await installKey(dir, lock);
-  if (await isInstalled(dir, key)) return;
+  if (await isInstalled(dir, lock, key)) return;
   const label = install.command === "npm" ? "npm install" : [install.command, ...install.args.slice(0, 1)].join(" ");
   const timeoutMs = opts.timeoutMs ?? lock.installTimeoutMs ?? DEFAULT_INSTALL_TIMEOUT_MS;
   opts.onLog?.(`의존성 설치 중 (${label})...`);
