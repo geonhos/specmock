@@ -7,12 +7,14 @@ import type { LanguageProfile } from "../generate/profiles/index.js";
 import type { LlmAdapter } from "../llm/adapter.js";
 import { readTarget, record, type RecordResult } from "../record/index.js";
 import { select } from "../select/index.js";
-import { GenerateInfoSchema, MockSpecSchema, SelectionSchema } from "../types.js";
+import { maskSecrets } from "../ingest/mask.js";
+import { CatalogSchema, GenerateInfoSchema, MockSpecSchema, SelectionSchema } from "../types.js";
 import { specInputHash } from "../util/specHash.js";
 import type { Workspace } from "../workspace.js";
 import type { OnEvent } from "./events.js";
 
 export const APPLY_LATER = "generate를 실행하면 반영됩니다";
+export const APPLY_FAILED = "반영 실패: ";
 export const PRESERVED_NOTE = "보존됨 — 녹화가 반영되지 않음";
 
 export interface RecordResponsesOptions {
@@ -41,24 +43,35 @@ export async function recordResponses(ws: Workspace, system: string, opts: Recor
   });
   const notes: string[] = [];
   if (opts.apply !== false) {
-    opts.onEvent?.({ stage: "record", message: "select 다시 실행(녹화 반영)" });
-    const selection = await ws.read(system, "selection.json", SelectionSchema);
-    const sel = await select(ws, system, selection.selected);
-    let generated: GenerateReport | null = null;
-    const info = (await ws.exists(system, "generate.json")) ? await ws.read(system, "generate.json", GenerateInfoSchema) : null;
-    const outDir = info ? path.resolve(info.outDir) : null;
-    const lock = outDir ? await readLock(outDir) : null;
-    if (!outDir || !lock) {
-      notes.push(APPLY_LATER);
-    } else if (lock.generator === "llm" && lock.inputHash !== specInputHash(await ws.read(system, "mockspec.json", MockSpecSchema))) {
-      // 기능 정의가 바뀌었거나 옛 lock: generate가 LLM을 부르게 되므로 반영하지 않는다(D5).
-      notes.push(`${APPLY_LATER}(LLM 재생성 필요)`);
-    } else {
-      opts.onEvent?.({ stage: "record", message: "generate 다시 실행(fixture 반영)" });
-      generated = await generate(ws, system, { outDir, language: lock.language, profile: opts.profile, adapter: opts.adapter, signal: opts.signal });
-      for (const p of generated.preserved) if (p.startsWith("fixtures/")) notes.push(`${p}: ${PRESERVED_NOTE}`);
+    try {
+      opts.onEvent?.({ stage: "record", message: "select 다시 실행(녹화 반영)" });
+      const selection = await ws.read(system, "selection.json", SelectionSchema);
+      const catalog = await ws.read(system, "catalog.json", CatalogSchema);
+      // 저장된 selected가 전부 현재 id와 정확히 일치하면 UI·--interactive가 고른 literal id 목록이다. 표현식으로 다시 풀면 `all`·`3` 같은 id가 다른 집합이 된다.
+      const ids = new Set(catalog.features.map((f) => f.id));
+      const literal = selection.selected.length > 0 && selection.selected.every((id) => ids.has(id));
+      const sel = await select(ws, system, selection.selected, { literalIds: literal });
+      let generated: GenerateReport | null = null;
+      const info = (await ws.exists(system, "generate.json")) ? await ws.read(system, "generate.json", GenerateInfoSchema) : null;
+      const outDir = info ? path.resolve(info.outDir) : null;
+      const lock = outDir ? await readLock(outDir) : null;
+      if (!outDir || !lock) {
+        notes.push(APPLY_LATER);
+      } else if (lock.generator === "llm" && lock.inputHash !== specInputHash(await ws.read(system, "mockspec.json", MockSpecSchema))) {
+        // 기능 정의가 바뀌었거나 옛 lock: generate가 LLM을 부르게 되므로 반영하지 않는다(D5).
+        notes.push(`${APPLY_LATER}(LLM 재생성 필요)`);
+      } else {
+        opts.onEvent?.({ stage: "record", message: "generate 다시 실행(fixture 반영)" });
+        generated = await generate(ws, system, { outDir, language: lock.language, profile: opts.profile, adapter: opts.adapter, signal: opts.signal });
+        for (const p of generated.preserved) if (p.startsWith("fixtures/")) notes.push(`${p}: ${PRESERVED_NOTE}`);
+      }
+      result.applied = { selected: sel.resolved.length, generate: generated };
+    } catch (e) {
+      if (opts.signal?.aborted) throw e;
+      // 녹화·drift.md는 이미 썼다. 결과를 버리지 않고 반영 실패를 알린다.
+      notes.push(`${APPLY_FAILED}${maskSecrets((e as Error).message)}`);
+      result.applied = null;
     }
-    result.applied = { selected: sel.resolved.length, generate: generated };
   }
   return { result, driftPath: result.driftPath, driftMarkdown, notes };
 }

@@ -1,10 +1,14 @@
 // packages/cli/src/commands/record.ts
-import { recordResponses, type RecordResponsesResult, type RecordResult } from "@specmock/core";
+import { APPLY_FAILED, recordResponses, type RecordResponsesResult, type RecordResult } from "@specmock/core";
 import type { Command } from "commander";
 import { fail, printJsonOr, SYSTEM_ARG_HELP, workspaceFrom } from "../context.js";
 
 export function recordFailed(r: RecordResult): boolean {
   return r.drifted.length + r.statusMismatch.length + r.failed.length > 0;
+}
+
+export function applyFailed(v: RecordResponsesResult): boolean {
+  return v.notes.some((n) => n.startsWith(APPLY_FAILED));
 }
 
 export function formatRecord(v: RecordResponsesResult): string {
@@ -46,6 +50,6 @@ export function registerRecord(program: Command): void {
       } catch (e) { fail((e as Error).message); }
       printJsonOr(opts.json, v.result, () => formatRecord(v));
       // verify와 같이 exitCode만 설정한다(stdout 파이프 잘림 방지).
-      if (recordFailed(v.result)) process.exitCode = 2;
+      if (recordFailed(v.result) || applyFailed(v)) process.exitCode = 2;
     });
 }

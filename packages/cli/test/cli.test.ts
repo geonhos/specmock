@@ -348,6 +348,35 @@ describe("Phase 3B CLI (record)", () => {
     });
   });
 
+  it("실패(timeout)만 있어도 종료 코드 2", async () => {
+    server = createServer(() => { /* 응답하지 않는다 */ });
+    await new Promise<void>((r) => server!.listen(0, "127.0.0.1", () => r()));
+    server.on("connection", (s) => s.unref());
+    await selected({ baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, timeoutMs: 200 });
+    await expect(specmock("record", "petstore", "--feature", "getPet", "--no-apply")).rejects.toMatchObject({
+      code: 2, stdout: expect.stringContaining("✗ getPet 실패: 시간 초과(200ms)"),
+    });
+  });
+
+  it("상태 불일치(401)만 있어도 종료 코드 2", async () => {
+    server = createServer((_req, res) => { res.writeHead(401, { "content-type": "application/json" }); res.end("{}"); });
+    await new Promise<void>((r) => server!.listen(0, "127.0.0.1", () => r()));
+    await selected({ baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}` });
+    await expect(specmock("record", "petstore", "--feature", "getPet", "--no-apply")).rejects.toMatchObject({
+      code: 2, stdout: expect.stringContaining("✗ getPet 상태 불일치: 기대 200, 실제 401"),
+    });
+  });
+
+  it("반영 실패는 결과를 출력하고 종료 코드 2", async () => {
+    await selected({ baseUrl: await realSystem({ id: 1, name: "Real" }) });
+    const selPath = path.join(dir, ".specmock", "petstore", "selection.json");
+    const sel = JSON.parse(await readFile(selPath, "utf8"));
+    await writeFile(selPath, JSON.stringify({ ...sel, selected: ["getPet", "gonePet"] }));
+    await expect(specmock("record", "petstore", "--feature", "getPet")).rejects.toMatchObject({
+      code: 2, stdout: expect.stringContaining("- 반영 실패: "),
+    });
+  });
+
   it("target.json이 없으면 예시와 함께 종료 코드 1", async () => {
     await selected();
     await expect(specmock("record", "petstore")).rejects.toMatchObject({

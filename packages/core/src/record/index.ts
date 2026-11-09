@@ -94,8 +94,9 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
       continue;
     }
     const first = sent === 0;
-    sent++;
     const r = await runContract(target.baseUrl, c, { headers: target.headers, timeoutMs: target.timeoutMs, signal: opts.signal, ajv, maxBytes: MAX_RECORD_BYTES, path: p, query });
+    // 요청 불가(invalid)는 실제로 보내지 않았으므로 첫 전송에 세지 않는다.
+    if (r.failure?.kind !== "invalid") sent++;
     if (r.status === null || r.kind === null) {
       const f = r.failure ?? { kind: "network" as const, message: "unknown" };
       if (f.kind === "network" && first) {

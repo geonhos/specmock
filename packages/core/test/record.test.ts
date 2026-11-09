@@ -43,6 +43,9 @@ function ok(q: FakeReq): FakeRes {
 const target = (url: string, over: Partial<Target> = {}): Target => ({ file: "target.json", baseUrl: `${url}/v2`, headers: { Authorization: "Bearer secret-token-123456", "X-Tenant": "dev" }, params: {}, timeoutMs: 2000, ...over });
 const strip = (handler: (q: FakeReq) => FakeRes) => (q: FakeReq) => handler({ ...q, path: q.path.replace(/^\/v2/, "") });
 
+/** getPet의 정상 요청 path에 `?`를 넣어 보낼 수 없게 만든 mockspec. */
+const unsendable = (): MockSpec => ({ ...spec, contracts: spec.contracts.map((c) => (c.featureId === "getPet" ? { ...c, request: { ...c.request, path: "/pets/1?x=1" } } : c)) });
+
 describe("record", () => {
   it("기본: GET만 순차로 보내고 변경 요청은 건너뛰며 녹화 파일·drift.md를 쓴다", async () => {
     t = await startFakeTarget(strip(ok));
@@ -111,6 +114,22 @@ describe("record", () => {
   it("첫 요청 연결 실패는 중단하고 drift.md를 쓰지 않는다", async () => {
     await expect(record(ws, SYS, spec, target(await closedPortUrl()))).rejects.toThrow("baseUrl을 확인하세요");
     expect(await ws.exists(SYS, "drift.md")).toBe(false);
+  });
+
+  it("요청 불가(invalid)는 첫 전송에 세지 않는다: 다음 요청이 연결 실패면 중단", async () => {
+    // getPet의 contract path가 `?`를 품어 보낼 수 없고, 그다음 inventory.list가 실제 첫 전송이다.
+    await expect(record(ws, SYS, unsendable(), target(await closedPortUrl()), { features: ["getPet", "inventory.list"] }))
+      .rejects.toThrow("baseUrl을 확인하세요");
+    expect(await ws.exists(SYS, "drift.md")).toBe(false);
+  });
+
+  it("요청 불가는 failed `요청 불가:`로 분류하고 중단하지 않는다", async () => {
+    t = await startFakeTarget(strip(ok));
+    const { result } = await record(ws, SYS, unsendable(), target(t.url), { features: ["getPet", "inventory.list"] });
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0]!.featureId).toBe("getPet");
+    expect(result.failed[0]!.reason).toMatch(/^요청 불가: /);
+    expect(result.matched).toEqual(["inventory.list"]);
   });
 
   it("allowMutating이면 POST·DELETE도 보낸다", async () => {

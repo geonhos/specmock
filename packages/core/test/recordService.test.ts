@@ -10,6 +10,7 @@ import { LockSchema, readLock } from "../src/generate/lock.js";
 import { ingest } from "../src/ingest/index.js";
 import { ClaudeCodeAdapter } from "../src/llm/claudeCode.js";
 import { select } from "../src/select/index.js";
+import { CatalogSchema, SelectionSchema } from "../src/types.js";
 import { recordResponses } from "../src/service/record.js";
 import { MockSpecSchema, type MockSpec } from "../src/types.js";
 import { Workspace } from "../src/workspace.js";
@@ -105,5 +106,26 @@ describe("recordResponses", () => {
     expect(r.result.applied).toBeNull();
     expect(r.notes).toEqual([]);
     expect(await specNow()).toEqual(before);
+  });
+
+  it("literal로 고른 id(`all` 등)는 apply에서도 그 기능 하나만 유지한다", async () => {
+    const cat = await ws.read(SYS, "catalog.json", CatalogSchema);
+    const get = cat.features.find((f) => f.id === "getPet")!;
+    await ws.write(SYS, "catalog.json", CatalogSchema, { ...cat, features: cat.features.map((f) => (f.id === "getPet" ? { ...get, id: "all" } : f)) });
+    await select(ws, SYS, ["all"], { literalIds: true });
+    const r = await recordResponses(ws, SYS, { features: ["all"] });
+    expect(r.result.applied).toMatchObject({ selected: 1 });
+    expect((await specNow()).features.map((f) => f.id)).toEqual(["all"]);
+    expect((await ws.read(SYS, "selection.json", SelectionSchema)).resolved).toEqual(["all"]);
+  });
+
+  it("반영 중 select가 던지면 결과를 돌려주고 notes에 반영 실패를 싣는다", async () => {
+    const sel = await ws.read(SYS, "selection.json", SelectionSchema);
+    await ws.write(SYS, "selection.json", SelectionSchema, { ...sel, selected: ["getPet", "gonePet"] });
+    const r = await recordResponses(ws, SYS);
+    expect(r.result.applied).toBeNull();
+    expect(r.result.matched).toEqual(["getPet"]);
+    expect(r.notes).toEqual([expect.stringMatching(/^반영 실패: .*알 수 없는 기능 id|^반영 실패: .*gonePet/)]);
+    expect(await ws.exists(SYS, "drift.md")).toBe(true);
   });
 });

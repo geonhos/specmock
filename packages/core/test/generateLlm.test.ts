@@ -101,13 +101,23 @@ describe("generate (LLM 생성기)", () => {
     expect((await generate(ws, "petstore", opts())).skipped).toBe(true);
   }, 60_000);
 
-  it("기능 정의가 바뀌면(inputHash 다름) LLM을 다시 부른다", async () => {
+  it("inputHash가 같으면 LLM을 부르지 않고, 기능 정의가 바뀌어 inputHash가 달라지면 다시 부른다", async () => {
     await respond(1, answer(await specNow()));
     await generate(ws, "petstore", opts());
-    await select(ws, "petstore", ["getPet"]);
+    const spec = await specNow();
+    const mapGetPet = (fn: (f: MockSpec["features"][number]) => MockSpec["features"][number]): MockSpec => ({ ...spec, features: spec.features.map((f) => (f.id === "getPet" ? fn(f) : f)) });
+    // (a) fixture만 바뀜: inputHash 동일 → 지름길, LLM 미호출
+    const fixtureOnly = mapGetPet((f) => ({ ...f, fixtures: f.fixtures.map((x) => (x.status === 200 ? { status: 200, body: { id: 9, name: "Real" }, source: "recorded" as const } : x)) }));
+    expect(specInputHash(fixtureOnly)).toBe(specInputHash(spec));
+    await ws.write("petstore", "mockspec.json", MockSpecSchema, fixtureOnly);
+    expect((await generate(ws, "petstore", opts())).attempts).toBe(0);
+    expect(await calls()).toBe(1);
+    // (b) 기능 정의(summary)가 바뀜: inputHash 다름 → 지름길 불가, LLM 호출
+    const moved = mapGetPet((f) => ({ ...f, summary: `${f.summary} (정의 변경)` }));
+    expect(specInputHash(moved)).not.toBe(specInputHash(spec));
+    await ws.write("petstore", "mockspec.json", MockSpecSchema, moved);
     await respond(2, answer(await specNow()));
-    const r = await generate(ws, "petstore", opts());
-    expect(r.attempts).toBe(1);
+    expect((await generate(ws, "petstore", opts())).attempts).toBe(1);
     expect(await calls()).toBe(2);
   }, 60_000);
 
