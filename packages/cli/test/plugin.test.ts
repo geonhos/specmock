@@ -44,7 +44,7 @@ describe("Claude Code plugin", () => {
     const used = new Map<string, Set<string>>();
     for (const f of docs) {
       for (const line of (await readFile(f, "utf8")).split("\n")) {
-        for (const m of line.matchAll(/specmock (ingest|analyze|list|select|generate|verify|run)\b([^`\n]*)/g)) {
+        for (const m of line.matchAll(/specmock (ingest|analyze|list|select|generate|verify|record|run)\b([^`\n]*)/g)) {
           const opts = [...m[2]!.matchAll(/(?<![\w-])--([a-z][a-z-]*)/g)].map((x) => `--${x[1]}`);
           if (!used.has(m[1]!)) used.set(m[1]!, new Set());
           opts.forEach((o) => used.get(m[1]!)!.add(o));

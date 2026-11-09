@@ -3,6 +3,8 @@ import { cp, mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink, writeFile
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -300,5 +302,63 @@ describe("Phase 3A CLI", () => {
   it("run --lang cobol은 파이프라인 전에 종료 코드 1", async () => {
     await expect(specmock("run", "petstore", PETSTORE, "--lang", "cobol", "--no-verify")).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining("지원 언어: ts, java") });
     await expect(readdir(path.join(dir, ".specmock"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
+
+describe("Phase 3B CLI (record)", () => {
+  let server: Server | undefined;
+  afterEach(async () => { await new Promise<void>((r) => (server ? server.close(() => r()) : r())); server = undefined; });
+  /** getPet 응답 바디를 주는 실제 시스템 대역. */
+  async function realSystem(body: unknown): Promise<string> {
+    server = createServer((req, res) => {
+      const ok = req.method === "GET" && /^\/pets\/[^/]+$/.test(req.url!.split("?")[0]!);
+      res.writeHead(ok ? 200 : 404, { "content-type": "application/json" });
+      res.end(JSON.stringify(ok ? body : { message: "no" }));
+    });
+    await new Promise<void>((r) => server!.listen(0, "127.0.0.1", () => r()));
+    return `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
+  }
+  async function selected(target?: object) {
+    await specmock("ingest", "petstore", PETSTORE);
+    await specmock("analyze", "petstore");
+    await specmock("select", "petstore", "getPet,createPet");
+    if (target) await writeFile(path.join(dir, ".specmock", "petstore", "target.json"), JSON.stringify(target));
+  }
+
+  it("전부 일치하면 종료 코드 0, 요약과 drift 경로를 출력한다", async () => {
+    await selected({ baseUrl: await realSystem({ id: 1, name: "Real" }) });
+    const { stdout } = await specmock("record", "petstore");
+    expect(stdout).toContain("녹화: 요청 2 · 일치 1 · 스펙과 다름 0 · 상태 불일치 0 · 건너뜀 1 · 실패 0");
+    expect(stdout).toContain(`drift: ${path.join(dir, ".specmock", "petstore", "drift.md")}`);
+    expect(stdout).toContain("- generate를 실행하면 반영됩니다");
+  });
+
+  it("--json은 RecordResult만 출력한다", async () => {
+    await selected({ baseUrl: await realSystem({ id: 1, name: "Real" }) });
+    const { stdout } = await specmock("record", "petstore", "--json", "--no-apply");
+    const j = JSON.parse(stdout);
+    expect(j).toMatchObject({ system: "petstore", matched: ["getPet"], recorded: ["getPet"], applied: null });
+    expect(j.skipped).toEqual([{ featureId: "createPet", reason: "mutating" }]);
+  });
+
+  it("스펙과 다르면 종료 코드 2", async () => {
+    await selected({ baseUrl: await realSystem({ id: "p-1", name: "Real" }) });
+    await expect(specmock("record", "petstore", "--feature", "getPet")).rejects.toMatchObject({
+      code: 2, stdout: expect.stringContaining("✗ getPet 스펙과 다름:"),
+    });
+  });
+
+  it("target.json이 없으면 예시와 함께 종료 코드 1", async () => {
+    await selected();
+    await expect(specmock("record", "petstore")).rejects.toMatchObject({
+      code: 1, stderr: expect.stringContaining('"baseUrl": "https://api.example.com/v2"'),
+    });
+  });
+
+  it("환경변수가 없으면 변수 이름만 보여 준다", async () => {
+    await selected({ baseUrl: "http://127.0.0.1:9", headers: { Authorization: "Bearer ${SPECMOCK_CLI_TOKEN}" } });
+    const err = await specmock("record", "petstore").catch((e: { code: number; stderr: string }) => e);
+    expect(err).toMatchObject({ code: 1, stderr: expect.stringContaining("환경변수 SPECMOCK_CLI_TOKEN이 없습니다") });
+    expect((err as { stderr: string }).stderr).not.toContain("Bearer");
   });
 });
