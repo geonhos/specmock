@@ -23,7 +23,7 @@ function localStamp(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** drift.md 본문. 문자열 전체를 maskSecrets에 통과시킨다. baseUrl은 계정 정보·query가 없음을 target.ts가 보장한다. */
+/** drift.md 본문. 항목(path·errors·reason)은 호출자가 출처 기반 마스킹을 마쳐 넘기고, 여기서는 전체에 패턴 기반 maskSecrets만 건다. baseUrl은 계정 정보·query가 없음을 target.ts가 보장한다. */
 export function renderDrift(system: string, baseUrl: string, at: Date, entries: DriftEntry[]): string {
   const of = <K extends DriftEntry["kind"]>(k: K) => entries.filter((e): e is Extract<DriftEntry, { kind: K }> => e.kind === k);
   const drifted = of("drifted"), mismatch = of("statusMismatch"), skipped = of("skipped"), failed = of("failed");

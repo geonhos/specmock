@@ -44,22 +44,23 @@ export interface RecordResult {
 
 export interface RecordRun { result: RecordResult; driftMarkdown: string }
 
-/** 파싱된 JSON 값의 문자열 값(과 키 아닌 값)에만 마스킹을 적용한다. 숫자·불리언·null은 그대로 둔다. */
-function maskValues(v: unknown, mask: (s: string) => string): unknown {
+/** 파싱된 JSON 값의 문자열 값(과 키 아닌 값)에 마스킹을 적용한다. 숫자는 `String(n)`이 비밀(4자 이상)과 정확히 일치할 때만 `"***"`로 바꾼다. 불리언·null은 그대로 둔다. */
+function maskValues(v: unknown, mask: (s: string) => string, secrets: readonly string[]): unknown {
   if (typeof v === "string") return mask(v);
-  if (Array.isArray(v)) return v.map((x) => maskValues(x, mask));
-  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, maskValues(x, mask)]));
+  if (typeof v === "number") return secrets.some((s) => s.length >= 4 && s === String(v)) ? "***" : v;
+  if (Array.isArray(v)) return v.map((x) => maskValues(x, mask, secrets));
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, maskValues(x, mask, secrets)]));
   return v;
 }
 
 /** 바디에 비밀이 섞였을 수 있을 때: raw는 텍스트에, JSON은 문자열 값에만 적용한다(JSON 이스케이프·숫자 보존). */
-function maskBody(kind: "json" | "raw" | "empty" | "truncated", body: unknown, mask: (s: string) => string): { kind: "json" | "raw"; body: unknown } | null {
+function maskBody(kind: "json" | "raw" | "empty" | "truncated", body: unknown, mask: (s: string) => string, secrets: readonly string[]): { kind: "json" | "raw"; body: unknown } | null {
   if (kind === "raw") {
     const b = body as { raw: string; contentType: string };
     return { kind: "raw", body: { raw: mask(b.raw), contentType: b.contentType } };
   }
   if (kind !== "json") return null;
-  return { kind: "json", body: maskValues(body, mask) };
+  return { kind: "json", body: maskValues(body, mask, secrets) };
 }
 
 /** 표시용 경로. query는 이름 기반(token·key 등)으로 값을 가린다. */
@@ -139,7 +140,7 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
     const statusMatch = r.status === c.expect.status;
     // 출처 기반 마스킹은 모든 바디에, 패턴 기반은 비2xx·raw에만(정상 JSON 바디의 오탐 방지).
     const patterned = r.kind === "raw" || !statusMatch;
-    const masked = maskBody(r.kind, r.body, (t) => (patterned ? maskSecrets(redactSecrets(t, target.secrets)) : redactSecrets(t, target.secrets)));
+    const masked = maskBody(r.kind, r.body, (t) => (patterned ? maskSecrets(redactSecrets(t, target.secrets)) : redactSecrets(t, target.secrets)), target.secrets);
     const kind = r.kind;   // 마스킹은 kind를 바꾸지 않는다(JSON은 문자열 값만 치환)
     const body = masked ? masked.body : r.body;
     await ws.write(system, recordedName(featureId), RecordedSchema, {
@@ -179,7 +180,8 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
     const skipped = new Set(result.skipped.map((s) => s.featureId));
     await pruneRecorded(ws, system, targets.map((c) => c.featureId).filter((id) => !skipped.has(id) && !wrote.has(id)));
   }
-  const driftMarkdown = red(renderDrift(system, target.baseUrl, now(), entries));
+  // 항목의 path·errors·reason은 위에서 이미 red를 거쳤다. featureId·baseUrl·고정 문구에는 출처 기반 마스킹을 쓰지 않는다.
+  const driftMarkdown = renderDrift(system, target.baseUrl, now(), entries);
   await ws.writeText(system, DRIFT_FILE, driftMarkdown);
   return { result: redactResult(result, red), driftMarkdown };
 }

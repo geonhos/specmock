@@ -331,7 +331,46 @@ describe("record", () => {
       for (const o of out) { expect(o.includes(SIG)).toBe(false); expect(o.includes(JSON.stringify(SIG).slice(1, -1))).toBe(false); }
       const rec = await ws.read(SYS, "recorded/listPets.json", RecordedSchema);
       expect(rec.response.kind).toBe("json");
-      expect(rec.response.body).toEqual({ echo: "***", nested: ["***", 1234], id: 1234 });
+      expect(rec.response.body).toEqual({ echo: "***", nested: ["***", "***"], id: "***" });
+    });
+
+    it("${ENV}로 넣은 숫자 값은 정확히 일치할 때만 \"***\"로(부분 일치·다른 숫자는 유지)", async () => {
+      const { out } = await run({ NUM: "1234567" }, { limit: "${NUM}" }, {}, () => ({ status: 200, body: { qnum: 1234567, other: 12345678, flag: true, nil: null } }), spec, ["listPets"]);
+      const rec = await ws.read(SYS, "recorded/listPets.json", RecordedSchema);
+      expect(rec.response.body).toEqual({ qnum: "***", other: 12345678, flag: true, nil: null });
+      for (const o of out) expect(o.includes("1234567,")).toBe(false);
+    });
+
+    it("raw 바디의 JSON 이스케이프 변형(\\\" · \\\\ · \\/ · \\uXXXX)도 가린다", async () => {
+      const SIG = 'sig "q\\9 +/=';
+      const esc = JSON.stringify(SIG).slice(1, -1);
+      const variants = [esc, esc.replace(/\//g, "\\/"), esc.replace(/[^\x00-\x7f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`)];
+      for (const [i, v] of variants.entries()) {
+        const { out } = await run({ SIG }, {}, { "X-Sig": "${SIG}" }, () => ({ status: 500, raw: `err ${v} end`, contentType: "text/plain" }), spec, ["listPets"]);
+        for (const o of out) expect(o.includes(v), `variant ${i}`).toBe(false);
+        const rec = await ws.read(SYS, "recorded/listPets.json", RecordedSchema);
+        expect(rec.response.body).toEqual({ raw: "err *** end", contentType: "text/plain" });
+        await t?.close(); t = undefined;
+      }
+    });
+
+    it("raw 바디의 \\uXXXX 변형(비ASCII 비밀, params로 전달)도 가린다", async () => {
+      const SEC = "비밀값한글";
+      const { out } = await run({ SEC }, { limit: "${SEC}" }, {}, () => ({ status: 500, raw: "err \\ube44\\ubc00\\uac12\\ud55c\\uae00 end", contentType: "text/plain" }), spec, ["listPets"]);
+      for (const o of out) expect(o.includes("\\ube44")).toBe(false);
+      const rec = await ws.read(SYS, "recorded/listPets.json", RecordedSchema);
+      expect(rec.response.body).toEqual({ raw: "err *** end", contentType: "text/plain" });
+    });
+
+    it("drift.md는 featureId·baseUrl 원형을 유지하고 요청·응답 유래 텍스트만 가린다", async () => {
+      const SEC = "pets";
+      t = await startFakeTarget(strip(() => ({ status: 500 })));
+      await writeFile(ws.file(SYS, "target.json"), JSON.stringify({ baseUrl: t.url, headers: { "X-K": "${SEC}" } }));
+      const tg = await readTarget(ws, SYS, { SEC });
+      await record(ws, SYS, spec, tg, { features: ["listPets"] });
+      const md = await readFile(ws.file(SYS, "drift.md"), "utf8");
+      expect(md).toContain("listPets");
+      expect(md).not.toContain("list***");
     });
 
     it("featureId에 비밀이 부분 문자열로 들어 있어도 result.featureId는 원형을 유지한다", async () => {

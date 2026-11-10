@@ -54,13 +54,16 @@ export function substituteEnv(value: string, env: Record<string, string | undefi
   });
 }
 
-/** 비밀 값의 변형본: 원문, URL 인코딩(`%20`), form 인코딩(`+`), 두 인코딩의 소문자 hex(`%2f`). 4자 미만 값은 변형하지 않는다. */
+/** 비밀 값의 변형본: 원문, URL 인코딩(`%20`), form 인코딩(`+`), 두 인코딩의 소문자 hex(`%2f`), JSON 이스케이프(`\"`·`\\`, PHP의 `\/`, Python의 `\uXXXX`). 4자 미만 값은 변형하지 않는다. */
 export function secretVariants(v: string): string[] {
   if (v.length < 4) return [v];
   const uri = encodeURIComponent(v);
   const form = new URLSearchParams([["k", v]]).toString().slice(2);
   const lower = (s: string) => s.replace(/%[0-9A-F]{2}/g, (m) => m.toLowerCase());
-  return [...new Set([v, uri, form, lower(uri), lower(form)])];
+  const esc = JSON.stringify(v).slice(1, -1);
+  const slash = (s: string) => s.replace(/\//g, "\\/");
+  const uni = (s: string) => s.replace(/[^\x00-\x7f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+  return [...new Set([v, uri, form, lower(uri), lower(form), esc, slash(esc), uni(esc), slash(uni(esc))])];
 }
 
 /** `${ENV}` 치환 + 치환된 값을 secrets에 모은다. */

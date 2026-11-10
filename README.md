@@ -341,7 +341,7 @@ mock/<system>/
 { "baseUrl": "https://api.example.com/v2", "headers": { "Authorization": "Bearer ${PETS_TOKEN}" }, "params": { "petId": "123" } }
 ```
 
-- 비밀 값은 `${환경변수}`로만 적습니다. 값은 실행한 셸의 환경변수에서 읽고(`headers`와 `params` 모두), 그렇게 치환된 값은 이름과 무관하게 녹화 파일(응답 바디가 에코한 경우 포함)·진행 로그·drift.md·결과 어디에도 남기지 않습니다(`***`)(URL 인코딩·JSON 이스케이프 형태 포함. 4자 미만 값은 제외). 단 4자 미만 값은 다른 텍스트를 지우므로 가리지 않습니다. 녹화 파일에는 target에서 온 헤더의 이름만 남고 값은 전부 `***`입니다. `${ENV}`는 query·header에 쓰기를 권하지만 path 파라미터에도 쓸 수 있습니다. 그래도 이 파일은 커밋하지 마세요(`.specmock/`를 `.gitignore`에 두세요).
+- 비밀 값은 `${환경변수}`로만 적습니다. 값은 실행한 셸의 환경변수에서 읽습니다(`headers`와 `params` 모두). `${ENV}`로 넣은 값은 형식과 무관하게(숫자 포함) 녹화 파일·drift·이벤트·결과·응답 바디에서 `***`로 가립니다(URL 인코딩·form 인코딩·JSON 이스케이프 변형 포함, 4자 미만 값은 제외). 가릴 필요 없는 id 등은 `${ENV}` 없이 값을 직접 적으세요 — 직접 적은 값은 가리지 않습니다. 서버가 받은 값을 한 번 더 인코딩해 되돌려 주는 경우(`%25…`)는 가리지 않습니다. 녹화 파일에는 target에서 온 헤더의 이름만 남고 값은 전부 `***`입니다. `${ENV}`는 query·header에 쓰기를 권하지만 path 파라미터에도 쓸 수 있습니다. 그래도 이 파일은 커밋하지 마세요(`.specmock/`를 `.gitignore`에 두세요).
 - `specmock record <system>`은 GET·HEAD만 보냅니다. 생성·삭제 요청까지 보내려면 `--allow-mutating`(실제 데이터가 바뀝니다). `--feature <id>`로 일부만, `--refresh`로 대상 기능(이번에 보낸 것)의 기존 녹화를 버리고 다시 녹화(건너뛴 변경 요청 기능의 녹화는 유지, 중단되면 모두 유지), `--no-apply`로 mock 반영 없이 녹화만 합니다.
 - 결과: `.specmock/<system>/recorded/<기능>.json`, 스펙과의 차이는 `drift.md`("스펙과 다름" = 응답이 스키마와 다름, "상태 불일치" = 기대한 상태 코드가 아님. 404면 `params`로 실제 id를 지정). 녹화 응답은 fixture 출처 `recorded`로 들어가고, 이미 생성한 mock은 LLM 호출 없이 fixture만 바뀝니다. 직접 고친 fixture는 보존됩니다.
 - 종료 코드: 0 전부 일치 · 2 스펙과 다름·상태 불일치·실패·반영 실패 중 하나라도 있음 · 1 오류. `--json`은 결과에 `notes`(반영 실패·generate 안내)를 함께 담습니다. 동작 확인: `pnpm record:check`(공개 Petstore v3, 네트워크 필요).
