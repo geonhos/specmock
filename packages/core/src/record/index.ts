@@ -46,10 +46,10 @@ export interface RecordRun { result: RecordResult; driftMarkdown: string }
 
 const NUMERIC = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/;
 
-/** 파싱된 JSON 값의 문자열 값(과 키 아닌 값)에 마스킹을 적용한다. 숫자는 `String(n)` 또는 수치(`Number(비밀)`)가 비밀(4자 이상)과 일치할 때만 `"***"`로 바꾼다. 불리언·null은 그대로 둔다. */
+/** 파싱된 JSON 값의 문자열 값(과 키 아닌 값)에 마스킹을 적용한다. 숫자는 `String(n)` 또는 수치(`Number(비밀)`, 정규화 문자열이 4자 이상)가 비밀(4자 이상)과 일치할 때만 `"***"`로 바꾼다. 불리언·null은 그대로 둔다. */
 function maskValues(v: unknown, mask: (s: string) => string, secrets: readonly string[]): unknown {
   if (typeof v === "string") return mask(v);
-  if (typeof v === "number") return secrets.some((s) => s.length >= 4 && (s === String(v) || (NUMERIC.test(s) && Number(s) === v))) ? "***" : v;
+  if (typeof v === "number") return secrets.some((s) => s.length >= 4 && (s === String(v) || (NUMERIC.test(s) && String(Number(s)).length >= 4 && Number(s) === v))) ? "***" : v;
   if (Array.isArray(v)) return v.map((x) => maskValues(x, mask, secrets));
   if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, maskValues(x, mask, secrets)]));
   return v;

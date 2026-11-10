@@ -341,6 +341,15 @@ describe("record", () => {
       for (const o of out) expect(o.includes("1234567,")).toBe(false);
     });
 
+    it("짧게 정규화되는 수치 비밀(0001·1.00)은 응답의 0·1을 가리지 않는다", async () => {
+      for (const NUM of ["0001", "0000", "1.00"]) {
+        await run({ NUM }, { limit: "${NUM}" }, {}, () => ({ status: 200, body: { count: 1, zero: 0 } }), spec, ["listPets"]);
+        const rec = await ws.read(SYS, "recorded/listPets.json", RecordedSchema);
+        expect(rec.response.body, NUM).toEqual({ count: 1, zero: 0 });
+        await t?.close(); t = undefined;
+      }
+    });
+
     it.each([
       ["12345678901234567890", "12345678901234567000"],
       ["1234567.0", "1234567"],
