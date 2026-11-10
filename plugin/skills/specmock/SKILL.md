@@ -56,7 +56,7 @@ specmock 플러그인을 로드하면 specmock MCP 서버의 도구 13개가 함
 - `generate_mock`이 "이 디렉터리는 …로 생성됐습니다"로 실패하면 언어를 바꾸려는 것이다(ts→java, java→ts 모두). `force: true`는 이전 언어의 소스·빌드 산출물을 지운다고(fixtures의 수정은 보존, contracts는 다시 생성) 알리고 확인받은 뒤에만 쓴다. 아니면 `outDir`을 다른 곳으로 준다.
 - `outDir`은 사용자가 위치를 지정했을 때만 준다. 아니면 생략해 기본 `mock/<system>`을 쓴다.
 - `submit_extraction`의 `ok: false`는 실패가 아니라 고쳐서 다시 내라는 뜻이다. `errors`를 읽고 같은 청크를 고쳐 제출한다.
-- `record_responses`의 `allowMutating: true`는 실제 시스템에 생성·삭제 요청을 보낸다. 대상 `baseUrl`과 건너뛴 기능(`skipped`)을 알리고 확인받은 뒤에만 쓴다. `target.json` 헤더의 `${ENV}`는 Claude Code를 실행한 셸에 있어야 한다. 없다는 오류면 그 셸에서 변수를 설정하고 Claude Code를 다시 띄우라고 안내한다. 사용자에게 키 값을 대화에 붙여 넣으라고 하지 않는다.
+- `record_responses`의 `allowMutating: true`는 실제 시스템에 생성·삭제 요청을 보낸다. 대상 `baseUrl`과 건너뛴 기능(`skipped`)을 알리고 확인받은 뒤에만 쓴다. `target.json` 헤더의 `${ENV}`는 Claude Code를 실행한 셸에 있어야 한다. 없다는 오류면 그 셸에서 변수를 설정하고 Claude Code를 다시 띄우라고 안내한다. 사용자에게 키 값을 대화에 붙여 넣으라고 하지 않는다. `${ENV}`로 넣은 값은 녹화·리포트에서 `***`로 가린다(직접 적은 값은 가리지 않음).
 
 추출 규칙(근거 인용은 원문 그대로, 청크에 없는 엔드포인트를 보태지 않음)은 CLI 흐름과 같다. [extraction.md](references/extraction.md).
 

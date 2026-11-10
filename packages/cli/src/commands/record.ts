@@ -32,7 +32,7 @@ export function formatRecord(v: RecordResponsesResult): string {
 export function registerRecord(program: Command): void {
   program
     .command("record")
-    .description("mockspec의 정상 요청을 target.json의 실제 시스템에 보내 응답을 녹화하고 drift.md를 쓴다")
+    .description("mockspec의 정상 요청을 target.json의 실제 시스템에 보내 응답을 녹화하고 drift.md를 쓴다. `${ENV}`로 넣은 값은 녹화·리포트에서 `***`로 가린다(직접 적은 값은 가리지 않음)")
     .argument("<system>", SYSTEM_ARG_HELP)
     .option("--allow-mutating", "POST·PUT·PATCH·DELETE 요청도 보낸다(실제 데이터가 바뀔 수 있음)", false)
     .option("--feature <id...>", "이 기능만 녹화")

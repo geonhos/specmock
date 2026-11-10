@@ -86,8 +86,8 @@ flowchart LR
 | 필드 | 규칙 |
 |---|---|
 | `baseUrl` | 필수. `http://` 또는 `https://`. contract의 path(`/`로 시작)를 **경로 결합**으로 뒤에 붙인다(`https://host/v2` + `/pets` → `https://host/v2/pets`). `new URL(path, baseUrl)`은 `/v2`를 지우므로 쓰지 않는다. 끝 `/`는 하나로 정규화 |
-| `headers` | 선택. 모든 요청에 붙인다. 값 안의 `${NAME}`은 환경변수 `NAME`으로 치환하고(치환된 값은 "비밀 값 집합"에 모아 출처 기반 마스킹에 쓴다), 없으면 "환경변수 NAME이 없습니다"로 종료 코드 1. `${`가 없는 값은 그대로 쓴다(파일에 비밀을 적어도 동작하지만 README·SKILL에서 금지를 안내) |
-| `params` | 선택. 파라미터 이름 → 문자열 값. 값 안의 `${NAME}`도 `headers`와 같이 치환하고 비밀 값 집합에 넣는다(query 인증 키 등). contract의 경로·쿼리 파라미터 중 같은 이름의 생성값을 덮어쓴다(모든 기능에 공통 적용). 지어낸 id로 404가 나는 문제를 해결하는 수단 |
+| `headers` | 선택. 모든 요청에 붙인다. 값 안의 `${NAME}`은 환경변수 `NAME`으로 치환하고(치환된 값은 "비밀 값 집합"에 모아 출처 기반 마스킹에 쓴다), 없으면 "환경변수 NAME이 없습니다"로 종료 코드 1. `${`가 없는 값은 그대로 쓴다(파일에 비밀을 적어도 동작하지만 README·SKILL에서 금지를 안내). 직접 적은 값은 가리지 않는다(단 target 헤더 값은 `request.headers`에서 항상 `***`) |
+| `params` | 선택. 파라미터 이름 → 문자열 값. 값 안의 `${NAME}`도 `headers`와 같이 치환하고 비밀 값 집합에 넣는다(query 인증 키 등). contract의 경로·쿼리 파라미터 중 같은 이름의 생성값을 덮어쓴다(모든 기능에 공통 적용). 지어낸 id로 404가 나는 문제를 해결하는 수단. 직접 적은 값은 가리지 않는다(단 target 헤더 값은 `request.headers`에서 항상 `***`) |
 | `timeoutMs` | 선택. 요청당 제한. 기본 15000 |
 
 모르는 키는 거부한다(오타 방지). 파일은 사용자 프로젝트 안에 있으므로 `.gitignore` 안내는 README에 적고 specmock은 쓰지 않는다(기존 원칙: 사용자 프로젝트에 `.gitignore`를 쓰지 않음).
@@ -106,7 +106,8 @@ flowchart LR
 ```
 
 - `request.headers`: **target에서 온 헤더는 이름은 남기고 값은 이름과 무관하게 전부 `***`**, contract에서 온 헤더(content-type 등)만 값을 유지한다(그 뒤 `maskHeaders`도 적용. 재현용 기록이지 재전송용이 아니다). 추가로 `${ENV}`로 치환된 값(`Target.secrets`)은 `redactSecrets`(정확한 문자열 일치. 4자 미만 값은 오탐이 커서 가리지 않음)로 `request.path`·`request.query`·**모든 응답 바디(2xx JSON 포함)**·실패 사유·drift.md·진행 이벤트·`RecordResult`·서비스 notes에서 `***`로 바꾼다(URL 인코딩·form 인코딩·소문자 hex 변형과 JSON 이스케이프 형태 포함. JSON 바디는 파싱된 문자열 값에만, `RecordResult`는 요청·응답에서 온 텍스트 필드에만 적용). 패턴 기반 `maskSecrets`는 그 위에 그대로 적용한다. `request.path`에는 `params` 적용 뒤 실제 보낸 경로를 적는다.
-- 마스킹 범위(사용자 결정): `${ENV}`로 넣은 값은 형식과 무관하게 숫자까지 가린다(JSON 숫자는 `String(n)`이 비밀과 정확히 일치할 때 `"***"`, 부분 일치는 유지). 가릴 필요 없는 id는 `${ENV}` 없이 직접 적는다. drift.md는 path·errors·reason에만 출처 기반 마스킹을 적용하고 featureId·baseUrl·고정 문구는 원형을 유지한다.
+- 마스킹 범위(사용자 결정): `${ENV}`로 넣은 값은 형식과 무관하게 숫자까지 가린다(JSON 숫자는 `String(n)` 또는 `Number(비밀)`이 일치할 때 `"***"`, 부분 일치는 유지). 가릴 필요 없는 id는 `${ENV}` 없이 직접 적는다. drift.md는 path·errors·reason에만 출처 기반 마스킹을 적용하고 featureId·baseUrl·고정 문구는 원형을 유지한다.
+- 남은 위험: JSON 객체 **키**에 들어간 값은 가리지 않는다(값만 가림).
 - `response.headers`는 `content-type`·`content-length`만 남긴다. `set-cookie` 등은 버린다.
 - `response.body`: JSON으로 파싱되면 값 그대로, 아니면 `{ "raw": "...", "contentType": "..." }`. 1MB(1,048,576바이트) 초과는 저장하지 않고 `"truncated": true, "bytes": n`만 적는다(fixture로도 쓰지 않는다).
 - `mockspecHash`는 녹화 시점의 `featureInputHash`(그 기능 + 그 기능의 contract, fixture는 status만; 전체 mockspec 해시가 아님). select가 현재 값과 다르면 "낡은 녹화" 경고를 assumptions에 적되 **사용은 한다**(기능 id가 같으면 의미가 같다고 본다). `--refresh`로 대상 기능을 다시 녹화한다.
