@@ -7,7 +7,7 @@ flowchart LR
     IN["스펙<br/>(OpenAPI · 웹 문서 · PDF)"] --> CAT["기능 카탈로그<br/>(출처 · 신뢰도 · 샘플)"]
     CAT --> SEL{"필요한 기능<br/>선택"}
     SEL --> MS["MockSpec<br/>(언어 무관)"]
-    MS --> GEN["mock 서버<br/>(TS · Hono)"]
+    MS --> GEN["mock 서버<br/>(TS · Hono / Java · Javalin)"]
     MS --> CT["contract test"]
     CT -.검증.-> GEN
     GEN --> REP["커버리지 리포트"]
@@ -16,6 +16,8 @@ flowchart LR
 ## 빠른 시작
 
 Node 22.19 이상, pnpm 12가 필요합니다.
+
+Java mock을 만들려면(`--lang java`) JDK 17 이상과 로그인된 `claude` CLI가 필요합니다. Maven은 설치하지 않아도 됩니다(생성물의 `./mvnw`가 받습니다). 첫 빌드는 Maven 배포본과 의존성을 내려받으므로 **네트워크가 필요**하고 수 분 걸립니다. `unzip`이 없으면 mvnw가 `tar`로 풉니다. JDK가 없거나 JDK 17 미만이거나 오프라인이면 모델을 다시 부르지 않고 종료 코드 1로 즉시 끝납니다. Windows(`mvnw.cmd`)는 동작하도록 작성했지만 검증하지 않았습니다.
 
 ```bash
 git clone https://github.com/geonhos/specmock.git && cd specmock
@@ -59,25 +61,44 @@ specmock analyze  <system> [--llm session|claude-code] [--model m] [--prepare] [
 specmock list     <system> [--group g] [--json]      # 카탈로그 표 (그룹 필터 시에도 번호는 전체 기준)
 specmock show     <system> <featureId> [--json]      # 기능 하나의 요청·응답 스키마, 샘플, 근거
 specmock select   <system> [표현식...] [--add|--remove] [--interactive] [--group g] [--json]
-specmock generate <system> [--lang ts] [--out dir] [--force] [--json]   # ./mock/<system>/ 에 Hono 프로젝트 생성
+specmock generate <system> [--lang ts|java] [--llm claude-code|session] [--model m] [--max-attempts n]
+                           [--finalize] [--out dir] [--force] [--json]  # ./mock/<system>/ 에 mock 프로젝트 생성
 specmock verify   <system> [--dir d] [--report p] [--json]              # mock 기동 → contract test → coverage.md
-specmock run      <system> <origins...> [--select 표현식] [--lang ts] [--out dir] [--no-verify]
+specmock run      <system> <origins...> [--select 표현식] [--lang ts|java] [--max-attempts n] [--out dir] [--no-verify]
                                           [--llm claude-code] [--model m] [--refresh] [--json]   # 위 과정을 한 번에
 specmock ui       [--port n] [--no-open]             # 브라우저 화면으로 등록부터 검증까지 (아래 Web UI 절)
 ```
 
-이 저장소 안에서는 `pnpm specmock <command>`로 실행합니다. 옵션이 헷갈리면 `specmock <command> --help`가 기준입니다. `verify`는 mock 디렉터리에 `node_modules`가 없으면 `npm install`을 먼저 수행합니다.
+이 저장소 안에서는 `pnpm specmock <command>`로 실행합니다. 옵션이 헷갈리면 `specmock <command> --help`가 기준입니다. `verify`는 lock에 적힌 설치 단계(TS는 `npm install`, Java는 `./mvnw -q -DskipTests package`)를 먼저 수행합니다. 소스가 바뀌지 않았으면 다시 하지 않습니다(`.specmock-installed`).
 
 종료 코드:
 
-| 명령 | 0 | 1 | 2 |
-|---|---|---|---|
-| 모든 명령 | 성공 | 오류(메시지 출력) | 명령마다 다름(아래) |
-| `analyze` | 성공 | 오류 | 일부 청크 추출 실패. 같은 명령을 다시 실행하면 실패한 청크만 재시도 |
-| `run` | 성공 | 오류(청크 전부 실패 포함) | contract 실패 **또는** 일부 청크 추출 실패 |
-| `verify` | 성공 | 기동 실패 등 오류 | contract 실패 |
+| 명령 | 0 | 1 | 2 | 5 |
+|---|---|---|---|---|
+| 모든 명령 | 성공 | 오류(메시지 출력) | 명령마다 다름(아래) | — |
+| `analyze` | 성공 | 오류 | 일부 청크 추출 실패. 같은 명령을 다시 실행하면 실패한 청크만 재시도 | — |
+| `generate` | 성공 | 오류(지원하지 않는 언어, `--finalize` 거부 포함) | — | LLM 생성이 `--max-attempts` 안에 검증을 통과하지 못함 |
+| `run` | 성공 | 오류(청크 전부 실패 포함) | contract 실패 **또는** 일부 청크 추출 실패 | `generate`와 같음 |
+| `verify` | 성공 | 기동 실패 등 오류 | contract 또는 런타임 계약(501·404) 실패 | — |
 
 `--json`을 주면 결과를 JSON 하나로 출력합니다(`run`은 진행 상황을 stderr로 보냅니다).
+
+### 다른 언어로 생성 (Java)
+
+```bash
+pnpm specmock run petstore examples/petstore/petstore.yaml --select all --lang java
+cd mock/petstore && ./mvnw -q -DskipTests package && java -jar target/mock.jar
+curl -s localhost:4010/pets/1
+```
+
+TS는 템플릿으로 만들지만 Java는 `claude`가 MockSpec과 TS 참조 구현을 보고 작성합니다. specmock은 결과를 임시 디렉터리에서 빌드·기동하고 contract와 런타임 계약(선택하지 않은 경로 501, 모르는 경로 404)을 통과한 것만 `mock/<system>/`에 반영합니다. 왜: LLM 출력은 틀릴 수 있어서, 통과하지 못한 시도가 기존 디렉터리를 망가뜨리지 않게 합니다. 실패하면 오류 요약을 붙여 다시 요청하고(기본 3회, `--max-attempts`), 그래도 안 되면 종료 코드 5와 함께 마지막 시도를 `mock/<system>/.specmock-attempt/`(`errors.md`)에 남깁니다.
+
+- 걸리는 시간(실측, Petstore): 생성 1회 약 100초(모델 호출) + 빌드·검증 약 5초(Maven 캐시가 있을 때). 첫 빌드는 다운로드 때문에 더 걸립니다.
+- 같은 mockspec으로 다시 `generate`하면 claude를 부르지 않고 "변경 없음"을 출력합니다(`--force`로 다시 생성).
+- 기능을 추가해 다시 생성하면 기존 소스를 함께 보내 고칠 부분만 바뀝니다. 직접 고친 소스는 "(사용자 수정)"으로 표시해 라우트 추가·삭제 외에는 바꾸지 말라고 요청하고, 그래도 바뀐 파일은 출력에 목록으로 알립니다. 응답에서 빠진 기존 소스는 지우지 않습니다.
+- Claude Code 대화 안에서는 `--llm session`이 지시서(`.specmock/<system>/generate-request.json`)만 쓰고, 대화에서 파일을 작성한 뒤 `specmock generate <system> --finalize`로 확정합니다. MCP는 `generate_mock(language)` → `finalize_generation`입니다.
+- 언어를 바꿀 때(ts ↔ java)는 `--force`가 필요합니다. 이전 언어의 소스·빌드 산출물을 지우고 사용자가 고친 fixture는 보존합니다(contracts는 다시 생성. `.git`이나 `.specmock`이 있는 디렉터리는 거부).
+- `mock/<system>/`을 커밋한다면 `.gitignore`에 `.specmock-attempt/`, `.specmock-installed`, `target/`, `node_modules/`를 넣으세요(빌드·검증 산출물입니다).
 
 ### Claude Code 스킬
 
@@ -153,6 +174,7 @@ pnpm specmock ui               # 브라우저가 열립니다. --port 4517 로 �
 Claude Code 대화에서는 "화면으로 하고 싶어"라고 하면 Claude가 `open_ui` 도구로 같은 화면을 띄우고 URL을 알려 줍니다. 이 화면은 대화와 같은 프로젝트 루트·`.specmock/`를 씁니다. 화면에서 한 선택은 CLI·대화와 같은 파일(`selection.json`)에 저장되고, 대화에서 제출한 추출 결과나 선택 변경은 화면에 바로 반영됩니다.
 
 - 문서(Markdown·PDF·웹) 추출은 `claude` CLI가 있으면 화면에서 바로 시작할 수 있습니다. 없으면 화면이 안내하는 대로 Claude Code 대화에서 추출하세요.
+- 생성 화면에서 언어(기존 유지 · TypeScript · Java)를 고를 수 있고, Java는 단계와 시도 n/max를 보여 줍니다. 생성 도중 취소할 수 있고(반영 직전까지는 출력 디렉터리가 바뀌지 않습니다), 이미 만들어진 디렉터리의 언어를 바꾸면 확인 창이 먼저 뜹니다. Web UI는 claude-code로만 생성합니다(세션 모드 없음).
 - 화면 서버와 MCP 서버, CLI가 같은 작업 공간에 동시에 써도 파일 잠금으로 보호됩니다.
 - E2E: Playwright로 화면 두 경로(OpenAPI 등록부터 검증까지, 가짜 `claude`로 문서 추출)를 확인합니다. 기본 `pnpm test`에는 들어 있지 않습니다.
 
@@ -285,6 +307,16 @@ mock/<system>/
 └── README.md
 ```
 
+Java(`--lang java`):
+
+```
+mock/<system>/
+├── pom.xml                                # Javalin 6 + networknt json-schema-validator, shade로 target/mock.jar
+├── mvnw, mvnw.cmd, .mvn/wrapper/          # Maven Wrapper (specmock이 넣는 고정 파일, 생성 대상 아님)
+├── src/main/java/**                       # claude가 작성. 요청 검증 → fixture 응답, 501·404 동작은 TS와 같다
+└── fixtures/, contracts/, specmock.lock.json   # TS와 같다 (lock의 install·start가 빌드·기동 명령)
+```
+
 서버 동작:
 
 | 요청 | 응답 |
@@ -295,15 +327,18 @@ mock/<system>/
 | 카탈로그에 없는 경로 | `404 { error: "unknown_path" }` |
 | `GET /__specmock/health` | `{ ok, system, features }` |
 
-`generate`를 다시 실행하면 사용자가 수정한 fixture는 보존하고(`specmock.lock.json`의 해시와 비교. lock을 지우면 보존되지 않는다), `--force`를 주면 덮어씁니다. 선택 해제된 기능의 라우트·contract·수정하지 않은 fixture는 정리하고, 수정 흔적이 있는 fixture만 남기고 알려줍니다.
+`generate`를 다시 실행하면 사용자가 수정한 fixture는 보존하고(`specmock.lock.json`의 해시와 비교. lock을 지우면 보존되지 않는다), `--force`를 주면 같은 언어에서는 사용자가 고친 fixture도 덮어씁니다(언어를 바꿀 때의 `--force`는 이전 소스 삭제만 뜻하고 fixture 수정은 보존합니다). 선택 해제된 기능의 라우트·contract·수정하지 않은 fixture는 정리하고, 수정 흔적이 있는 fixture만 남기고 알려줍니다.
 
 ## 커버리지 리포트
 
 `verify`가 `.specmock/<system>/coverage.md`를 씁니다(`--report <path>`로 사본 저장). fixture 출처 비율(spec-example / doc-sample / schema-generated / empty), 신뢰도 분포, 가정 목록, contract 결과, 선택되지 않은 기능이 들어 있습니다. 이 파일이 "이 mock을 어디까지 믿을지"의 근거입니다.
 
-## 제한 사항 (Phase 1B)
+## 제한 사항
 
-- 생성 언어는 TypeScript(Hono) 하나입니다.
+- 생성 언어는 TypeScript(Hono, 템플릿)와 Java(Maven + Javalin, LLM 생성)입니다. Java 생성은 LLM 출력이라 매번 코드가 다를 수 있고, verify를 통과한 것만 반영합니다.
+- Java 생성은 `claude` 구독 호출을 시도마다 한 번 씁니다. 기능이 많으면 프롬프트가 커집니다.
+- Java 출력은 Windows에서 검증하지 않았습니다.
+- JDK가 있고 네트워크가 없는 기기에서 `pnpm test`의 `java.test.ts`는 skip되지 않고 **실패**합니다(Maven 다운로드 불가). JDK가 없으면 skip합니다.
 - 모든 응답은 고정 fixture입니다. 상태를 가진 동작(POST 후 GET에 반영 등)은 없습니다.
 - 기능마다 가장 낮은 2xx 응답 하나만 서빙하고, 4xx fixture는 생성되지 않습니다(coverage.md 집계에는 포함).
 - fixture는 스펙의 example이 없으면 스키마에서 시드 고정 난수로 만듭니다. 구조는 맞지만 값은 임의입니다(coverage.md의 `schema-generated` 수치로 확인).
@@ -315,7 +350,7 @@ mock/<system>/
 - `analyze`가 모든 청크에서 추출에 실패하면 `catalog.json`이 빈 카탈로그로 덮어써집니다(`run`은 이 경우 exit 1).
 - `select --interactive`에는 그룹 접기·검색이 없습니다. 저장할 때 선택이 id 목록으로 평탄화되어, 처음 준 표현식(`group:pets` 등)은 `selection.json`에 남지 않습니다.
 - 카탈로그 변경 diff(`catalog-diff.json`, `select` 경고)는 기능의 추가/삭제만 보여 주고, 내용이 바뀐 기능은 표시하지 않습니다.
-- `generate`는 `src/`를 통째로 다시 씁니다. `mock/<system>/src/`에 직접 추가한 route 파일은 삭제됩니다. 바꿀 것은 fixture에 두세요.
+- TS `generate`는 `src/`를 통째로 다시 씁니다(Java는 사용자 수정 소스를 유지합니다). `mock/<system>/src/`에 직접 추가한 route 파일은 삭제됩니다. 바꿀 것은 fixture에 두세요.
 - `select --add`는 기존 선택이 없으면 새 선택으로 동작합니다(오류가 아님).
 
 ## 문서
@@ -325,6 +360,7 @@ mock/<system>/
 - [구현 계획](docs/superpowers/plans/)
 - [Petstore 예제](examples/petstore/README.md) · [문서(Markdown) 예제](examples/docs-sample/README.md)
 - [Claude Code 플러그인](plugin/README.md)
+- [3A 설계: 다른 언어 생성](docs/superpowers/specs/2026-11-09-phase3a-java-generator-design.md)
 
 ## 기여 방법
 
@@ -335,7 +371,9 @@ pnpm typecheck     # src와 test 모두
 pnpm test:e2e      # 브라우저 E2E(별도). 처음 한 번 `pnpm exec playwright install chromium`
 ```
 
-변경 후 위 명령이 통과하면 PR을 엽니다. 설계 의도는 [설계 문서](docs/superpowers/specs/2026-11-04-specmock-design.md)에, 단계별 작업 단위는 [구현 계획](docs/superpowers/plans/)(1A, 1B, 2A, 2B)에 있습니다. 설계와 다르게 구현한 지점은 설계 문서 12장 "구현 중 변경"에 이유와 함께 적습니다.
+실제 claude 호출 확인은 `pnpm llm:check`, Java 생성·verify까지는 `pnpm llm:check --java`입니다(JDK 17, 수 분, 구독 호출).
+
+변경 후 위 명령이 통과하면 PR을 엽니다. 설계 의도는 [설계 문서](docs/superpowers/specs/2026-11-04-specmock-design.md)에, 단계별 작업 단위는 [구현 계획](docs/superpowers/plans/)(1A, 1B, 2A, 2B, 3A)에 있습니다. 설계와 다르게 구현한 지점은 설계 문서 12장 "구현 중 변경"에 이유와 함께 적습니다.
 
 ## 로드맵
 
@@ -344,5 +382,6 @@ pnpm test:e2e      # 브라우저 E2E(별도). 처음 한 번 `pnpm exec playwri
 | 1A | core + CLI (OpenAPI) — 완료 |
 | 1B | 웹 문서·PDF 분석, LLM 어댑터, ego-browser 수확, Claude Code 스킬, `select --interactive` — 완료 |
 | 2A | 공용 서비스 층, MCP 서버(도구 10개), 스킬 MCP 우선 흐름 — 완료 |
-| 2B | Web UI(`specmock ui`, MCP `open_ui`로 11개), 파일 잠금, Playwright E2E ← 현재 |
-| 3 | 다른 언어 생성(LLM), Proxy/녹화, API 키 어댑터 |
+| 2B | Web UI(`specmock ui`, MCP `open_ui`로 11개), 파일 잠금, Playwright E2E — 완료 |
+| 3A | 다른 언어 생성: `LanguageGenerator`·언어 프로필, Java(Maven + Javalin) LLM 생성과 검증 루프, 세션 모드, MCP `finalize_generation`(12개) ← 현재 |
+| 3 | Proxy/녹화, API 키 어댑터, 다른 언어 프로필 추가 |

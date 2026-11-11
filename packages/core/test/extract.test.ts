@@ -23,7 +23,7 @@ beforeEach(async () => {
 afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
 
 function fakeAdapter(calls: string[]): LlmAdapter {
-  return { name: "claude-code", async extract(req) { calls.push(req.prompt); return { endpoints: [] }; } };
+  return { name: "claude-code", async complete(req) { calls.push(req.prompt); return { endpoints: [] }; } };
 }
 
 describe("extract", () => {
@@ -33,7 +33,7 @@ describe("extract", () => {
     const m = JSON.parse(await readFile(manifestFile, "utf8")) as Record<string, string>;
     m["000"] = "outdated-hash";
     await writeFile(manifestFile, JSON.stringify(m));
-    const failing: LlmAdapter = { name: "claude-code", async extract() { throw new Error("boom"); } };
+    const failing: LlmAdapter = { name: "claude-code", async complete() { throw new Error("boom"); } };
     const r = await extract(ws, "pets", failing);
     expect(r.failed.some((f) => f.chunk === 0)).toBe(true);
     expect(JSON.parse(await readFile(manifestFile, "utf8"))["000"]).toBeUndefined();
@@ -121,14 +121,14 @@ describe("extract", () => {
 
   it("continues after a failing chunk and reports it", async () => {
     let i = 0;
-    const flaky: LlmAdapter = { name: "claude-code", async extract() { if (i++ === 1) throw new Error("boom"); return { endpoints: [] }; } };
+    const flaky: LlmAdapter = { name: "claude-code", async complete() { if (i++ === 1) throw new Error("boom"); return { endpoints: [] }; } };
     const r = await extract(ws, "pets", flaky);
     expect(r.failed).toEqual([{ chunk: 1, error: "boom" }]);
     expect((await readdir(path.join(dir, "pets", "extracted"))).includes("001.json")).toBe(false);
   });
 
   it("does not write a result that fails schema validation", async () => {
-    const bad: LlmAdapter = { name: "claude-code", async extract() { return { nope: true }; } };
+    const bad: LlmAdapter = { name: "claude-code", async complete() { return { nope: true }; } };
     const r = await extract(ws, "pets", bad);
     expect(r.failed[0].error).toMatch(/스키마/);
     expect(r.written).toBe(0);

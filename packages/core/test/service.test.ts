@@ -14,6 +14,8 @@ import { resolveMockDir, verifyMock } from "../src/service/verify.js";
 import { prepare } from "../src/analyze/prepare.js";
 import { submitExtraction } from "../src/analyze/submit.js";
 import { generate } from "../src/generate/index.js";
+import { readLock } from "../src/generate/lock.js";
+import { markInstalled } from "../src/verify/server.js";
 import { select } from "../src/select/index.js";
 import { Workspace } from "../src/workspace.js";
 import { PETSTORE, ROOT_NODE_MODULES } from "./helpers.js";
@@ -76,7 +78,7 @@ describe("analyzeSpec", () => {
 
   it("claude-code with an injected adapter → catalog via llm, with progress events", async () => {
     await ingestSpec(ws, "pets", [PETS_MD]);
-    const adapter: LlmAdapter = { name: "claude-code", async extract() { return { endpoints: [] }; } };
+    const adapter: LlmAdapter = { name: "claude-code", async complete() { return { endpoints: [] }; } };
     const r = await analyzeSpec(ws, "pets", { llm: "claude-code", adapter, onEvent });
     expect(r).toMatchObject({ mode: "catalog", via: "llm", incomplete: false });
     expect(events.some((e) => e.stage === "extract" && e.done !== undefined && e.total !== undefined)).toBe(true);
@@ -174,6 +176,7 @@ describe("verify", () => {
     const out = path.join(dir, "mock", "petstore");
     await generate(ws, "petstore", { outDir: out });
     await symlink(ROOT_NODE_MODULES, path.join(out, "node_modules"), "dir");
+    await markInstalled(out, (await readLock(out))!);
     const v = await verifyMock(ws, "petstore", { onEvent });
     expect(v.dir).toBe(out);
     expect(v.result.failed).toBe(0);
@@ -188,7 +191,7 @@ describe("runPipeline", () => {
   });
 
   it("throws when every chunk failed", async () => {
-    const adapter: LlmAdapter = { name: "claude-code", async extract() { throw new Error("boom"); } };
+    const adapter: LlmAdapter = { name: "claude-code", async complete() { throw new Error("boom"); } };
     await expect(runPipeline(ws, "pets", [PETS_MD], { llm: "claude-code", adapter, verify: false })).rejects.toThrow(/LLM 추출이 모두 실패했습니다: boom/);
   });
 
@@ -197,7 +200,7 @@ describe("runPipeline", () => {
     const filler = (n: number) => `${"가나다라마바사 ".repeat(Math.ceil(n / 8))}\n`;
     await writeFile(big, `# Pets\n\nGET /pets/{petId} returns a pet.\n\n${filler(5000)}\n# Other\n\n${filler(5000)}`);
     let calls = 0;
-    const adapter: LlmAdapter = { name: "claude-code", async extract() { if (calls++ === 0) return { endpoints: [GET_PET] }; throw new Error("boom"); } };
+    const adapter: LlmAdapter = { name: "claude-code", async complete() { if (calls++ === 0) return { endpoints: [GET_PET] }; throw new Error("boom"); } };
     const r = await runPipeline(ws, "big", [big], { llm: "claude-code", adapter, verify: false, outDir: path.join(dir, "m") });
     expect(calls).toBeGreaterThan(1);
     expect(r.extractFailed).toBe(true);

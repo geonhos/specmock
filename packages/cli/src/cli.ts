@@ -30,5 +30,6 @@ registerUi(program);
 
 program.parseAsync(process.argv).catch((e: Error) => {
   process.stderr.write(`오류: ${e.message}\n`);
-  process.exit(1);
+  // GenerationFailedError(5)처럼 종료 코드를 가진 오류는 그 값을 쓴다.
+  process.exit((e as { exitCode?: number }).exitCode ?? 1);
 });

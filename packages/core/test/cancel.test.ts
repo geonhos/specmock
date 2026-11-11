@@ -110,7 +110,7 @@ it("npm install 취소 시 손자 프로세스도 죽고, 다음 verify는 insta
     await waitFor(async () => !isAlive(gc));
     // 취소해도 node_modules는 지우지 않지만, 완료 마커는 없어야 다음에 다시 설치한다.
     await access(path.join(out, "node_modules"));
-    await expect(access(path.join(out, "node_modules", ".specmock-installed"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(path.join(out, ".specmock-installed"))).rejects.toMatchObject({ code: "ENOENT" });
   });
   // 다음 verify는 install을 다시 시도한다(가짜 npm이 이번에는 바로 성공).
   await withEnv({ PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`, FAST: "1", INSTALL_LOG: log }, async () => {
@@ -151,7 +151,7 @@ it("청크 0 완료 후 청크 1 중 취소해도 청크 0 결과는 남는다",
   let calls = 0;
   const adapter = {
     name: "claude-code" as const,
-    extract: (r: { signal?: AbortSignal }) => {
+    complete: (r: { signal?: AbortSignal }) => {
       if (++calls === 1) return Promise.resolve({ endpoints: [] });
       return new Promise<never>((_, reject) => {
         r.signal!.addEventListener("abort", () => reject(r.signal!.reason), { once: true });
@@ -224,7 +224,7 @@ it("spawn 직전 비동기 구간에서 abort되면(리스너를 달기 전) ins
 it("extract 중 spawn 직전(cwd 임시 디렉터리 생성 await)에 abort되면 claude 자식을 죽이고 AbortError로 끝난다", async () => {
   const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-pid"), env: { PID_FILE: pidFile } });
   const ac = new AbortController();
-  const run = adapter.extract({ prompt: "x", schema: {}, signal: ac.signal } as never);
+  const run = adapter.complete({ prompt: "x", schema: {}, signal: ac.signal } as never);
   ac.abort();
   const err = await Promise.race([run.catch((e) => e), new Promise((r) => setTimeout(() => r("hang"), 3000))]);
   expect((err as Error).name).toBe("AbortError");

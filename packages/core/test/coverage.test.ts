@@ -6,7 +6,6 @@ import type { VerifyResult } from "../src/verify/index.js";
 const spec: MockSpec = {
   system: "demo",
   baseUrl: "/",
-  language: "ts",
   features: [
     {
       id: "getThing",
@@ -54,6 +53,8 @@ describe("renderCoverage", () => {
           errors: ["/id must be integer | got string", "line one\nline two"],
         },
       ],
+      runtime: [],
+      runtimeFailed: 0,
     };
     const md = renderCoverage(spec, result);
     const row = md.split("\n").find((l) => l.startsWith("| getThing |"));

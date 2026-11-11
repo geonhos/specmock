@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# 생성 테스트용 가짜 claude. 호출마다 $GEN_DIR/<n>.json을 structured_output으로 낸다(n은 1부터). 프롬프트는 $GEN_DIR/prompt-<n>.txt에 남긴다.
+set -euo pipefail
+input=$(cat)
+n=$(( $(cat "$GEN_DIR/count" 2>/dev/null || echo 0) + 1 ))
+printf '%s' "$n" > "$GEN_DIR/count"
+printf '%s' "$input" > "$GEN_DIR/prompt-$n.txt"
+so=$(cat "$GEN_DIR/$n.json")
+printf '{"type":"result","subtype":"success","is_error":false,"num_turns":1,"result":"ok","structured_output":%s}\n' "$so"

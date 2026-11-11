@@ -1,7 +1,9 @@
-import { access, writeFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import getPort from "get-port";
-import type { Lock } from "../generate/lock.js";
+import { matchesAny } from "../generate/glob.js";
+import { resolveInstall, resolveInstallCheck, resolveInstallInputs, type Lock } from "../generate/lock.js";
+import { hashJson, hashText } from "../util/hash.js";
 import { killGroup, spawnGroup } from "../util/procGroup.js";
 
 export interface RunningMock {
@@ -42,8 +44,6 @@ async function waitForHealth(url: string, state: () => ChildState, timeoutMs: nu
   throw new Error(`mock 서버가 ${timeoutMs}ms 안에 응답하지 않았습니다.\n${state().stderr}`);
 }
 
-const INSTALLED_MARKER = ".specmock-installed";
-
 function sleepAbortable(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     const t = setTimeout(done, ms);
@@ -52,42 +52,79 @@ function sleepAbortable(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/** 설치 완료는 디렉터리 존재가 아니라 성공 뒤에 쓰는 마커로 판정한다(중단·실패로 반쯤 쓰인 node_modules를 믿지 않기 위해). */
-async function isInstalled(dir: string): Promise<boolean> {
-  try {
-    await access(path.join(dir, "node_modules", INSTALLED_MARKER));
-    return true;
-  } catch {
-    return false;
+const INSTALLED_MARKER = ".specmock-installed";
+const DEFAULT_INSTALL_TIMEOUT_MS = 600_000;
+
+/** 설치 키: install 명령 + lock.installInputs에 맞는 sourceFiles 파일의 현재 내용 해시. 입력(TS의 package.json, Java의 pom.xml·src)이 바뀌면 다시 설치한다. */
+export async function installKey(dir: string, lock: Lock): Promise<string> {
+  const files: Record<string, string | null> = {};
+  const inputs = resolveInstallInputs(lock);
+  for (const rel of Object.keys(lock.sourceFiles).sort()) {
+    if (!matchesAny(inputs, rel)) continue;
+    files[rel] = await readFile(path.join(dir, rel), "utf8").then(hashText, () => null);
   }
+  return hashJson({ install: resolveInstall(lock), files });
 }
 
+/** 테스트·symlink된 node_modules용: 설치를 한 것으로 표시한다. */
+export async function markInstalled(dir: string, lock: Lock): Promise<void> {
+  await writeFile(path.join(dir, INSTALLED_MARKER), await installKey(dir, lock));
+}
+
+/** 설치 완료 = 마커 키 일치 AND 결과물(installCheck)이 있음. node_modules 삭제·새 clone(마커 커밋됨)에서도 다시 설치한다. */
+async function isInstalled(dir: string, lock: Lock, key: string): Promise<boolean> {
+  if ((await readFile(path.join(dir, INSTALLED_MARKER), "utf8").catch(() => null)) !== key) return false;
+  const check = resolveInstallCheck(lock);
+  return check === null || (await access(path.join(dir, check)).then(() => true, () => false));
+}
+
+export interface EnsureInstalledOptions {
+  /** 설치 명령의 출처. 없으면 2단계 동작(npm install). */
+  lock?: Lock;
+  onLog?: (message: string) => void;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
+const LEGACY_LOCK = (): Lock => ({
+  system: "", language: "ts", generator: "template", mockspecHash: "", generatedAt: "",
+  start: { command: "", args: [] }, healthPath: "", fixtureHashes: {}, sourceFiles: {},
+});
+
 /**
- * 마커가 없으면 npm install을 먼저 실행한다. 없이 `npx tsx`를 부르면 npx가 설치 여부를 묻다가 멈춘다.
- * 마커 도입 전에 만든 mock(마커 없는 node_modules)은 한 번 다시 설치한다. npm은 이미 있는 패키지를 빠르게 확인만 하므로 비용이 작다.
- * 취소·실패해도 node_modules는 지우지 않는다(오프라인 첫 verify가 기존 설치를 날리면 안 된다). 마커가 없으니 다음 호출이 다시 설치한다.
+ * 마커의 키가 다르면 lock의 install을 cwd=dir에서 실행한다(셸 없음). TS에서는 npm install이 없으면 `npx tsx`가 설치 여부를 묻다가 멈춘다.
+ * 취소·실패해도 산출물(node_modules, target)은 지우지 않는다. 마커가 없으니 다음 호출이 다시 설치한다.
  */
-export async function ensureInstalled(dir: string, opts: { onLog?: (message: string) => void; signal?: AbortSignal } = {}): Promise<void> {
+export async function ensureInstalled(dir: string, opts: EnsureInstalledOptions = {}): Promise<void> {
   opts.signal?.throwIfAborted();
-  if (await isInstalled(dir)) return;
-  opts.onLog?.("의존성 설치 중 (npm install)...");
+  const lock = opts.lock ?? LEGACY_LOCK();
+  const install = resolveInstall(lock);
+  if (!install) return;
+  const key = await installKey(dir, lock);
+  if (await isInstalled(dir, lock, key)) return;
+  const label = install.command === "npm" ? "npm install" : [install.command, ...install.args.slice(0, 1)].join(" ");
+  const timeoutMs = opts.timeoutMs ?? lock.installTimeoutMs ?? DEFAULT_INSTALL_TIMEOUT_MS;
+  opts.onLog?.(`의존성 설치 중 (${label})...`);
   let onAbort = () => {};
+  let timer: NodeJS.Timeout | undefined;
   try {
     await new Promise<void>((resolve, reject) => {
-      const child = spawnGroup("npm", ["install", "--no-audit", "--no-fund", "--loglevel=error"], { cwd: dir, stdio: ["ignore", "ignore", "pipe"] });
-      let err = "";
-      child.stderr?.on("data", (d) => { err += String(d); });
+      const child = spawnGroup(install.command, install.args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
+      let out = "";
+      const keep = (d: unknown) => { out = (out + String(d)).slice(-20_000); };
+      child.stdout?.on("data", keep);
+      child.stderr?.on("data", keep);
       onAbort = () => { killGroup(child, "SIGKILL"); reject(abortReason(opts.signal!)); };
       opts.signal?.addEventListener("abort", onAbort, { once: true });
       if (opts.signal?.aborted) onAbort();   // 리스너를 달기 전에 이미 취소된 경우
-      child.once("error", (e) => reject(new Error(`npm install을 실행할 수 없습니다: ${e.message}`)));
-      child.once("exit", (code) => (opts.signal?.aborted ? undefined : code === 0 ? resolve() : reject(new Error(`npm install 실패 (exit ${code}).\n${err}`))));
+      timer = setTimeout(() => { killGroup(child, "SIGKILL"); reject(new Error(`${label} 설치가 ${timeoutMs}ms 안에 끝나지 않았습니다.\n${out}`)); }, timeoutMs);
+      child.once("error", (e) => reject(new Error(`${label}을(를) 실행할 수 없습니다: ${e.message}`)));
+      child.once("exit", (code) => (opts.signal?.aborted ? undefined : code === 0 ? resolve() : reject(new Error(`${label} 설치 실패 (exit ${code}).\n${out}`))));
     });
     opts.signal?.throwIfAborted();
-    await writeFile(path.join(dir, "node_modules", INSTALLED_MARKER), new Date().toISOString());
-  } catch (e) {
-    throw e;
+    await writeFile(path.join(dir, INSTALLED_MARKER), key);
   } finally {
+    clearTimeout(timer);
     opts.signal?.removeEventListener("abort", onAbort);
   }
 }
@@ -103,7 +140,7 @@ function abortReason(signal: AbortSignal): Error {
 }
 
 export async function startMock(dir: string, lock: Lock, opts: StartMockOptions = {}): Promise<RunningMock> {
-  await ensureInstalled(dir, { onLog: opts.onLog, signal: opts.signal });
+  await ensureInstalled(dir, { lock, onLog: opts.onLog, signal: opts.signal });
   const port = await getPort();
   const child = spawnGroup(lock.start.command, lock.start.args, {
     cwd: dir,
@@ -129,7 +166,7 @@ export async function startMock(dir: string, lock: Lock, opts: StartMockOptions 
     await waitForHealth(
       `http://127.0.0.1:${port}${lock.healthPath}`,
       () => ({ exitCode: child.exitCode, spawnError, stderr: err }),
-      opts.timeoutMs ?? 30_000,
+      opts.timeoutMs ?? lock.startTimeoutMs ?? 30_000,
       opts.signal,
     );
   } catch (e) {

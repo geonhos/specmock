@@ -37,7 +37,7 @@ describe("FeatureSchema", () => {
 
 describe("MockSpecSchema", () => {
   it("requires fixtures on each feature", () => {
-    const bad = { system: "x", baseUrl: "/", language: "ts", features: [feature], notMocked: [], contracts: [], assumptions: [] };
+    const bad = { system: "x", baseUrl: "/", features: [feature], notMocked: [], contracts: [], assumptions: [] };
     expect(() => MockSpecSchema.parse(bad)).toThrow();
     const good = { ...bad, features: [{ ...feature, fixtures: [{ status: 200, body: {}, source: "empty" }] }] };
     expect(MockSpecSchema.parse(good).features[0].fixtures).toHaveLength(1);

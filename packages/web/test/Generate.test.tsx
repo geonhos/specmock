@@ -38,15 +38,40 @@ it("출력 디렉터리 기본값은 defaultOutDir이고 고칠 수 있다. 생�
   expect(api.bodies[api.calls.indexOf("POST /api/systems/petstore/generate")]).toEqual({ outDir: "/tmp/out", force: false });
 });
 
-it("생성 중에는 취소 버튼이 없고 생성 버튼이 잠긴다", async () => {
-  setup({ "POST /api/systems/petstore/generate": accepted });
+it("생성 중: cancellable이면 취소 버튼이 POST /api/jobs/<id>/cancel을 부르고 생성 버튼은 잠긴다", async () => {
+  const api = setup({ "POST /api/systems/petstore/generate": accepted, "POST /api/jobs/j1/cancel": ok({ state: "running" }) });
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "생성" }));
   await vi.waitFor(() => expect(FakeEventSource.last).toBeTruthy());
-  emit("job-started", job());
+  emit("job-started", job({ cancellable: true }));
   expect(await screen.findByText(/생성 중이에요/)).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "취소" })).toBeNull();
+  expect(document.body.textContent).not.toContain("멈출 수 없어요");
   expect((screen.getByRole("button", { name: "생성" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "취소" }));
+  await vi.waitFor(() => expect(api.calls).toContain("POST /api/jobs/j1/cancel"));
+  emit("job-failed", job({ state: "failed", cancellable: true, error: { code: "cancelled", message: "작업을 취소했어요." } }));
+});
+
+it("언어 변경: 409 language-change-required → 확인 창, 확인하면 force:true로 다시 요청. 취소는 호출 없음", async () => {
+  let conflicts = 2; // force 없는 요청은 둘 다 409
+  const api = setup({
+    "POST /api/systems/petstore/generate": () => {
+      if (conflicts-- > 0) { return { status: 409, body: { ok: false, error: { code: "language-change-required", message: "기존 소스를 지우지 않으면 바꿀 수 없어요.", from: "ts", to: "java" } } }; }
+      return accepted();
+    },
+  });
+  render(<App />);
+  fireEvent.change(await screen.findByLabelText("언어"), { target: { value: "java" } });
+  fireEvent.click(screen.getByRole("button", { name: "생성" }));
+  const dialog = await screen.findByRole("dialog", { name: "언어를 바꿀까요?" });
+  expect(dialog.textContent).toContain("이 디렉터리는 ts로 만들어졌습니다. 기존 소스를 지우고 java로 다시 만들까요? fixtures의 수정은 보존됩니다");
+  expect(screen.queryByRole("alert")).toBeNull();
+  fireEvent.click(within(dialog).getByRole("button", { name: "취소" }));
+  expect(api.calls.filter((c) => c === "POST /api/systems/petstore/generate")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "생성" }));
+  fireEvent.click(within(await screen.findByRole("dialog", { name: "언어를 바꿀까요?" })).getByRole("button", { name: "언어 바꾸기" }));
+  await vi.waitFor(() => expect(api.calls.filter((c) => c === "POST /api/systems/petstore/generate")).toHaveLength(3));
+  expect(api.bodies.at(-1)).toEqual({ outDir: "/r/mock/petstore", force: true, language: "java" });
 });
 
 async function failOverwrite(api: ReturnType<typeof setup>) {
@@ -83,7 +108,7 @@ it("job-done: 생성 파일 목록과 실행 방법, ⑤ 검증으로 →", asyn
   fireEvent.click(await screen.findByRole("button", { name: "생성" }));
   await vi.waitFor(() => expect(api.calls).toContain("POST /api/systems/petstore/generate"));
   emit("job-started", job());
-  emit("job-done", job({ state: "done", result: { outDir: "/r/mock/petstore", written: ["package.json", "src/server.ts"], preserved: ["fixtures/a.json"], orphaned: [] } }));
+  emit("job-done", job({ state: "done", result: { outDir: "/r/mock/petstore", written: ["package.json", "src/server.ts"], preserved: ["fixtures/a.json"], orphaned: [], launch: "cd /r/mock/petstore && npm install && npm start" } }));
   expect(await screen.findByText(/생성 완료: \/r\/mock\/petstore \(2개 파일\)/)).toBeTruthy();
   expect(screen.getByText("src/server.ts")).toBeTruthy();
   expect(screen.getByText(/보존된 fixture 1개/)).toBeTruthy();
@@ -150,4 +175,49 @@ it("다른 화면에서 시작한 작업이 overwrite-required로 끝나도 창�
   const dialog = await screen.findByRole("dialog", { name: "덮어쓸까요?" });
   expect(dialog.textContent).toContain("/elsewhere/out");
   fireEvent.click(within(dialog).getByRole("button", { name: "덮어쓰기" }));
+});
+
+it("언어 선택: 기본은 '기존 언어 유지', Java를 고르면 body에 language:'java'. 덮어쓰기 재호출에도 실린다", async () => {
+  const api = setup({ "POST /api/systems/petstore/generate": accepted });
+  render(<App />);
+  const sel = (await screen.findByLabelText("언어")) as HTMLSelectElement;
+  expect(sel.value).toBe("");
+  expect([...sel.options].map((o) => o.textContent)).toEqual(["기존 언어 유지(없으면 TypeScript)", "TypeScript (Hono)", "Java (Maven + Javalin)"]);
+  fireEvent.change(sel, { target: { value: "java" } });
+  fireEvent.click(screen.getByRole("button", { name: "생성" }));
+  await vi.waitFor(() => expect(api.calls).toContain("POST /api/systems/petstore/generate"));
+  expect(api.bodies[api.calls.indexOf("POST /api/systems/petstore/generate")]).toEqual({ outDir: "/r/mock/petstore", force: false, language: "java" });
+  emit("job-started", job());
+  emit("job-failed", job({ state: "failed", error: { code: "overwrite-required", message: "비어 있지 않아요" } }));
+  fireEvent.click(within(await screen.findByRole("dialog", { name: "덮어쓸까요?" })).getByRole("button", { name: "덮어쓰기" }));
+  await vi.waitFor(() => expect(api.calls.filter((c) => c === "POST /api/systems/petstore/generate")).toHaveLength(2));
+  expect(api.bodies.at(-1)).toEqual({ outDir: "/r/mock/petstore", force: true, language: "java" });
+});
+
+it("생성 중 진행: job-progress의 단계 메시지와 '시도 n/max'를 보인다", async () => {
+  setup({ "POST /api/systems/petstore/generate": accepted });
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "생성" }));
+  await vi.waitFor(() => expect(FakeEventSource.last).toBeTruthy());
+  emit("job-started", job());
+  emit("job-progress", job({ progress: { message: "빌드 중 (2/3)", stage: "building", done: 2, total: 3 } }));
+  const status = await screen.findByText(/빌드 중 \(2\/3\)/);
+  expect(status.textContent).toContain("시도 2/3");
+});
+
+it("java 결과: 시도 횟수·참고·사용자가 고쳤는데 바뀐 파일 목록과 launch 명령. 건너뛴 생성은 '변경 없음'", async () => {
+  const api = setup({ "POST /api/systems/petstore/generate": accepted });
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "생성" }));
+  await vi.waitFor(() => expect(api.calls).toContain("POST /api/systems/petstore/generate"));
+  emit("job-started", job());
+  const launch = "cd /r/mock/petstore && ./mvnw -q -DskipTests package && java -jar target/mock.jar";
+  emit("job-done", job({ state: "done", endedAt: "t1", result: { outDir: "/r/mock/petstore", language: "java", written: ["pom.xml", "src/main/java/mock/Main.java"], preserved: [], orphaned: [], launch, attempts: 2, notes: ["POST /pets 검증 규칙을 단순화"], userModified: ["src/main/java/mock/Custom.java"], skipped: false } }));
+  expect(await screen.findByText(/생성 완료: \/r\/mock\/petstore \(2개 파일\)/)).toBeTruthy();
+  expect(screen.getByText("LLM 시도 2회")).toBeTruthy();
+  expect(screen.getByText("POST /pets 검증 규칙을 단순화")).toBeTruthy();
+  expect(screen.getByText(/이번 생성이 바꾼 것 1개 \(확인하세요\): src\/main\/java\/mock\/Custom\.java/)).toBeTruthy();
+  expect(document.body.textContent).toContain(launch);
+  emit("job-done", job({ id: "j2", state: "done", endedAt: "t2", result: { outDir: "/r/mock/petstore", language: "java", written: [], preserved: [], orphaned: [], launch, attempts: 0, notes: [], userModified: [], skipped: true } }));
+  expect(await screen.findByText(/변경 없음: \/r\/mock\/petstore/)).toBeTruthy();
 });

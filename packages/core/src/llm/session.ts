@@ -1,4 +1,4 @@
-import type { ExtractRequest, LlmAdapter } from "./adapter.js";
+import type { CompleteRequest, LlmAdapter } from "./adapter.js";
 
 /**
  * Claude Code 스킬 모드. 코어는 LLM을 호출하지 않는다. Claude(세션 자신)가 analyze-request.json을 읽고
@@ -7,7 +7,9 @@ import type { ExtractRequest, LlmAdapter } from "./adapter.js";
  */
 export class SessionAdapter implements LlmAdapter {
   readonly name = "session" as const;
-  async extract(_req: ExtractRequest): Promise<unknown> {
-    throw new Error("세션 모드에서는 코어가 LLM을 호출하지 않습니다. analyze-request.json의 chunks를 읽어 extracted/NNN.json을 쓴 뒤 `specmock analyze <system> --merge`를 실행하세요.");
+  /** hint: 호출처가 넘기는 절차 안내. 없으면 범용 문구. */
+  constructor(private readonly hint = "세션 모드에서는 Claude가 직접 파일을 작성합니다. 지시서를 따르세요.") {}
+  async complete(_req: CompleteRequest): Promise<unknown> {
+    throw new Error(`세션 모드에서는 코어가 LLM을 호출하지 않습니다. ${this.hint}`);
   }
 }

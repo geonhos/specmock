@@ -9,7 +9,7 @@ description: Use when the user wants a mock server for an external API from a sp
 
 ## MCP 도구가 있으면 도구로 진행한다
 
-specmock 플러그인을 로드하면 specmock MCP 서버의 도구 11개가 함께 켜진다. 이 도구들이 보이면 **셸 명령 대신 도구를 쓴다**. 권한 확인 창이 없고 결과가 구조화되어 돌아온다. 보이지 않으면 아래 0~5의 CLI 흐름을 쓴다.
+specmock 플러그인을 로드하면 specmock MCP 서버의 도구 12개가 함께 켜진다. 이 도구들이 보이면 **셸 명령 대신 도구를 쓴다**. 권한 확인 창이 없고 결과가 구조화되어 돌아온다. 보이지 않으면 아래 0~5의 CLI 흐름을 쓴다.
 
 도구가 안 보이면 `packages/mcp/dist/server.js`가 없는 경우(저장소에서 `pnpm build`를 안 함)가 흔하다. 사용자에게 `pnpm build` 후 Claude Code에서 `/mcp`로 specmock 서버가 연결됐는지 확인하게 하고, 그래도 없으면 CLI 흐름으로 간다. 실제 도구 이름은 `mcp__plugin_specmock_specmock__<이름>` 형태다.
 
@@ -23,7 +23,8 @@ specmock 플러그인을 로드하면 specmock MCP 서버의 도구 11개가 함
 | `list_features` | 기능 표(그대로 보여 줄 것) + 행 데이터 |
 | `show_feature` | 기능 하나의 스키마 · 샘플 · 근거 |
 | `select_features` | 선택 표현식으로 선택 (`mode`: set/add/remove) |
-| `generate_mock` | mock 서버 생성 (`./mock/<system>/`) |
+| `generate_mock` | mock 서버 생성 (`./mock/<system>/`). `language`(ts·java). java는 지시서를 쓰고 멈춤(`mode: "session"`) |
+| `finalize_generation` | 세션에서 쓴 파일 확정(보호 경로·범위 검사, fixtures·contracts·lock 작성). 실패면 `ok: false`와 `reason` |
 | `verify_mock` | contract test + coverage.md |
 | `open_ui` | 브라우저 화면 서버를 띄우고 URL만 돌려줌(두 번 불러도 같은 URL) |
 
@@ -39,12 +40,18 @@ specmock 플러그인을 로드하면 specmock MCP 서버의 도구 11개가 함
    - 청크가 20개를 넘으면 수를 먼저 알리고 진행할지 묻는다.
 3. `list_features`의 `table`을 그대로 보여 주고 선택을 받는다(아래 3절의 설명과 규칙이 같다).
 4. `select_features` → `generate_mock` → `verify_mock`. `failed > 0`이면 `failures`를 옮겨 적는다(CLI의 종료 코드 2와 같은 상황).
+   - 사용자가 TypeScript가 아닌 언어(예: Java)를 원하면 `generate_mock(language: "java")`. `mode: "session"`이 오면 **당신이 직접** 작성한다:
+     1. `requestPath`의 지시서(`generate-request.json`)에서 `prompt`를 읽는다. 런타임 계약·TS 참조 구현·Java 규칙·참조 예시가 들어 있다.
+     2. `outDir` 아래 `sourceGlobs`(Java: `pom.xml`, `src/**`) 범위에만 파일을 쓴다. `protectedPaths`(fixtures·contracts·lock·`mvnw*`·`.mvn/**`)는 건드리지 않는다.
+     3. `outDir`에서 `./mvnw -q -DskipTests package`로 컴파일을 확인하고 오류를 고친다(JDK 17 이상, 첫 실행은 Maven 다운로드로 오래 걸린다).
+     4. `finalize_generation` → `verify_mock`. 실패하면 소스를 고치고 `finalize_generation` → `verify_mock`을 다시 한다. `reason: "stale-request"`면 선택이 바뀐 것이므로 `generate_mock`부터 다시.
    - 사용자가 "화면으로 고르고 싶다"고 하면 `open_ui`를 불러 URL을 알려 주고 열어 달라고 안내한다. 화면에서 끝낸 뒤 돌아오면 `list_features`로 선택 상태를 다시 읽는다.
 5. 도구가 `isError`로 답하면 메시지의 다음 단계 안내(예: "먼저 `analyze_spec`")를 따른다. 사용자 입력 오류(잘못된 표현식, 없는 id)는 사용자에게 다시 묻는다.
 
 안전 규칙:
 
 - `generate_mock`이 "specmock이 만든 디렉터리가 아닙니다"로 실패하면, `force: true`로 다시 부르기 **전에** 사용자에게 대상 경로와 덮어쓸 내용(`package.json`·`src` 등이 교체되고 `routes`·`contracts`가 정리된다)을 알리고 확인받는다. 확인 없이 `force: true`를 쓰지 않는다.
+- `generate_mock`이 "이 디렉터리는 …로 생성됐습니다"로 실패하면 언어를 바꾸려는 것이다(ts→java, java→ts 모두). `force: true`는 이전 언어의 소스·빌드 산출물을 지운다고(fixtures의 수정은 보존, contracts는 다시 생성) 알리고 확인받은 뒤에만 쓴다. 아니면 `outDir`을 다른 곳으로 준다.
 - `outDir`은 사용자가 위치를 지정했을 때만 준다. 아니면 생략해 기본 `mock/<system>`을 쓴다.
 - `submit_extraction`의 `ok: false`는 실패가 아니라 고쳐서 다시 내라는 뜻이다. `errors`를 읽고 같은 청크를 고쳐 제출한다.
 
@@ -102,18 +109,21 @@ specmock analyze <system>
 ```bash
 specmock select <system> <표현식>...
 specmock generate <system>          # ./mock/<system>/
+specmock generate <system> --lang java --llm claude-code [--model sonnet] [--max-attempts 3]   # Java: 생성·빌드·검증 통과분만 반영. 실패하면 종료 코드 5
+specmock generate <system> --lang java --llm session    # 지시서만 쓴다. 대화에서 pom.xml·src/** 작성 후
+specmock generate <system> --finalize                    # 확정 → specmock verify <system>
 specmock verify <system>            # mock 기동 → contract test → coverage.md
 ```
 
 verify 결과(`contract: 통과 N / 실패 M`)와 `coverage.md` 상단 요약(fixture 출처 비율, 가정 목록)을 보여준다.
 
-**`verify` 종료 코드 2** = contract 실패. `run`의 종료 코드 2는 contract 실패 **또는** 일부 청크 추출 실패. 실패한 contract의 오류를 옮겨 적고, 보통 원인(문서 샘플이 스키마와 불일치 등)과 함께 사용자에게 알린다. mock 자체는 생성되어 있다. 고치는 방법은 `mock/<system>/fixtures/<id>/<status>.json` 편집이다. 종료 코드 1은 오류(예: mock 기동 실패)이므로 메시지를 전달한다.
+**`verify` 종료 코드 2** = contract 또는 런타임 계약(선택 안 한 경로 501·모르는 경로 404) 실패. `run`의 종료 코드 2는 contract 실패 **또는** 일부 청크 추출 실패. 실패한 contract의 오류를 옮겨 적고, 보통 원인(문서 샘플이 스키마와 불일치 등)과 함께 사용자에게 알린다. mock 자체는 생성되어 있다. 고치는 방법은 `mock/<system>/fixtures/<id>/<status>.json` 편집이다. 종료 코드 1은 오류(예: mock 기동 실패)이므로 메시지를 전달한다. `generate`의 종료 코드 5는 LLM 생성이 시도 횟수 안에 검증을 통과하지 못한 것이다. 출력의 `.specmock-attempt/errors.md` 요약을 알리고 다시 시도할지 묻는다.
 
-한 번에 돌리고 싶다는 요청이면 `specmock run <system> <origins...> [--select <expr>] [--llm claude-code]`가 ingest → verify까지 이어서 실행한다. 문서 입력에는 `--llm claude-code`가 필요하고(세션 모드는 `run`에서 지원하지 않는다) 구독 호출이 나가므로, 기능 선택을 보여주는 단계별 진행을 우선 권한다.
+한 번에 돌리고 싶다는 요청이면 `specmock run <system> <origins...> [--select <expr>] [--llm claude-code]`가 ingest → verify까지 이어서 실행한다. 문서 입력에는 `--llm claude-code`가 필요하고(세션 모드는 `run`에서 지원하지 않는다) 구독 호출이 나가므로, 기능 선택을 보여주는 단계별 진행을 우선 권한다. Java는 `specmock run <system> <origins...> --lang java --llm claude-code`. 스킬 환경에서는 MCP `generate_mock(language)`의 세션 모드를 우선한다.
 
 ## 5. 마무리와 추가
 
-- 실행법: `cd mock/<system> && npm install && npm start` (기본 포트 4010).
+- 실행법: generate 출력의 `실행:` 줄을 그대로 보여 준다. TS는 `cd mock/<system> && npm install && npm start`, Java는 `cd mock/<system> && ./mvnw -q -DskipTests package && java -jar target/mock.jar` (기본 포트 4010).
 - 나중에 기능 추가: `specmock select <system> --add <id> && specmock generate <system>`. 선택하지 않은 경로를 호출하면 mock이 501과 함께 이 명령을 알려준다.
 - 스펙이 바뀌면 `ingest --refresh` → `analyze <system> --refresh`(세션 모드면 기존 추출 결과를 지우고 시작) → 다시 추출 → `--merge`. 출력의 "이전 카탈로그 대비" 줄을 사용자에게 보여준다.
 

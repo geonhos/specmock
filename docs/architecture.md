@@ -11,7 +11,7 @@ flowchart LR
     IN["스펙<br/>(OpenAPI · 웹 문서 · PDF)"] --> CAT["기능 카탈로그<br/>(출처 · 신뢰도 · 샘플)"]
     CAT --> SEL{"필요한 기능<br/>선택"}
     SEL --> MS["MockSpec<br/>(언어 무관)"]
-    MS --> GEN["mock 서버<br/>(TS · Hono)"]
+    MS --> GEN["mock 서버<br/>(TS · Hono / Java · Javalin)"]
     MS --> CT["contract test"]
     CT -.검증.-> GEN
     GEN --> REP["커버리지 리포트"]
@@ -34,19 +34,31 @@ flowchart TB
         HARV[harvest<br/>ego-browser 스크립트] -.-> ING
     end
 
+    subgraph GENL["generate의 언어 생성기 (3A)"]
+        direction LR
+        TSG["TsHonoGenerator<br/>(템플릿)"]
+        LLMG["LlmGenerator<br/>(언어 프로필 + 검증 루프)"]
+        PROF["프로필 등록표<br/>java: Maven + Javalin"]
+        LLMG --- PROF
+    end
+
     subgraph LLM["LLM 어댑터 (교체 가능)"]
         A1["세션 자신<br/>(스킬 모드)"]
-        A2["claude --print<br/>(CLI · Web)"]
+        A2["claude --print<br/>(CLI · Web · 코드 생성도)"]
         A3["API 키<br/>(3단계)"]
     end
 
     CLI & SKILL & MCP & WEB --> CORE
     ANA -.비구조 문서.-> LLM
+    GENM --> GENL
+    LLMG -.코드 작성.-> LLM
 ```
 
 **원칙**: LLM은 "비구조 문서에서 기능 추출"과 "다른 언어 생성"에만 쓴다. 나머지는 전부 결정적 코드다.
 
 2A부터 CLI와 MCP 서버는 같은 **서비스 층**(`packages/core/src/service/`)을 호출한다. 흐름 조립과 판정은 서비스 층 한 곳에 있고, 인터페이스는 옵션 파싱과 출력만 맡는다.
+
+3A부터 `generate`는 언어와 무관한 부분(fixtures·contracts·lock·보존 판정, `scaffold`)과 언어 종속 부분(`LanguageGenerator`)으로 나뉜다. `LanguageGenerator`는 `LanguageOutput`(파일·install·start·sourceGlobs)을 돌려주고, verify는 lock의 install·start만 보고 기동한다. TS는 `TsHonoGenerator`(템플릿), 그 밖의 언어는 `LlmGenerator`가 언어 프로필(`core/src/generate/profiles/`)과 TS 참조 구현을 프롬프트로 claude에 보내고, 임시 디렉터리에서 빌드·contract·런타임 계약(501·404)을 통과한 결과만 반영한다. 왜: 새 언어마다 템플릿을 손으로 쓰는 대신 검증된 MockSpec과 같은 verify로 정확성을 보장한다. 지원 언어 목록은 `SUPPORTED_LANGUAGES`이고 입력 단계(CLI·MCP·Web)에서 `assertLanguage`로 검사한다. MCP 도구는 12개(`finalize_generation` 추가).
 
 ```mermaid
 flowchart LR
@@ -205,15 +217,16 @@ gantt
     dateFormat  X
     axisFormat  %s
     section 1단계
-    core · CLI · Claude Code 스킬        :a1, 0, 3
+    core · CLI · Claude Code 스킬        :done, a1, 0, 3
     section 2단계
-    MCP 서버(2A) · Web UI(2B)            :a2, after a1, 2
+    MCP 서버(2A) · Web UI(2B)            :done, a2, after a1, 2
     section 3단계
-    다른 언어 생성 · Proxy/녹화 · API 키 :a3, after a2, 2
+    다른 언어 생성(3A, Java)             :done, a3, after a2, 1
+    Proxy/녹화 · API 키                  :a4, after a3, 1
 ```
 
 | 단계 | 완료 기준 |
 |---|---|
 | 1 | OpenAPI와 웹 문서에서 TS mock 생성, contract test 통과, coverage.md 출력, 기능 추가 재생성 |
 | 2 | 2A: MCP로 Claude Code에서 도구 호출(셸 없이 끝까지). 2B: 브라우저 화면에서 같은 흐름 |
-| 3 | 검증된 MockSpec으로 임의 언어 생성. 키 있으면 실제 시스템 전달·녹화 |
+| 3 | 3A(완료): 검증된 MockSpec으로 Java mock을 LLM이 생성하고 같은 verify 통과. 이후: 키 있으면 실제 시스템 전달·녹화 |

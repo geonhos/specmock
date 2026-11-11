@@ -1,4 +1,4 @@
-import { verifyMock, type VerifyMockResult } from "@specmock/core";
+import { verifyFailed, verifyMock, type VerifyMockResult } from "@specmock/core";
 import type { Command } from "commander";
 import { writeFile } from "node:fs/promises";
 import { fail, formatVerify, printJsonOr, SYSTEM_ARG_HELP, workspaceFrom } from "../context.js";
@@ -20,6 +20,6 @@ export function registerVerify(program: Command): void {
       if (opts.report) await writeFile(opts.report, v.coverageMarkdown, "utf8");
       printJsonOr(opts.json, { ...v.result, coverage: v.coverageFile }, () => formatVerify(v.result, v.coverageFile));
       // process.exit는 파이프로 흘러가는 stdout을 잘라먹을 수 있으므로 exitCode만 설정하고 자연 종료한다.
-      if (v.result.failed > 0) process.exitCode = 2;
+      if (verifyFailed(v.result)) process.exitCode = 2;
     });
 }

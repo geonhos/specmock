@@ -2,7 +2,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -15,8 +15,10 @@ let root: string;
 beforeEach(async () => { root = await mkdtemp(path.join(os.tmpdir(), "specmock-api-")); });
 afterEach(async () => { await rm(root, { recursive: true, force: true }); });
 
+// 실제 claude를 부르지 않도록 느린 가짜를 쓴다(core/test/bin).
+const FAKE_CLAUDE = path.join(REPO, "packages", "core", "test", "bin", "claude-slow");
 function client() {
-  const { app } = createApp({ root, webDir: path.join(root, "web"), port: () => 4310 });
+  const { app } = createApp({ root, webDir: path.join(root, "web"), port: () => 4310, claudeCommand: FAKE_CLAUDE });
   return {
     get: async (p: string) => { const r = await app.request(`/api${p}`, { headers: HOST }); return { status: r.status, body: await r.json() }; },
     post: async (p: string, b: unknown = {}) => { const r = await app.request(`/api${p}`, { method: "POST", headers: HOST, body: JSON.stringify(b) }); return { status: r.status, body: await r.json() }; },
@@ -269,5 +271,38 @@ describe("Task 9 리뷰 수정", () => {
     const list = (await c.get("/jobs")).body.data as { running: { id: string; input?: unknown }[]; recent: { id: string; input?: unknown }[] };
     const j = [...list.running, ...list.recent].find((x) => x.id === r.body.data.jobId)!;
     expect(j.input).toEqual({ outDir: out });
+  });
+
+  it("generate body의 language는 job 입력에 실리고, 모르는 언어는 400 invalid", async () => {
+    const c = client();
+    await c.post("/systems", { system: "petstore", origins: [PETSTORE] });
+    await c.post("/systems/petstore/analyze");
+    const bad = await c.post("/systems/petstore/generate", { outDir: path.join(root, "o"), language: "cobol" });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toMatchObject({ code: "invalid", message: expect.stringContaining("지원 언어: ts, java") });
+    expect((await c.get("/jobs")).body.data).toEqual({ running: [], recent: [] });
+    const out = path.join(root, "out-ts");
+    const r = await c.post("/systems/petstore/generate", { outDir: out, language: "ts" });
+    const list = (await c.get("/jobs")).body.data as { running: { id: string; input?: unknown }[]; recent: { id: string; input?: unknown }[] };
+    expect([...list.running, ...list.recent].find((x) => x.id === r.body.data.jobId)!.input).toEqual({ outDir: out, language: "ts" });
+  });
+
+  it("언어를 바꾸는 generate는 force 없이 409 language-change-required, 작업은 만들지 않는다. force면 202", async () => {
+    const c = client();
+    await c.post("/systems", { system: "petstore", origins: [PETSTORE] });
+    await c.post("/systems/petstore/analyze");
+    const id = (await c.get("/systems/petstore/features")).body.data.rows[0].id;
+    await c.post("/systems/petstore/selection", { ids: [id] });
+    const out = path.join(root, "out-lang");
+    await c.post("/systems/petstore/generate", { outDir: out, language: "ts" });
+    await vi.waitFor(async () => expect((await c.get("/jobs")).body.data.recent).toHaveLength(1));
+    const r = await c.post("/systems/petstore/generate", { outDir: out, language: "java" });
+    expect(r.status).toBe(409);
+    expect(r.body).toMatchObject({ ok: false, error: { code: "language-change-required", from: "ts", to: "java", message: expect.stringMatching(/ts.*java/) } });
+    expect((await c.get("/jobs")).body.data.recent).toHaveLength(1);
+    const forced = await c.post("/systems/petstore/generate", { outDir: out, language: "java", force: true });
+    expect(forced.status).toBe(202);
+    await c.post(`/jobs/${forced.body.data.jobId}/cancel`); // 실제 claude를 부르지 않게 끊고, 정리 전에 끝나길 기다린다
+    await vi.waitFor(async () => expect((await c.get("/jobs")).body.data.running).toHaveLength(0), { timeout: 10_000 });
   });
 });

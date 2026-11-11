@@ -2,7 +2,7 @@ import { analyze } from "../analyze/index.js";
 import type { ExtractResult } from "../analyze/extract.js";
 import type { MergeResult } from "../analyze/merge.js";
 import { generate } from "../generate/index.js";
-import type { GenerateReport } from "../generate/tsHono.js";
+import type { GenerateProgress, GenerateReport } from "../generate/generator.js";
 import type { LlmAdapter } from "../llm/adapter.js";
 import { select, type SelectResult } from "../select/index.js";
 import { CatalogSchema, type Catalog, type CatalogDiff } from "../types.js";
@@ -30,6 +30,11 @@ export interface RunPipelineOptions {
   /** 단계가 끝날 때마다 호출된다. CLI가 지금과 같은 시점에 stdout을 쓰기 위해 쓴다. */
   onStage?: (s: RunStage) => void;
   adapter?: LlmAdapter;
+  /** 생성 언어. 없으면 lock → ts. */
+  language?: string;
+  /** ts가 아닌 언어의 claude 시도 횟수. */
+  maxAttempts?: number;
+  onProgress?: (e: GenerateProgress) => void;
 }
 
 export interface RunPipelineResult {
@@ -62,7 +67,7 @@ export async function runPipeline(ws: Workspace, system: string, origins: string
   opts.onStage?.({ stage: "catalog", catalog, diff: m ? m.diff : outcome.diff, merge: m });
   const selection = await select(ws, system, [opts.select ?? "all"]);
   opts.onStage?.({ stage: "select", selection });
-  const report = await generate(ws, system, { outDir: opts.outDir });
+  const report = await generate(ws, system, { outDir: opts.outDir, language: opts.language, model: opts.model, maxAttempts: opts.maxAttempts, onProgress: opts.onProgress });
   opts.onStage?.({ stage: "generate", report });
   let result: VerifyResult | null = null;
   let coverageFile: string | null = null;

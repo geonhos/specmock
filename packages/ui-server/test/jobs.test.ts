@@ -89,15 +89,21 @@ it("cancelAll은 진행 중인 모든 작업을 취소한다", async () => {
   expect([jobs.get(a.id)!.state, jobs.get(b.id)!.state]).toEqual(["cancelled", "cancelled"]);
 });
 
-it("취소 불가 작업(generate): cancel은 NotCancellableError, 실제 오류가 cancelled로 가려지지 않는다", async () => {
+it("generate도 cancellable: cancel하면 signal이 abort되고 cancelled로 끝난다", async () => {
   const jobs = new JobManager(new EventBus());
-  let fail!: () => void;
-  const j = jobs.start("pets", "generate", () => new Promise((_, reject) => { fail = () => reject(new Error("진짜 오류")); }));
-  expect(j.cancellable).toBe(false);
-  expect(() => jobs.cancel(j.id)).toThrowError(expect.objectContaining({ name: "NotCancellableError" }));
-  jobs.cancelAll(); // 종료 시 일괄 abort 뒤에도 판정은 그대로
-  fail(); await tick(); await tick();
-  expect(jobs.get(j.id)).toMatchObject({ state: "failed", error: { message: "진짜 오류" } });
+  const j = jobs.start("pets", "generate", ({ signal }) => new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason))));
+  expect(j.cancellable).toBe(true);
+  jobs.cancel(j.id); await tick(); await tick();
+  expect(jobs.get(j.id)).toMatchObject({ state: "cancelled", error: { code: "cancelled" } });
+});
+
+it("진행 이벤트의 stage가 job.progress에 실린다", async () => {
+  const bus = new EventBus(); const seen: unknown[] = [];
+  bus.subscribe((e) => { if (e.event === "job-progress") seen.push((e.data as { progress: unknown }).progress); });
+  const jobs = new JobManager(bus);
+  jobs.start("pets", "generate", async ({ onEvent }) => { onEvent({ stage: "building", message: "빌드 중 (1/3)", done: 1, total: 3 }); });
+  await tick(); await tick();
+  expect(seen).toEqual([{ message: "빌드 중 (1/3)", stage: "building", done: 1, total: 3 }]);
 });
 
 it("extract·verify는 cancellable, /jobs 목록에도 실린다", async () => {
