@@ -557,7 +557,7 @@ specmock/
 |---|---|
 | 스키마를 JSON Schema 파일 대신 zod로 | 타입과 검증 단일화. 필요 시 `z.toJSONSchema()` |
 | mockspec에 `notMocked` 추가, contract에 `query` 추가 | 501 안내와 GET 쿼리 contract에 필요 |
-| 순환 `$ref`를 `{ "x-specmock-circular": true }` 마커로 직렬화 | `circular: "ignore"`는 순환에 닿는 모든 참조를 날려 재귀 스키마가 사라짐 |
+| 순환 `$ref`를 `{ "x-specmock-circular": true }` 마커로 직렬화 | `circular: "ignore"`는 순환에 닿는 모든 참조를 제거해 재귀 스키마가 사라짐 |
 | OpenAPI 감지를 정규식에서 파싱 기반으로 | README에 `openapi:`가 적힌 문서를 오인 |
 | id 규칙 보강 (부분 템플릿 세그먼트, 비정상 operationId 폴백, `/v1/` 그룹 건너뛰기, operationId 우선) | 선택 불가능하거나 안전하지 않은 id 방지 |
 | 표시 순서를 코드포인트 비교로 고정 | `localeCompare`는 로케일에 따라 번호가 달라짐 |
@@ -577,7 +577,7 @@ specmock/
 | §7 골든 테스트(OpenAPI 샘플 3종)는 1B로 이월 | 1A는 Petstore 하나로 단위·통합·e2e를 덮는다. 인증 포함·`$ref` 중첩 샘플은 1B의 LLM 경계 테스트와 함께 추가 |
 | **1B** HTML을 평문이 아니라 Markdown으로 보존 (코드 펜스·표·H1 제목 유지) | 평문으로 펴면 코드 블록 경계와 표가 사라져 청크 분할과 근거 대조가 깨진다. Readability의 `keepClasses`로 언어 펜스 보존 |
 | **1B** 수확 결과를 `source.json`의 별도 필드로 두되 prepare가 섹션으로 병합 | 청크 분할기는 하나의 Markdown만 다루면 된다. 라벨은 한 줄로, 빈 내용은 생략 |
-| **1B** LLM 추출 스키마를 얇게(zod → JSON Schema) 하고 `merge`가 ajv로 컴파일 검사 | 모델이 만든 요청/응답 스키마가 컴파일 안 되면 생성 단계에서 터진다. 항목 단위로 파싱해 나쁜 항목만 `rejected` |
+| **1B** LLM 추출 스키마를 얇게(zod → JSON Schema) 하고 `merge`가 ajv로 컴파일 검사 | 모델이 만든 요청/응답 스키마가 컴파일되지 않으면 생성 단계에서 실패한다. 항목 단위로 파싱해 나쁜 항목만 `rejected` |
 | **1B** 샘플 응답 → 스키마 유추(`inferSchema`)를 구현, 깊이 32·저장 값 64로 캡 | 문서엔 스키마 없이 예시만 있는 경우가 대부분. 거대한 샘플이 카탈로그를 부풀리지 않게 |
 | **1B** `claude` 자식 프로세스를 빈 임시 cwd에서 실행, `--no-session-persistence`, `--tools ""` | 저장소 파일 접근과 세션 기록을 막고 모델이 청크 외 정보를 쓰지 못하게 함 |
 | **1B** `extracted/manifest.json`(청크 본문 해시)로 낡은 결과 건너뛰기 방지 | 문서가 바뀌었는데 이전 추출을 재사용하면 조용히 틀린 카탈로그가 된다 |

@@ -3492,7 +3492,7 @@ git commit -m "docs: README와 Petstore 예제"
 | 1 | `engines.node >= 22.19`, 패키지별 `test` 스크립트가 루트 vitest 설정 사용, `allowBuilds: esbuild` | swagger-parser 13 요구 버전. pnpm은 pre 스크립트 미실행 |
 | 2 | Workspace 에러에 파일 경로·`z.prettifyError`, 검증 후 mkdir, 시스템 이름 검증 | 사용자가 어느 파일이 문제인지 알 수 있어야 함 |
 | 3 | 부분 템플릿 세그먼트(`{id}.json`)를 파라미터로, 비정상 operationId 폴백, `/v1/`·`/api/` 그룹 건너뛰기 | 선택 불가능하거나 안전하지 않은 id 방지 |
-| 4 | `circular: true` + 순환 안전 직렬화(`x-specmock-circular` 마커), 파싱 기반 OpenAPI 감지, URL 단일 fetch | `circular: "ignore"`가 재귀 스키마를 통째로 날림 |
+| 4 | `circular: true` + 순환 안전 직렬화(`x-specmock-circular` 마커), 파싱 기반 OpenAPI 감지, URL 단일 fetch | `circular: "ignore"`가 재귀 스키마를 통째로 지움 |
 | 5 | 입력 간 공유 id 레지스트리, operationId 우선 2-pass, formData → body, v2 파라미터 키 보존, `type: file` → `string/binary`, deprecated 노트, 3.1 `examples` | 실제 스펙에서 흔한 경우들 |
 | 6 | 코드포인트 비교 정렬, 그룹 구분선 폭, 빈 카탈로그, `formatCatalog(catalog, { group })` | 로케일 의존 번호 방지. 그룹 필터 시 전역 번호 유지 |
 | 7 | `group:<이름>` 필터, `@파일` 항목 쉼표 분리, 역순 범위·무일치 글롭 오류 | `users.*`는 id 글롭. select가 저장한 원본 표현식을 되읽을 수 있어야 함 |

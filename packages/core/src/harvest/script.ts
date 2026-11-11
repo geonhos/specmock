@@ -3,7 +3,7 @@ import { bodyHtml, collectInteractives, expandAll, panelHtml, panelVisible, refe
 export interface HarvestParams { url: string; outFile: string; maxPages: number; maxDepth: number; spaceName: string; perPageTimeoutMs: number }
 
 /**
- * `ego-browser nodejs`에 넘길 스크립트 본문. 환경변수와 cwd를 상속하지 않으므로 모든 값을 리터럴로 박는다.
+ * `ego-browser nodejs`에 넘길 스크립트 본문. 환경변수와 cwd를 상속하지 않으므로 모든 값을 리터럴로 직접 적어 넣는다.
  * 결과는 outFile에 JSON으로 쓴다: { pages: [{url,title,html}], interactions: [{type,label,html}], notes: [] }
  * HTML → Markdown 변환은 코어(Node 쪽)에서 htmlToMarkdown으로 한다.
  */
