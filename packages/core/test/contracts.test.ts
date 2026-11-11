@@ -81,3 +81,19 @@ describe("body without required properties is optional", () => {
     expect(buildContracts({ ...optionalBody, request: { ...optionalBody.request, body: { type: "object", required: ["note"], properties: { note: { type: "string" } } } } }, fixtures)).toHaveLength(2);
   });
 });
+
+describe("non-object or property-less bodies stay required", () => {
+  const withBody = (body: Record<string, unknown>): Feature => ({
+    ...base, request: { ...base.request, query: {}, body },
+  });
+  it("requires an array body at the top level and builds a missing-required contract", () => {
+    const f = withBody({ type: "array", items: { type: "string" } });
+    expect(validationSchema(f as never).required).toEqual(["body"]);
+    expect(buildContracts(f, fixtures)).toHaveLength(2);
+  });
+  it("requires oneOf/allOf and property-less object bodies", () => {
+    for (const body of [{ oneOf: [{ type: "object" }, { type: "array" }] }, { allOf: [{ type: "object" }] }, { type: "object" }, { type: "object", properties: {} }]) {
+      expect(validationSchema(withBody(body) as never).required).toEqual(["body"]);
+    }
+  });
+});

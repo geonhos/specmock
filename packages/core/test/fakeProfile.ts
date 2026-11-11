@@ -1,4 +1,5 @@
 // packages/core/test/fakeProfile.ts
+import { isBodyRequired } from "../src/bodyRequired.js";
 import type { LanguageProfile } from "../src/generate/profiles/types.js";
 import type { MockSpec } from "../src/types.js";
 
@@ -30,7 +31,7 @@ export function fakeServerSource(spec: MockSpec, opts: { omit501?: boolean } = {
   const routes = spec.features.map((f) => {
     const ok = f.fixtures.map((x) => x.status).filter((s) => s >= 200 && s < 300).sort((a, b) => a - b)[0] ?? 200;
     const required = Object.entries(f.request.query).filter(([, p]) => p.required).map(([k]) => k);
-    return { id: f.id, method: f.method, path: f.path, status: ok, required, hasBody: Array.isArray(f.request.body?.required) && f.request.body.required.length > 0 };
+    return { id: f.id, method: f.method, path: f.path, status: ok, required, hasBody: isBodyRequired(f.request.body) };
   });
   const notMocked = opts.omit501 ? [] : spec.notMocked;
   return `import { createServer } from "node:http";

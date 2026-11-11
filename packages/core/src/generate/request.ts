@@ -37,7 +37,7 @@ export const RUNTIME_CONTRACT = [
   "3. start 명령을 셸 없이 argv로 실행한다. cwd는 outDir, 포트는 PORT 환경변수(기본 4010).",
   "4. 127.0.0.1:<PORT>에 바인딩하고 healthPath에 200 {ok:true, system, features:<선택된 기능 수>}를 낸다.",
   "5. 선택된 기능마다 contract의 status를 내고, 2xx 바디는 fixtures/<id>/<status>.json을 요청마다 읽어 그대로 낸다(응답 스키마 통과).",
-  "6. 필수 path·query·body(body는 스키마에 required가 있을 때만 필수)가 없거나 스키마에 맞지 않으면 400 {error:\"validation_failed\", details}.",
+  "6. 필수 path·query·body(body는 type object에 properties가 있고 required가 비어 있을 때만 선택, array·oneOf·allOf·properties 없는 body는 필수)가 없거나 스키마에 맞지 않으면 400 {error:\"validation_failed\", details}.",
   "7. notMocked 기능의 method+path는 501 {error:\"not_mocked\", feature:<id>, hint:\"specmock select <system> --add <id> && specmock generate <system>\"}.",
   "8. 그 밖의 경로는 404 {error:\"unknown_path\", method, path}.",
   "9. SIGTERM을 받으면 3초 안에 종료한다.",

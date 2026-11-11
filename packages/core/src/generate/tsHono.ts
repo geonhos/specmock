@@ -1,5 +1,6 @@
 import { Eta } from "eta";
 import { fileURLToPath } from "node:url";
+import { isBodyRequired } from "../bodyRequired.js";
 import type { MockFeature, MockSpec } from "../types.js";
 import type { GenerateContext, LanguageGenerator, LanguageOutput } from "./generator.js";
 import { NPM_INSTALL } from "./lock.js";
@@ -50,8 +51,8 @@ export function validationSchema(f: MockFeature) {
       query: paramsSchema(f.request.query),
       body: f.request.body ?? {},
     },
-    // body가 선택이면(required 속성이 없으면) body 없는 요청도 통과시킨다. 있으면 body 스키마로 검증한다.
-    required: Array.isArray(f.request.body?.required) && f.request.body.required.length > 0 ? ["body"] : [],
+    // object body의 모든 속성이 선택이면 body 없는 요청도 통과시킨다. 그 밖(array·oneOf·properties 없음)은 필수.
+    required: isBodyRequired(f.request.body) ? ["body"] : [],
   };
 }
 
