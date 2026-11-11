@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import ts from "typescript";
 import { beforeAll, describe, expect, it } from "vitest";
 import { renderTsHonoFiles } from "../src/generate/tsHono.js";
+import { encodeForm } from "../src/verify/formEncode.js";
 import type { MockSpec } from "../src/types.js";
 
 let parseForm: (text: string) => Record<string, unknown>;
@@ -58,5 +59,8 @@ describe("parseForm", () => {
   });
   it("값은 변환하지 않는다(문자열 유지)", () => {
     expect(parseForm("flag=true&n=1")).toEqual({ flag: "true", n: "1" });
+  });
+  it("encodeForm 왕복: 모든 leaf가 문자열로 돌아온다", () => {
+    expect(parseForm(encodeForm({ a: { b: 1 }, c: [true, "x"] }))).toEqual({ a: { b: "1" }, c: ["true", "x"] });
   });
 });

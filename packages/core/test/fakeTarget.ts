@@ -1,7 +1,7 @@
 // packages/core/test/fakeTarget.ts
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 
-export interface FakeReq { method: string; path: string; query: Record<string, string>; headers: IncomingHttpHeaders }
+export interface FakeReq { method: string; path: string; query: Record<string, string>; headers: IncomingHttpHeaders; /** 받은 요청 본문(UTF-8 문자열). */ body: string }
 /** body가 있으면 JSON으로, raw가 있으면 그대로 보낸다. delayMs만큼 늦게 응답한다. */
 export interface FakeRes { status: number; body?: unknown; raw?: string; contentType?: string; delayMs?: number; headers?: Record<string, string>; /** true면 응답 없이 소켓을 끊는다(연결 실패 재현). */ destroy?: boolean }
 export interface FakeTarget {
@@ -19,10 +19,11 @@ export async function startFakeTarget(handler: (req: FakeReq) => FakeRes): Promi
   const server: Server = createServer((req, res) => {
     active++; max = Math.max(max, active);
     const u = new URL(req.url ?? "/", "http://x");
-    const fr: FakeReq = { method: req.method ?? "GET", path: u.pathname, query: Object.fromEntries(u.searchParams), headers: req.headers };
-    requests.push(fr);
-    req.resume();
+    const chunks: Buffer[] = [];
+    req.on("data", (d: Buffer) => chunks.push(d));
     req.on("end", () => {
+      const fr: FakeReq = { method: req.method ?? "GET", path: u.pathname, query: Object.fromEntries(u.searchParams), headers: req.headers, body: Buffer.concat(chunks).toString("utf8") };
+      requests.push(fr);
       const out = handler(fr);
       setTimeout(() => {
         if (out.destroy) { active--; res.socket?.destroy(); return; }
