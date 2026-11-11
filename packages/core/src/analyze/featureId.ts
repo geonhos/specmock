@@ -54,7 +54,8 @@ export function methodsByShape(entries: Iterable<{ method: HttpMethod; path: str
 /**
  * 하위 동작 규칙(카탈로그의 경로 모양 집합 `shapes`가 있을 때만):
  * - POST `/<r>/{v}/<x>`: 부모 모양 `/<r>/{}`가 있고 자기 모양에 GET이 없으면 `<r>.<x>`(`payment_intents.cancel`). GET이 있으면 하위 컬렉션이라 현행(`sources.create`).
- * - GET `/<r>/<x>`(앞이 정적): 부모 경로 `/<r>`가 있으면 `<r>.<x>`(`customers.search`). 없으면 현행(`inventory.list`).
+ * - GET `/<r>/<x>`(앞이 정적): 부모 경로 `/<r>`가 있고 `<r>`가 리소스라는 근거(단건 모양 `/<r>/{}`)가 있으면 `<r>.<x>`(`customers.search`).
+ *   `/api`·`/v1`처럼 단건 경로가 없는 접두이거나 부모가 없으면 현행(`users.list`, `inventory.list`).
  */
 function subActionId(method: HttpMethod, segs: string[], shapes: ReadonlyMap<string, ReadonlySet<HttpMethod>>, path: string): string | null {
   if (segs.length < 2) return null;
@@ -72,6 +73,7 @@ function subActionId(method: HttpMethod, segs: string[], shapes: ReadonlyMap<str
   }
   if (method === "GET" && !isParamSegment(prev)) {
     const r = segmentName(prev);
+    if (!shapes.has(pathShape("/" + segs.slice(0, -1).join("/") + "/{}"))) return null;
     return r ? `${sanitize(r) || "root"}.${x}` : null;
   }
   return null;

@@ -108,3 +108,23 @@ describe("deriveFeatureId sub-actions (shape context)", () => {
     expect(deriveFeatureId({ method: "POST", path: "/v1/payment_intents/{id}/cancel" })).toBe("cancel.create");
   });
 });
+
+describe("deriveFeatureId GET sub-action needs a resource parent", () => {
+  it("does not treat a version or root prefix without a single-item path as a resource", () => {
+    const shapes = methodsByShape([
+      { method: "GET", path: "/api" },
+      { method: "GET", path: "/api/users" },
+      { method: "POST", path: "/api/users" },
+    ]);
+    expect(deriveFeatureId({ method: "GET", path: "/api/users", shapes })).toBe("users.list");
+    expect(deriveFeatureId({ method: "POST", path: "/api/users", shapes })).toBe("users.create");
+  });
+  it("still applies it when the parent has a single-item shape (Stripe customers/search)", () => {
+    const shapes = methodsByShape([
+      { method: "GET", path: "/v1/customers" },
+      { method: "GET", path: "/v1/customers/{id}" },
+      { method: "GET", path: "/v1/customers/search" },
+    ]);
+    expect(deriveFeatureId({ method: "GET", path: "/v1/customers/search", shapes })).toBe("customers.search");
+  });
+});
