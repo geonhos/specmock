@@ -3,7 +3,7 @@
 exports[`TS 생성 결과 바이트 불변 > 일부 선택(getPet, createPet, deletePet) 1`] = `
 {
   "README.md": "ca31c427e8ce5c7630056f7192c323aef5dd611c0aec2160fbac48f612215753",
-  "contracts/createPet.json": "81d7068107f8315100e4ca4d1a0e4d6d631eafc3c2b558c3b233fcb62c6c7d0b",
+  "contracts/createPet.json": "d705b4a61d9143bcebf8b5fbac4499f79b86f37f34d01c25777fe771aa59a834",
   "contracts/deletePet.json": "f3ebe639260081ac4bfd25cfeedff61878ae34c87ce71404a732ade86d95dbeb",
   "contracts/getPet.json": "e453286969c5dd9529c18bdd67e343591aaef2b9f4c3fb0a3d62959792987736",
   "fixtures/createPet/201.json": "de064874f3c6d6b82234a01db651ce5f63a2029456ba5a529c29556ffd0694ba",
@@ -23,7 +23,7 @@ exports[`TS 생성 결과 바이트 불변 > 일부 선택(getPet, createPet, de
 exports[`TS 생성 결과 바이트 불변 > 전체 선택 1`] = `
 {
   "README.md": "9f77a1958f2fd277ca958ebaf42da0720a2e843a457493b9393037e8c6f3fe6c",
-  "contracts/createPet.json": "81d7068107f8315100e4ca4d1a0e4d6d631eafc3c2b558c3b233fcb62c6c7d0b",
+  "contracts/createPet.json": "d705b4a61d9143bcebf8b5fbac4499f79b86f37f34d01c25777fe771aa59a834",
   "contracts/deletePet.json": "f3ebe639260081ac4bfd25cfeedff61878ae34c87ce71404a732ade86d95dbeb",
   "contracts/getPet.json": "e453286969c5dd9529c18bdd67e343591aaef2b9f4c3fb0a3d62959792987736",
   "contracts/inventory.list.json": "a14ae2bbf4efb2c1af8a5f5d36bc12ce7205f8b91b4288402fdcde010b44a38a",

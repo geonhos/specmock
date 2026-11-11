@@ -32,7 +32,7 @@ describe("buildContracts", () => {
 
   it("adds a missing-required contract when 400/422 is listed", () => {
     const contracts = buildContracts(base, fixtures);
-    expect(contracts).toHaveLength(2);
+    expect(contracts).toHaveLength(3); // 정상 요청 · 필수 값 누락 · 폼 바디 요청
     expect(contracts[1].name).toBe("필수 값 누락");
     expect(contracts[1].request.body).toBeNull();
     expect(contracts[1].request.query).toEqual({});
@@ -43,7 +43,7 @@ describe("buildContracts", () => {
     const noReq: Feature = { ...base, request: { params: {}, query: {}, headers: {}, body: null }, path: "/pets" };
     expect(buildContracts(noReq, fixtures)).toHaveLength(1);
     const no4xx: Feature = { ...base, responses: { "201": base.responses["201"] } };
-    expect(buildContracts(no4xx, [fixtures[0]])).toHaveLength(1);
+    expect(buildContracts(no4xx, [fixtures[0]])).toHaveLength(2); // 정상 요청 · 폼 바디 요청
   });
 
   it("uses the lowest 2xx status", () => {
@@ -77,8 +77,8 @@ describe("body without required properties is optional", () => {
     expect(validationSchema({ ...optionalBody, request: { ...optionalBody.request, body: null } } as never).required).toEqual([]);
   });
   it("does not build a missing-required contract for an optional-only body", () => {
-    expect(buildContracts(optionalBody, fixtures)).toHaveLength(1);
-    expect(buildContracts({ ...optionalBody, request: { ...optionalBody.request, body: { type: "object", required: ["note"], properties: { note: { type: "string" } } } } }, fixtures)).toHaveLength(2);
+    expect(buildContracts(optionalBody, fixtures).map((c) => c.name)).toEqual(["정상 요청", "폼 바디 요청"]);
+    expect(buildContracts({ ...optionalBody, request: { ...optionalBody.request, body: { type: "object", required: ["note"], properties: { note: { type: "string" } } } } }, fixtures)).toHaveLength(3);
   });
 });
 
@@ -95,5 +95,32 @@ describe("non-object or property-less bodies stay required", () => {
     for (const body of [{ oneOf: [{ type: "object" }, { type: "array" }] }, { allOf: [{ type: "object" }] }, { type: "object" }, { type: "object", properties: {} }]) {
       expect(validationSchema(withBody(body) as never).required).toEqual(["body"]);
     }
+  });
+});
+
+describe("폼 바디 요청 계약", () => {
+  const withBody = (body: Record<string, unknown> | null): Feature => ({ ...base, request: { ...base.request, body } });
+  it("object body가 있는 기능에 마지막 계약으로 추가되고 headers에 form content-type이 있다", () => {
+    const cs = buildContracts(withBody({ type: "object", properties: { name: { type: "string" } }, required: ["name"] }), fixtures);
+    const form = cs[cs.length - 1];
+    expect(form.name).toBe("폼 바디 요청");
+    expect(form.request.headers["content-type"]).toBe("application/x-www-form-urlencoded");
+    expect(form.request.body).toEqual(cs[0].request.body); // object 그대로, 직렬화하지 않는다
+    expect(form.request.path).toBe(cs[0].request.path);
+    expect(form.request.query).toEqual(cs[0].request.query);
+    expect(form.expect).toEqual(cs[0].expect);
+  });
+  it("body 없는 기능에는 만들지 않는다", () => {
+    expect(buildContracts(withBody(null), fixtures).some((c) => c.name === "폼 바디 요청")).toBe(false);
+  });
+  it("properties 없는 body(array 등)에는 만들지 않는다", () => {
+    expect(buildContracts(withBody({ type: "array", items: { type: "string" } }), fixtures).some((c) => c.name === "폼 바디 요청")).toBe(false);
+    expect(buildContracts(withBody({ type: "object" }), fixtures).some((c) => c.name === "폼 바디 요청")).toBe(false);
+  });
+  it("필수 속성의 샘플이 빈 object · 빈 배열이면 만들지 않는다", () => {
+    const empty = buildContracts(withBody({ type: "object", properties: { address: { type: "object" } }, required: ["address"] }), fixtures);
+    expect(empty.some((c) => c.name === "폼 바디 요청")).toBe(false);
+    const arr = buildContracts(withBody({ type: "object", properties: { tags: { type: "array", maxItems: 0 } }, required: ["tags"] }), fixtures);
+    expect(arr.some((c) => c.name === "폼 바디 요청")).toBe(false);
   });
 });
