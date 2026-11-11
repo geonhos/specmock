@@ -54,6 +54,16 @@ describe("parseForm", () => {
     const deep = "a" + "[b]".repeat(40) + "=1&c=1";
     expect(parseForm(deep)).toEqual({ c: "1" });
   });
+  it("인덱스 1000은 받고 1001·4294967294는 무시", () => {
+    expect(parseForm("a[1000]=x")).toEqual({ a: ["x"] });
+    expect(parseForm("a[1001]=x")).toEqual({});
+    expect(parseForm("a[4294967294]=x")).toEqual({});
+  });
+  it("거대한 인덱스도 즉시 끝난다", () => {
+    const t0 = performance.now();
+    parseForm("a[4294967294]=x&b[100000000]=y");
+    expect(performance.now() - t0).toBeLessThan(50);
+  });
   it("빈 문자열은 빈 객체", () => {
     expect(parseForm("")).toEqual({});
   });

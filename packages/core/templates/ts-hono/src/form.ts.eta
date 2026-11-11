@@ -2,6 +2,7 @@ import type { Context } from "hono";
 
 const FORM = "application/x-www-form-urlencoded";
 const MAX_DEPTH = 32;
+const MAX_INDEX = 1000;
 const BLOCKED = new Set(["__proto__", "constructor", "prototype"]);
 
 /** `a[b][]=x` 꼴 키를 세그먼트 배열 ["a","b",""]로 나눈다. 짝이 맞지 않으면 null. */
@@ -57,6 +58,7 @@ export function parseForm(text: string): Record<string, unknown> {
     const segs = splitKey(key);
     if (!segs || segs.length > MAX_DEPTH) continue;
     if (segs.some((s) => BLOCKED.has(s))) continue;
+    if (segs.slice(1).some((s) => /^\d+$/.test(s) && Number(s) > MAX_INDEX)) continue;
     assign(root, segs, value);
   }
   return compactArrays(root);

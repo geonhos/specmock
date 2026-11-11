@@ -52,7 +52,7 @@ export async function readBody(c: Context): Promise<unknown>
 `parseForm(text)`:
 - `new URLSearchParams(text)`로 쌍을 얻는다(`+` → 공백, 퍼센트 디코드 포함. charset 처리 불필요).
 - 키를 `name` + `[seg]…`로 분해해 트리를 만든다. `a[b]` → object, `a[]` 또는 숫자 세그먼트(`a[0]`) → 배열, 같은 키 반복 → 배열. 값은 모두 문자열로 둔다(형 변환은 검증기가 함).
-- 방어: 세그먼트가 `__proto__` · `constructor` · `prototype`이면 그 쌍을 무시한다. 깊이 상한 32(초과하는 쌍 무시). 결과 객체는 `Object.create(null)`이 아닌 일반 객체로 돌려도 되지만 위 세그먼트 차단은 필수.
+- 방어: 세그먼트가 `__proto__` · `constructor` · `prototype`이면 그 쌍을 무시한다. 깊이 상한 32(초과하는 쌍 무시), 배열 인덱스 상한 1000(초과하는 쌍 무시; 희소 배열로 이벤트 루프가 멈추는 것을 막는다). 결과 객체는 `Object.create(null)`이 아닌 일반 객체로 돌려도 되지만 위 세그먼트 차단은 필수.
 - 배열 판단은 스키마를 보지 않는다(숫자 · 빈 세그먼트면 배열). `metadata[0]=x`처럼 숫자 키 map이 배열이 되는 드문 경우는 받아들인다(TS · Java 같은 규칙, 공용 파일 단순화).
 
 ### 3.2 라우트 템플릿
