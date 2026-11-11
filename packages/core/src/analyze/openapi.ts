@@ -141,7 +141,7 @@ export function analyzeOpenApiDocument(doc: AnyDoc, registry: FeatureIdRegistry 
   for (const explicit of [true, false]) {
     ops.forEach(({ pathKey, method, op }, i) => {
       if (hasExplicit(op) !== explicit) return;
-      ids.set(i, registry.claim(deriveFeatureId({ method, path: pathKey, operationId: op.operationId, siblingMethods: siblings.get(pathShape(pathKey)) })));
+      ids.set(i, registry.claim(deriveFeatureId({ method, path: pathKey, operationId: op.operationId, siblingMethods: siblings.get(pathShape(pathKey)), shapes: siblings })));
     });
   }
   return ops.map(({ pathKey, method, op, pathParams }, i) => {

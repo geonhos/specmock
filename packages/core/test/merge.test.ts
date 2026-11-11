@@ -463,4 +463,15 @@ describe("merge", () => {
     );
     expect(catalog.features.map((f) => f.group).sort()).toEqual(["pet", "pets"]);
   });
+  it("derives sub-action ids from the catalog's own path shapes", async () => {
+    await writeExtracted([
+      mk({ method: "POST", path: "/v1/payment_intents", group: "" }),
+      mk({ method: "GET", path: "/v1/payment_intents/{id}", group: "" }),
+      mk({ method: "POST", path: "/v1/payment_intents/{id}/cancel", group: "" }),
+      mk({ method: "GET", path: "/v1/payment_intents/search", group: "" }),
+    ]);
+    await merge(ws, "pets");
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    expect(catalog.features.map((f) => f.id).sort()).toEqual(["payment_intents.cancel", "payment_intents.create", "payment_intents.get", "payment_intents.search"]);
+  });
 });

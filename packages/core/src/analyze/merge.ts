@@ -252,7 +252,7 @@ function toFeature(ajv: Ajv, bucket: Bucket, registry: FeatureIdRegistry, groupO
 
   const tags = primary.group ? [groupOf(primary.group)] : undefined;
   return {
-    id: registry.claim(deriveFeatureId({ method: bucket.method, path: bucket.path, siblingMethods: siblings.get(pathShape(bucket.path)) })),
+    id: registry.claim(deriveFeatureId({ method: bucket.method, path: bucket.path, siblingMethods: siblings.get(pathShape(bucket.path)), shapes: siblings })),
     group: groupOf(deriveGroup({ path: bucket.path, tags })),
     title: primary.title || `${bucket.method} ${bucket.path}`,
     summary: items.map((i) => i.ep.summary).find((s) => s) ?? "",
