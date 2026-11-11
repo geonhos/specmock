@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { matchesAny } from "../src/generate/glob.js";
 import { readStaticFiles } from "../src/generate/llm.js";
+import { validateOutput } from "../src/generate/validateOutput.js";
 import { launchCommand } from "../src/generate/lock.js";
 import { SUPPORTED_LANGUAGES, getProfile } from "../src/generate/profiles/index.js";
 import { javaProfile } from "../src/generate/profiles/java.js";
@@ -35,6 +36,13 @@ describe("javaProfile", () => {
     expect(matchesAny(javaProfile.protectedPaths, p)).toBe(true);
     const files = await readStaticFiles(javaProfile);
     expect(files.find((f) => f.path === p)!.content).toMatch(/^package specmock\.runtime;/);
+  });
+
+  it("validateOutput은 LLM 출력이 FormBody.java를 쓰는 것을 거부한다", () => {
+    const p = "src/main/java/specmock/runtime/FormBody.java";
+    const r = validateOutput({ files: [{ path: p, content: "x" }], notes: [] }, javaProfile);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.join("\n")).toContain(`보호 경로입니다: ${p}`);
   });
 
   it("install은 플랫폼별로 갈린다(Windows는 cmd.exe /c mvnw.cmd)", () => {
