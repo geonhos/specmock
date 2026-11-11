@@ -16,7 +16,7 @@ import {
 import { makeAjv } from "../util/ajv.js";
 import type { Workspace } from "../workspace.js";
 import { writeCatalogWithDiff } from "./catalogWrite.js";
-import { deriveFeatureId, deriveGroup, FeatureIdRegistry } from "./featureId.js";
+import { deriveFeatureId, deriveGroup, FeatureIdRegistry, methodsByShape, pathShape } from "./featureId.js";
 import { inferSchema } from "./inferSchema.js";
 import { analyzeOpenApiDocument } from "./openapi.js";
 import { EXTRACTED_DIR, extractedFileName, pruneExtracted } from "./prepare.js";
@@ -97,8 +97,17 @@ function sanitizeSchema(ajv: Ajv, schema: JsonSchema | null, notes: string[], wh
 
 /* ---------- path 정규화 ---------- */
 
+/** 경로 변수 이름: 전부 대문자(`CUSTOMER_ID`)면 소문자로 내린다. `petId` 같은 camelCase와 이미 소문자인 이름은 그대로 둔다. */
+export function normalizeVarName(name: string): string {
+  return name === name.toUpperCase() && /[A-Z]/.test(name) ? name.toLowerCase() : name;
+}
+
+function pathVars(p: string): string[] {
+  return [...p.matchAll(/\{([^}]+)\}/g)].map((m) => m[1]);
+}
+
 /**
- * 문서에서 흔한 표기를 OpenAPI식 경로로 맞춘다: 스킴·호스트 제거, 쿼리·프래그먼트 제거, 세그먼트 단위 `:id`·`<id>` → `{id}`, 끝 슬래시 제거.
+ * 문서에서 흔한 표기를 OpenAPI식 경로로 맞춘다: 스킴·호스트 제거, 쿼리·프래그먼트 제거, 세그먼트 단위 `:id`·`<id>` → `{id}`, `{{ID}}` → `{id}`, 전부 대문자인 변수 이름(`{CUSTOMER_ID}`)은 소문자로(camelCase `{petId}`는 유지), 끝 슬래시 제거.
  * `/resources:batchGet` 같은 세그먼트 안의 콜론은 건드리지 않는다.
  * 결과는 항상 "/"로 시작한다. 그렇지 않거나 공백이 섞여 있으면 null(호출자가 거부한다).
  */
@@ -107,6 +116,8 @@ export function normalizePath(p: string): string | null {
   s = s.replace(/^https?:\/\/[^/]+/i, "");
   s = s.replace(/[?#].*$/, "");
   s = s.replace(/\/:(\w+)(?=\/|$)/g, "/{$1}").replace(/\/<(\w+)>(?=\/|$)/g, "/{$1}");
+  s = s.replace(/\{\{\s*([^{}\s]+)\s*\}\}/g, "{$1}");
+  s = s.replace(/\{([^{}]+)\}/g, (_m, name: string) => `{${normalizeVarName(name)}}`);
   if (!s.startsWith("/")) return null;
   if (/\s/.test(s)) return null;
   if (s.length > 1) s = s.replace(/\/+$/, "");
@@ -124,6 +135,7 @@ interface BucketItem {
 
 interface Bucket {
   method: HttpMethod;
+  /** 대표 경로: 메서드가 명시된 항목 우선, 그다음 신뢰도 높은 것, 동률이면 먼저 나온 것. */
   path: string;
   items: BucketItem[];
 }
@@ -141,7 +153,7 @@ function mergeParams(ajv: Ajv, target: Feature["request"]["params"], list: Extra
   }
 }
 
-function toFeature(ajv: Ajv, bucket: Bucket, registry: FeatureIdRegistry): Feature {
+function toFeature(ajv: Ajv, bucket: Bucket, registry: FeatureIdRegistry, groupOf: (g: string) => string, siblings: ReadonlyMap<string, ReadonlySet<HttpMethod>>): Feature {
   const notes: string[] = [];
   const items = [...bucket.items].sort((a, b) => b.ep.confidence - a.ep.confidence);
   const primary = items[0].ep;
@@ -157,8 +169,15 @@ function toFeature(ajv: Ajv, bucket: Bucket, registry: FeatureIdRegistry): Featu
   let evidenceTotal = 0;
   let hasExample = false;
 
+  const repVars = pathVars(bucket.path);
   for (const { ep, chunk, evidenceFound: f, evidenceTotal: t } of items) {
-    mergeParams(ajv, request.params, ep.pathParams, notes, "pathParams");
+    // 변수 이름이 다른 경로(`{CUSTOMER_ID}`)에서 온 항목은 대표 경로의 변수 이름(위치 기준)으로 맞춘다.
+    const own = pathVars(ep.path);
+    const pathParams = ep.pathParams.map((pp) => {
+      const i = own.findIndex((v) => v === pp.name || v === normalizeVarName(pp.name));
+      return i >= 0 && i < repVars.length ? { ...pp, name: repVars[i] } : pp;
+    });
+    mergeParams(ajv, request.params, pathParams, notes, "pathParams");
     mergeParams(ajv, request.query, ep.queryParams, notes, "queryParams");
     mergeParams(ajv, request.headers, ep.headers, notes, "headers");
     if (!request.body && ep.requestBody) request.body = sanitizeSchema(ajv, ep.requestBody, notes, "requestBody");
@@ -202,10 +221,10 @@ function toFeature(ajv: Ajv, bucket: Bucket, registry: FeatureIdRegistry): Featu
     inferred: anyInferred,
   });
 
-  const tags = primary.group ? [primary.group] : undefined;
+  const tags = primary.group ? [groupOf(primary.group)] : undefined;
   return {
-    id: registry.claim(deriveFeatureId({ method: bucket.method, path: bucket.path })),
-    group: deriveGroup({ path: bucket.path, tags }),
+    id: registry.claim(deriveFeatureId({ method: bucket.method, path: bucket.path, siblingMethods: siblings.get(pathShape(bucket.path)) })),
+    group: groupOf(deriveGroup({ path: bucket.path, tags })),
     title: primary.title || `${bucket.method} ${bucket.path}`,
     summary: items.map((i) => i.ep.summary).find((s) => s) ?? "",
     method: bucket.method,
@@ -266,7 +285,8 @@ export async function merge(ws: Workspace, system: string): Promise<MergeResult>
     if (input.kind === "openapi") features.push(...analyzeOpenApiDocument(JSON.parse(input.content), registry));
   }
   // 문서 쪽 path와 같은 규칙으로 정규화해 비교한다(`/pets/` vs `/pets`).
-  const known = new Set(features.map((f) => `${f.method} ${normalizePath(f.path) ?? f.path}`));
+  const shapeOf = (p: string): string => pathShape(normalizePath(p) ?? p);
+  const known = new Set(features.map((f) => `${f.method} ${shapeOf(f.path)}`));
 
   // 2) extracted/NNN.json 읽기 → 항목별 스키마 검증 → path 정규화 → 근거 대조 → 버킷
   const rejected: Catalog["rejected"] = [];
@@ -316,20 +336,58 @@ export async function merge(ws: Workspace, system: string): Promise<MergeResult>
         reject(item, `path 형식 불일치: '${ep.path}'`, chunk.index);
         continue;
       }
-      const key = `${ep.method} ${p}`;
+      const key = `${ep.method} ${pathShape(p)}`;
       if (known.has(key)) continue; // OpenAPI가 우선
       const ev = verifyEvidence(ep.evidence, chunkText);
       const b = buckets.get(key) ?? { method: ep.method, path: p, items: [] };
+      const better = (a: ExtractedEndpoint, base: ExtractedEndpoint): boolean =>
+        a.inferred.method !== base.inferred.method ? !a.inferred.method : a.confidence > base.confidence;
+      if (b.items.length > 0 && better(ep, b.items.find((i) => i.ep.path === b.path)!.ep)) b.path = p;
       b.items.push({ ep: { ...ep, path: p }, chunk: chunk.index, evidenceFound: ev.found, evidenceTotal: ev.total });
       buckets.set(key, b);
     }
   }
 
+  // group은 대소문자를 무시하고 묶어 대표 철자 하나로 통일한다. OpenAPI 태그 철자가 있으면 그것이 대표
+  // (스펙 원문이라 문서 추출보다 권위가 높고, 문서를 추가해도 OpenAPI 기능의 group이 바뀌지 않는다).
+  // 없으면 가장 많이 나온 철자, 동률이면 먼저 나온 것. 경로에서 파생한 group도 같은 규칙으로 묶는다.
+  const spellings = new Map<string, Map<string, number>>();
+  const specSpellings = new Map<string, Map<string, number>>();
+  const countSpelling = (raw: string, into: Map<string, Map<string, number>> = spellings): void => {
+    const g = raw.trim();
+    if (!g) return;
+    const m = into.get(g.toLowerCase()) ?? new Map<string, number>();
+    m.set(g, (m.get(g) ?? 0) + 1);
+    into.set(g.toLowerCase(), m);
+  };
+  for (const f of features) {
+    countSpelling(f.group);
+    countSpelling(f.group, specSpellings);
+  }
+  for (const key of [...buckets.keys()]) {
+    const bucket = buckets.get(key)!;
+    for (const { ep } of bucket.items) countSpelling(ep.group);
+    if (!bucket.items.some((i) => i.ep.group.trim())) countSpelling(deriveGroup({ path: bucket.path }));
+  }
+  const canonical = new Map<string, string>();
+  for (const [lower, all] of spellings) {
+    const m = specSpellings.get(lower) ?? all;
+    let best = "";
+    let bestN = 0;
+    for (const [g, n] of m) if (n > bestN) [best, bestN] = [g, n];
+    canonical.set(lower, best);
+  }
+  const groupOf = (g: string): string => canonical.get(g.trim().toLowerCase()) ?? g;
+  for (const f of features) f.group = groupOf(f.group);
+  const siblings = methodsByShape(
+    [...features, ...buckets.values()].map((e) => ({ method: e.method, path: normalizePath(e.path) ?? e.path })),
+  );
+
   // 3) 버킷 → Feature. 키 순서를 고정해 id 접미사(…2, …3)가 실행마다 같게 한다. 하나가 실패해도 나머지는 계속.
   for (const key of [...buckets.keys()].sort()) {
     const bucket = buckets.get(key)!;
     try {
-      features.push(toFeature(ajv, bucket, registry));
+      features.push(toFeature(ajv, bucket, registry, groupOf, siblings));
     } catch (e) {
       const chunk = bucket.items[0].chunk;
       reject(bucket.items.map((i) => i.ep), `기능 변환 실패 (${key}): ${(e as Error).message}`, chunk);

@@ -23,8 +23,9 @@ export class NameRegistry {
     let base = safeName(raw);
     if (base === "" || /^[0-9]/.test(base)) base = `g_${base}`;
     let name = base;
-    for (let n = 2; this.used.has(name); n++) name = `${base}${n}`;
-    this.used.add(name);
+    // 대소문자 비구분 파일시스템(macOS·Windows)에서 `Customers.ts`와 `customers.ts`가 한 파일이 되므로 소문자 기준으로 판정한다.
+    for (let n = 2; this.used.has(name.toLowerCase()); n++) name = `${base}${n}`;
+    this.used.add(name.toLowerCase());
     return name;
   }
 }

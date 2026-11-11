@@ -12,11 +12,23 @@ describe("deriveFeatureId", () => {
     expect(deriveFeatureId({ method: "GET", path: "/users/{id}" })).toBe("users.get");
     expect(deriveFeatureId({ method: "GET", path: "/users" })).toBe("users.list");
     expect(deriveFeatureId({ method: "POST", path: "/users" })).toBe("users.create");
+    expect(deriveFeatureId({ method: "POST", path: "/v1/customers/{id}" })).toBe("customers.update");
+    expect(deriveFeatureId({ method: "POST", path: "/v1/customers" })).toBe("customers.create");
+    expect(deriveFeatureId({ method: "POST", path: "/v1/customers/{id}/sources" })).toBe("sources.create");
     expect(deriveFeatureId({ method: "PATCH", path: "/users/{id}" })).toBe("users.update");
     expect(deriveFeatureId({ method: "DELETE", path: "/users/{id}" })).toBe("users.delete");
     expect(deriveFeatureId({ method: "GET", path: "/store/inventory" })).toBe("inventory.list");
     expect(deriveFeatureId({ method: "GET", path: "/" })).toBe("root.list");
     expect(deriveFeatureId({ method: "HEAD", path: "/users" })).toBe("users.head");
+  });
+});
+
+describe("deriveFeatureId siblingMethods", () => {
+  it("keeps POST on a trailing variable as create when PUT/PATCH is a sibling", () => {
+    expect(deriveFeatureId({ method: "POST", path: "/users/{id}", siblingMethods: new Set(["POST", "PUT"]) })).toBe("users.create");
+    expect(deriveFeatureId({ method: "POST", path: "/users/{id}", siblingMethods: new Set(["POST", "PATCH"]) })).toBe("users.create");
+    expect(deriveFeatureId({ method: "POST", path: "/users/{id}", siblingMethods: new Set(["POST", "GET"]) })).toBe("users.update");
+    expect(deriveFeatureId({ method: "PUT", path: "/users/{id}", siblingMethods: new Set(["POST", "PUT"]) })).toBe("users.update");
   });
 });
 
