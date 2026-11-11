@@ -113,8 +113,8 @@ export class ClaudeCodeAdapter implements LlmAdapter {
         if (code === null) {
           return reject(new ClaudeCallError(`claude 종료 (signal ${signal}): ${stderrLine || out.trim().slice(0, 300)}`, `claude 종료 (signal ${signal})${stderrLine ? `: ${stderrLine}` : ""}`));
         }
-        const logDetail = typeof message === "string" ? message : stderrLine;
-        reject(new ClaudeCallError(`claude 종료 코드 ${code}: ${typeof message === "string" ? message : stderrLine || out.trim().slice(0, 300)}`, `claude 종료 코드 ${code}${logDetail ? `: ${logDetail}` : ""}`));
+        // 기록용 error에는 봉투 result · stdout 발췌를 싣지 않고 stderr만 쓴다.
+        reject(new ClaudeCallError(`claude 종료 코드 ${code}: ${typeof message === "string" ? message : stderrLine || out.trim().slice(0, 300)}`, `claude 종료 코드 ${code}${stderrLine ? `: ${stderrLine}` : ""}`));
       });
       child.stdin.on("error", () => { /* 자식이 먼저 죽으면 EPIPE. close에서 처리된다. */ });
       child.stdin.end(req.prompt);

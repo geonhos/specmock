@@ -156,8 +156,16 @@ describe("ClaudeCodeAdapter onUsage", () => {
     await expect(adapter.complete({ prompt: "x", schema, onUsage })).rejects.toThrow(/Not logged in/);
     expect(got).toHaveLength(1);
     expect(got[0]).toMatchObject({ ok: false, inputTokens: null, model: null });
-    expect(got[0]!.error).toMatch(/Not logged in/);
+    // 봉투 result(모델 텍스트일 수 있음)는 기록에 없고 종료 코드만 남는다.
+    expect(got[0]!.error).toBe("claude 종료 코드 1");
     expect(typeof got[0]!.durationMs).toBe("number");
+  });
+
+  it("종료 코드 실패의 error는 stderr 첫 줄만 싣는다(stdout 봉투 제외)", async () => {
+    const { got, onUsage } = collect();
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-fail-stderr") });
+    await expect(adapter.complete({ prompt: "x", schema, onUsage })).rejects.toThrow(/MODEL-TEXT/);
+    expect(got[0]!.error).toBe("claude 종료 코드 2: auth failed");
   });
 
   it("is_error 봉투는 토큰을 채우고 error는 비밀을 마스킹한다", async () => {

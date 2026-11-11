@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+cat > /dev/null
+printf '{"type":"result","is_error":true,"result":"MODEL-TEXT secret"}\n'
+printf 'auth failed\nsecond line\n' >&2
+exit 2
