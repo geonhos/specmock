@@ -50,7 +50,8 @@ export function validationSchema(f: MockFeature) {
       query: paramsSchema(f.request.query),
       body: f.request.body ?? {},
     },
-    required: f.request.body ? ["body"] : [],
+    // body가 선택이면(required 속성이 없으면) body 없는 요청도 통과시킨다. 있으면 body 스키마로 검증한다.
+    required: Array.isArray(f.request.body?.required) && f.request.body.required.length > 0 ? ["body"] : [],
   };
 }
 

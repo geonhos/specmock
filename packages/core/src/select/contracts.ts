@@ -48,7 +48,7 @@ export function buildContracts(feature: Feature, fixtures: Fixture[]): Contract[
   ];
 
   const errorStatus = [400, 422].find((s) => fixtures.some((f) => f.status === s));
-  const hasRequired = Object.keys(requiredQuery).length > 0 || Boolean(feature.request.body);
+  const hasRequired = Object.keys(requiredQuery).length > 0 || Boolean((feature.request.body?.required as unknown[] | undefined)?.length);
   if (errorStatus && hasRequired) {
     contracts.push({
       featureId: feature.id,
