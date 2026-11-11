@@ -1,4 +1,5 @@
 // packages/core/src/generate/generator.ts
+import type { UsageRecord } from "../llm/usageLog.js";
 import type { MockSpec } from "../types.js";
 
 export interface Command { command: string; args: string[] }
@@ -22,6 +23,8 @@ export interface GenerateContext {
   existing: ExistingSources | null;
   signal?: AbortSignal;
   onProgress?: (e: GenerateProgress) => void;
+  /** LLM 호출 1회마다(성공 · 실패 모두) 사용량 레코드를 받는다. LLM을 쓰지 않는 생성기는 부르지 않는다. */
+  onUsage?: (r: UsageRecord) => void;
 }
 
 export interface LanguageOutput {

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { analyze } from "../src/analyze/index.js";
 import { generate } from "../src/generate/index.js";
 import { readLock } from "../src/generate/lock.js";
+import { readUsage } from "../src/llm/usageLog.js";
 import { ingest } from "../src/ingest/index.js";
 import { ClaudeCodeAdapter } from "../src/llm/claudeCode.js";
 import { select } from "../src/select/index.js";
@@ -45,6 +46,17 @@ const opts = () => ({ outDir: out, profile: fakeProfile, adapter: adapter() });
 const answer = (spec: MockSpec, extra: { path: string; content: string | null }[] = []) => ({ files: [{ path: "server.mjs", content: fakeServerSource(spec) }, ...extra], notes: ["가정: 인증 없음"] });
 
 describe("generate (LLM 생성기)", () => {
+  it("시도마다 llm-usage.jsonl에 stage·detail과 함께 한 줄씩 남긴다(실패 시도 포함)", async () => {
+    const spec = await specNow();
+    await respond(1, { files: [{ path: "../evil.mjs", content: "x" }], notes: [] });
+    await respond(2, answer(spec));
+    await generate(ws, "petstore", opts());
+    const rows = await readUsage(ws.dir("petstore"));
+    expect(rows.map((r) => [r.stage, r.detail, r.ok])).toEqual([["generate", "fake attempt 1/3", true], ["generate", "fake attempt 2/3", true]]);
+    expect(rows[0]).toMatchObject({ inputTokens: null, billing: expect.any(String) });
+    expect(JSON.stringify(rows)).not.toContain("evil.mjs");   // 응답 본문은 남기지 않는다
+  }, 60_000);
+
   it("파일·scaffold·lock·generate.json을 쓰고 verify가 통과한다", async () => {
     await respond(1, answer(await specNow()));
     const r = await generate(ws, "petstore", opts());

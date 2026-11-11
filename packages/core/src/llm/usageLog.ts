@@ -70,3 +70,15 @@ export function summarizeUsage(records: UsageRecord[]): UsageSummary {
   s.costUsd = costUsd;
   return s;
 }
+
+/**
+ * onUsage 콜백(동기)에서 순서대로 append하는 싱크. `record`는 즉시 돌아오고 `flush`가 쓰기 완료를 기다린다.
+ * 기록 실패는 appendUsage가 경고로 삼키므로 flush는 던지지 않는다.
+ */
+export function createUsageSink(systemDir: string): { record: (r: UsageRecord) => void; flush: () => Promise<void> } {
+  let tail: Promise<void> = Promise.resolve();
+  return {
+    record: (r) => { tail = tail.then(() => appendUsage(systemDir, r)); },
+    flush: () => tail,
+  };
+}

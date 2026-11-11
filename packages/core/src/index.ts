@@ -28,7 +28,7 @@ export { SUPPORTED_LANGUAGES, assertLanguage } from "./generate/profiles/index.j
 export { LlmGenerator, ATTEMPT_DIR, type LlmGeneratorOptions } from "./generate/llm.js";
 export { GenerationFailedError, EnvironmentError, LlmForbiddenError } from "./generate/errors.js";
 export { forbiddenLlmAdapter } from "./llm/forbidden.js";
-export { appendUsage, readUsage, summarizeUsage, USAGE_FILE, type UsageRecord, type UsageSummary } from "./llm/usageLog.js";
+export { appendUsage, createUsageSink, readUsage, summarizeUsage, USAGE_FILE, type UsageRecord, type UsageSummary } from "./llm/usageLog.js";
 export { verify, verifyFailed, loadContracts, type VerifyOptions, type VerifyResult, type ContractResult } from "./verify/index.js";
 export type { RuntimeCheck, RuntimeSpec } from "./verify/runtime.js";
 export { startMock, ensureInstalled, installKey, markInstalled, type RunningMock, type StartMockOptions, type EnsureInstalledOptions } from "./verify/server.js";

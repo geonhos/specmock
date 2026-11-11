@@ -2,6 +2,7 @@ import { access, mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { AnalyzeRequestSchema } from "../types.js";
 import type { LlmAdapter } from "../llm/adapter.js";
+import { createUsageSink } from "../llm/usageLog.js";
 import type { Workspace } from "../workspace.js";
 import { withSystemLock } from "../workspaceLock.js";
 import { EXTRACTED_DIR, extractedFileName, hashText, pruneExtracted, readManifest, writeManifest } from "./prepare.js";
@@ -29,6 +30,7 @@ export async function extract(ws: Workspace, system: string, adapter: LlmAdapter
   const manifest = await readManifest(ws, system);
   const result: ExtractResult = { total: request.chunks.length, written: 0, skipped: 0, failed: [] };
   let done = 0;
+  const usage = createUsageSink(ws.dir(system));
   for (const chunk of request.chunks) {
     opts.signal?.throwIfAborted();
     const key = extractedFileName(chunk.index).replace(/\.json$/, "");
@@ -55,7 +57,11 @@ export async function extract(ws: Workspace, system: string, adapter: LlmAdapter
     if (!opts.refresh && fileExists && !stale) { result.skipped += 1; report("skipped"); continue; }
     try {
       const body = await load();
-      const raw = await adapter.complete({ prompt: buildChunkPrompt(body), schema: request.schema, signal: opts.signal });
+      const detail = `chunk ${String(chunk.index).padStart(3, "0")} · ${chunk.heading}`;
+      const raw = await adapter.complete({
+        prompt: buildChunkPrompt(body), schema: request.schema, signal: opts.signal,
+        onUsage: (u) => usage.record({ ...u, stage: "extract", detail }),
+      }).finally(() => usage.flush());
       const r = await submitExtraction(
         ws, system,
         { index: chunk.index, contentHash: chunk.contentHash ?? hashText(body), result: raw },

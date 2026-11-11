@@ -96,7 +96,10 @@ export class LlmGenerator implements LanguageGenerator {
       const prompt = failure ? `${request.prompt}\n\n${retrySection(failure, ctx.spec)}` : request.prompt;
       let raw: unknown;
       try {
-        raw = await this.adapter.complete({ prompt, schema: request.outputSchema, signal: ctx.signal, timeoutMs: this.timeoutMs });
+        raw = await this.adapter.complete({
+          prompt, schema: request.outputSchema, signal: ctx.signal, timeoutMs: this.timeoutMs,
+          onUsage: ctx.onUsage && ((u) => ctx.onUsage!({ ...u, stage: "generate", detail: `${profile.language} attempt ${attempt}/${this.maxAttempts}` })),
+        });
       } catch (e) {
         if (isAbort(e) || e instanceof LlmForbiddenError) throw e;
         const message = (e as Error).message;
