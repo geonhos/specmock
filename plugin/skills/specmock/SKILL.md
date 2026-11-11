@@ -40,7 +40,7 @@ specmock 플러그인을 로드하면 specmock MCP 서버의 도구 13개가 함
    - 모든 청크가 끝나면 `merge_extractions`. `missingChunks`가 남으면 사용자에게 알린다.
    - 청크가 20개를 넘으면 수를 먼저 알리고 진행할지 묻는다.
 3. `list_features`의 `table`을 그대로 보여 주고 선택을 받는다(아래 3절의 설명과 규칙이 같다).
-4. `select_features` → `generate_mock` → `verify_mock`. verify 계약에는 body가 object인 POST 기능마다 "폼 바디 요청"(form-encoded 전송) 계약이 포함되고, 생성된 mock은 form-encoded 본문을 읽습니다(multipart와 query 대괄호는 제외). 기존 Java mock은 첫 재생성에서 `claude`를 다시 부릅니다. `failed > 0`이면 `failures`를 옮겨 적는다(CLI의 종료 코드 2와 같은 상황).
+4. `select_features` → `generate_mock` → `verify_mock`. verify 계약에는 body가 object인 POST 기능마다 "폼 바디 요청"(form-encoded 전송) 계약이 포함되고, 생성된 mock은 form-encoded 본문을 읽습니다(multipart와 query 대괄호는 제외). 기존 Java mock은 `select_features`를 다시 한 뒤 첫 `generate_mock`에서 `claude`를 다시 부릅니다(계약은 mockspec에 있어 select가 갱신해야 바뀝니다). `failed > 0`이면 `failures`를 옮겨 적는다(CLI의 종료 코드 2와 같은 상황).
    - 사용자가 TypeScript가 아닌 언어(예: Java)를 원하면 `generate_mock(language: "java")`. `mode: "session"`이 오면 **당신이 직접** 작성한다:
      1. `requestPath`의 지시서(`generate-request.json`)에서 `prompt`를 읽는다. 런타임 계약·TS 참조 구현·Java 규칙·참조 예시가 들어 있다.
      2. `outDir` 아래 `sourceGlobs`(Java: `pom.xml`, `src/**`) 범위에만 파일을 쓴다. `protectedPaths`(fixtures·contracts·lock·`mvnw*`·`.mvn/**`)는 건드리지 않는다.

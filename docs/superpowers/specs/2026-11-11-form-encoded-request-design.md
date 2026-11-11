@@ -110,13 +110,13 @@ LLM이 매번 파서를 짜면 품질 편차와 재시도 비용이 생긴다. `
 - `templates/java/reference/Main.java:70-72`: `if (r.hasBody() && !ctx.body().isBlank())` 안에서 content-type이 폼이면 `FormBody.coerce(bodySchema, FormBody.parse(ctx.body()))`, 아니면 기존 `JSON.readTree`. `import specmock.runtime.FormBody;`.
 - `test/fixtures/java-petstore/.../Main.java`는 reference와 바이트 동일 → 같이 갱신.
 - `java.ts:16` 검증 규칙에 한 줄: "content-type이 `application/x-www-form-urlencoded`면 `specmock.runtime.FormBody.parse` · `coerce`로 읽는다(파일은 제공됨, 직접 짜지 마라)". `request.ts:40` RUNTIME_CONTRACT 6번에 같은 구절.
-- `inputHash`(`util/specHash.ts:9-17`)에는 contracts가 들어가고 규칙 문구는 들어가지 않는다. 폼 계약이 추가되면 **POST + body가 있는 기존 Java mock은 업그레이드 뒤 첫 generate에서 LLM을 다시 부른다**. README · 스킬 문서에 적는다.
+- `inputHash`(`util/specHash.ts:9-17`)에는 contracts가 들어가고 규칙 문구는 들어가지 않는다. 폼 계약이 추가되면 **POST + body가 있는 기존 Java mock은 업그레이드 뒤 `select`를 다시 한 뒤의 첫 generate에서 LLM을 다시 부른다**(계약은 `mockspec.json`에 있어 select가 갱신해야 바뀐다). README · 스킬 문서에 적는다.
 
 ## 6. 동작 변화(사용자에게 알릴 것)
 
 - 폼 방식 요청이 읽히고 검증된다. 지금까지 선택 body POST에 폼으로 보내면 200이던 것은 검증을 건너뛴 결과였고, 앞으로 잘못된 값(`amount=abc`)은 400이다.
 - verify 계약이 POST 기능마다 최대 1건 늘어난다(Petstore createPet +1, Stripe 최대 +10).
-- Java mock은 계약 변경으로 한 번 재생성된다.
+- Java mock은 계약 변경으로 한 번 재생성된다(`select`를 다시 한 뒤의 첫 generate에서).
 - multipart와 query 대괄호는 이번 범위 밖.
 
 ## 7. 테스트와 영향
@@ -150,3 +150,6 @@ LLM이 매번 파서를 짜면 품질 편차와 재시도 비용이 생긴다. `
 - **`opts.headers`**(`--header`)가 content-type을 주면 모든 body 계약의 인코딩이 그것을 따른다(계약 헤더보다 뒤가 이긴다).
 - **integer 변환 e2e**는 Petstore에 integer body 속성이 없어 ajv 실측(`/tmp` 스크립트)으로 대체했다. e2e 4건은 한 `it`으로 묶었다.
 - **Java**: `FormBody.parse`도 인덱스 상한 1000과 빈 자리 제거를 같게 적용한다. 정수 변환은 `Long.parseLong`, 실수는 유한한 값만 받는다. `java.test.ts`는 생성기가 `FormBody.java`를 넣으므로 fixture에 복사하지 않고, 계약 총수만 3 → 4로 바뀌었다.
+- **TS · Java 동등성 테스트**(`java.test.ts`, `test/fixtures/formbody-probe/Probe.java`): 입력 24건의 `parse` 결과가 TS `parseForm`과 JSON 문자열까지 같고, 큰 인덱스 2건은 1초 안에 끝난다. `coerce` 9건은 Java 단독 기대값으로 확인한다. 차이는 없었다.
+- **후속 (25)** Java `coerce`와 TS ajv coerceTypes 차이: integer 자리의 `1.0` · `1e3` · ` 1` · 20자리 정수는 TS 200 · Java 400, number 자리 `1f`는 Java 200 · TS 400, `0x10`은 TS 200 · Java 400, `oneOf[integer,string]`에 `5`는 TS 400 · Java 200. 개선안: `BigDecimal` 기반 변환으로 맞춘다.
+- **후속 (26)** 비정상 입력 차이: 잘못된 `%`(`a+b%ZZ`)는 Java가 쌍을 원문대로 두고 TS는 `+`만 공백으로 바꾼다. 앞자리 0 인덱스(`a[00001]`)는 Java가 버리고 TS는 받는다. 맨 앞 `?`는 TS만 제거한다.

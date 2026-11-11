@@ -86,6 +86,8 @@
 | 22 | generate(런타임) | `oneOf: [integer, boolean]` 스키마에서 ajv coerceTypes가 값을 두 번 바꿔 400(JSON `1`도 동일) | ajv `coerceTypes`가 oneOf 각 분기에서 제자리 변환 | oneOf 분기별 사본으로 검증하거나 변환 순서 조정 | 소 | 기록 |
 | 23 | select(계약) | 폼 계약 제외 규칙이 최상위 필수 속성만 확인: 하위 필수 속성이 빈 컨테이너면 직렬화에서 사라져 폼 계약만 400 | `select/contracts.ts`가 최상위 `required`만 봄 | 중첩 필수까지 재귀 확인 | 소 | 기록 |
 | 24 | generate(런타임) | form 키 충돌 시 값이 사라짐(`a=1&a[b]=2` → `{a:{b:"2"}}`, `a[0]=x&a[b]=y` → `{a:["x"]}`) | 파서가 오류 없이 한쪽을 택하고 검증기가 판단하게 설계 | 충돌을 400으로 알리는 옵션 검토 | 소 | 기록 |
+| 25 | generate(런타임, Java) | Java `coerce`와 TS ajv coerceTypes 결과가 다름: integer 자리의 `1.0` · `1e3` · ` 1` · 20자리 정수는 TS 200 · Java 400, number 자리 `1f`는 Java 200 · TS 400, `0x10`은 TS 200 · Java 400, `oneOf[integer,string]`에 `5`는 TS 400 · Java 200 | Java는 `Long.parseLong` · `Double.parseDouble` 기반, TS는 ajv 규칙 | `BigDecimal` 기반 변환으로 맞추기 | 소 | 기록 |
+| 26 | generate(런타임, Java) | 비정상 입력 차이: 잘못된 `%`(`a+b%ZZ`)는 Java가 쌍을 원문대로 두고 TS는 `+`만 공백으로 바꿈, 앞자리 0 인덱스(`a[00001]`)는 Java 버림 · TS 수용, 맨 앞 `?`는 TS만 제거 | 두 파서의 디코딩 · 인덱스 판정 규칙이 따로 구현됨 | 규칙을 맞추고 동등성 테스트 표에 입력 추가 | 소 | 기록 |
 
 ## 5. 개선 과제 (우선순위)
 
