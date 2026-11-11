@@ -12,6 +12,9 @@ describe("deriveFeatureId", () => {
     expect(deriveFeatureId({ method: "GET", path: "/users/{id}" })).toBe("users.get");
     expect(deriveFeatureId({ method: "GET", path: "/users" })).toBe("users.list");
     expect(deriveFeatureId({ method: "POST", path: "/users" })).toBe("users.create");
+    expect(deriveFeatureId({ method: "POST", path: "/v1/customers/{id}" })).toBe("customers.update");
+    expect(deriveFeatureId({ method: "POST", path: "/v1/customers" })).toBe("customers.create");
+    expect(deriveFeatureId({ method: "POST", path: "/v1/customers/{id}/sources" })).toBe("sources.create");
     expect(deriveFeatureId({ method: "PATCH", path: "/users/{id}" })).toBe("users.update");
     expect(deriveFeatureId({ method: "DELETE", path: "/users/{id}" })).toBe("users.delete");
     expect(deriveFeatureId({ method: "GET", path: "/store/inventory" })).toBe("inventory.list");

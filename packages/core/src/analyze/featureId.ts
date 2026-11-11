@@ -46,7 +46,7 @@ export function deriveFeatureId(input: { method: HttpMethod; path: string; opera
   const action = (() => {
     switch (input.method) {
       case "GET": return endsWithParam ? "get" : "list";
-      case "POST": return "create";
+      case "POST": return endsWithParam ? "update" : "create";
       case "PUT":
       case "PATCH": return "update";
       case "DELETE": return "delete";
