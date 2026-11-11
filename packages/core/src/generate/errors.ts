@@ -16,3 +16,11 @@ export class EnvironmentError extends Error {
     this.name = "EnvironmentError";
   }
 }
+
+/** LLM을 부르면 안 되는 경로(record apply)에서 LLM 어댑터가 호출됐다. 재시도하지 않고 그대로 전파한다. */
+export class LlmForbiddenError extends Error {
+  constructor() {
+    super("record apply는 LLM을 부르지 않습니다. `specmock generate <system>`를 실행하세요");
+    this.name = "LlmForbiddenError";
+  }
+}

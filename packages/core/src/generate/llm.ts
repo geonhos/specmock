@@ -9,7 +9,7 @@ import { hashJson, hashText } from "../util/hash.js";
 import { verify, verifyFailed, type ContractResult } from "../verify/index.js";
 import type { RuntimeCheck } from "../verify/runtime.js";
 import { ensureInstalled } from "../verify/server.js";
-import { EnvironmentError, GenerationFailedError } from "./errors.js";
+import { EnvironmentError, GenerationFailedError, LlmForbiddenError } from "./errors.js";
 import type { GenerateContext, GenerateProgress, LanguageGenerator, LanguageOutput } from "./generator.js";
 import { readLock, writeLock } from "./lock.js";
 import type { LanguageProfile } from "./profiles/types.js";
@@ -98,7 +98,7 @@ export class LlmGenerator implements LanguageGenerator {
       try {
         raw = await this.adapter.complete({ prompt, schema: request.outputSchema, signal: ctx.signal, timeoutMs: this.timeoutMs });
       } catch (e) {
-        if (isAbort(e)) throw e;
+        if (isAbort(e) || e instanceof LlmForbiddenError) throw e;
         const message = (e as Error).message;
         if (SPAWN_FAILURE.test(message)) throw new EnvironmentError("Claude Code(claude CLI)", message);
         failure = { attempt, stage: "response", errors: [message], contracts: [], runtime: [] };

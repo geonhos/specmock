@@ -13,6 +13,7 @@ import { select } from "../src/select/index.js";
 import { verifyMock } from "../src/service/verify.js";
 import { MockSpecSchema } from "../src/types.js";
 import { hashJson, hashText } from "../src/util/hash.js";
+import { specInputHash } from "../src/util/specHash.js";
 import { Workspace } from "../src/workspace.js";
 import { fakeProfile, fakeServerSource } from "./fakeProfile.js";
 import { PETSTORE } from "./helpers.js";
@@ -96,6 +97,7 @@ describe("finalizeGeneration", () => {
     expect(r).toMatchObject({ ok: true, outDir: out, warnings: [] });
     expect(r.ok && r.written).toEqual(expect.arrayContaining(["fixtures/getPet/200.json", "contracts/getPet.json"]));
     const lock = (await readLock(out))!;
+    expect(lock.inputHash).toBe(specInputHash(await spec()));
     expect(lock).toMatchObject({ language: "fake", generator: "llm", install: null, sourceFiles: { "server.mjs": hashText(src) } });
     await expect(access(path.join(out, SESSION_MARKER))).rejects.toMatchObject({ code: "ENOENT" });
     const v = await verifyMock(ws, "petstore");

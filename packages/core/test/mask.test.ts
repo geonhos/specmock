@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { maskSecrets } from "../src/ingest/mask.js";
+import { maskHeaders, maskSecrets } from "../src/ingest/mask.js";
 
 describe("maskSecrets", () => {
   it("masks Bearer tokens", () => {
@@ -36,5 +36,48 @@ describe("maskSecrets", () => {
     // securitySchemes의 `type: apiKey`는 키 이름이 type이다.
     const scheme = '{"ApiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-API-Key"}}';
     expect(maskSecrets(scheme)).toBe(scheme);
+  });
+});
+
+describe("maskSecrets query", () => {
+  it("api_key 값만 가리고 뒤의 &x=1은 남긴다", () => {
+    expect(maskSecrets("GET /pets?api_key=abcdefgh123&x=1")).toBe("GET /pets?api_key=***&x=1");
+    expect(maskSecrets("/a?access_token=0123456789ab&limit=2&secret=zzzzzzzzzz")).toBe("/a?access_token=***&limit=2&secret=***");
+  });
+});
+
+describe("maskHeaders", () => {
+  it("키 이름만 보고 값 전체를 가리며 원래 키 대소문자를 지킨다", () => {
+    expect(maskHeaders({
+      Authorization: "Basic dXNlcjpwYXNz",
+      cookie: "sid=1",
+      "Set-Cookie": "a=b",
+      "x-api-key": "k",
+      token: "t",
+      "X-Client-Secret": "s",
+      "x-password-hint": "p",
+      "Proxy-Authorization": "Basic x",
+      "x-auth": "a",
+      "x-session-id": "s",
+      "X-Tenant": "dev",
+      accept: "application/json",
+    })).toEqual({
+      Authorization: "***",
+      cookie: "***",
+      "Set-Cookie": "***",
+      "x-api-key": "***",
+      token: "***",
+      "X-Client-Secret": "***",
+      "x-password-hint": "***",
+      "Proxy-Authorization": "***",
+      "x-auth": "***",
+      "x-session-id": "***",
+      "X-Tenant": "dev",
+      accept: "application/json",
+    });
+  });
+
+  it("빈 객체는 빈 객체", () => {
+    expect(maskHeaders({})).toEqual({});
   });
 });

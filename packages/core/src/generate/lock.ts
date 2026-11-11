@@ -19,6 +19,8 @@ export const LockSchema = z.object({
   language: z.string().min(1),
   generator: z.enum(["llm", "template"]).default("template"),
   mockspecHash: z.string(),
+  /** fixture 본문·assumptions를 뺀 mockspec 해시(util/specHash.ts). 같으면 LLM 소스는 그대로 두고 scaffold만 다시 쓴다. 옛 lock = 없음. */
+  inputHash: z.string().optional(),
   generatedAt: z.string(),
   /** 없음(undefined) = 2단계 lock = npm install. null = 설치 단계 없음. */
   install: CommandSchema.nullable().optional(),

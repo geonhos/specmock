@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/server";
 import {
-  assertLanguage, defaultMockDir, finalizeGeneration, findFeature, generate, listFeatures, prepareGeneration, readLock, readSessionMarker, select,
+  assertLanguage, defaultMockDir, finalizeGeneration, findFeature, generate, listFeatures, prepareGeneration, readLock, readSessionMarker, recordResponses, APPLY_FAILED, select,
   SUPPORTED_LANGUAGES, verifyMock, type OnEvent, type Workspace,
 } from "@specmock/core";
 import { z } from "zod";
@@ -133,5 +133,45 @@ export function registerMockTools(server: McpServer, ws: Workspace, onEvent: OnE
     const runtime = v.result.runtime.map((c) => ({ id: c.id, name: c.name, passed: c.passed, skipped: c.skipped, request: c.request, errors: c.errors }));
     const data = { total: v.result.total, passed: v.result.passed, failed: v.result.failed, failures, runtime, coverageFile: absPath(ws.dir(system), v.coverageFile), coverageSummary: coverageSummary(v.coverageMarkdown) };
     return ok(`contract: 통과 ${data.passed} / 실패 ${data.failed}, 런타임 계약 실패 ${v.result.runtimeFailed}. 커버리지: ${data.coverageFile}`, data);
+  }));
+
+  server.registerTool("record_responses", {
+    title: "실제 시스템 녹화",
+    description: "mockspec의 정상 요청 contract를 .specmock/<system>/target.json의 실제 시스템에 보내 응답을 recorded/에 저장하고 drift.md(스펙과 실제의 차이)를 쓴다. 기본은 GET·HEAD만 보낸다. 녹화 뒤 select → generate를 다시 실행해 mock fixture에 반영한다(LLM은 부르지 않는다). target.json이 없으면 오류에 예시가 있다 — 사용자에게 만들어 달라고 한다. headers·params의 ${ENV}는 Claude Code를 실행한 셸의 환경변수에서 읽는다. `${ENV}`로 넣은 값은 녹화·리포트에서 `***`로 가린다(직접 적은 값은 가리지 않음).",
+    inputSchema: z.object({
+      system: SystemArg,
+      allowMutating: z.boolean().optional().describe("POST·PUT·PATCH·DELETE도 보낸다. 실제 데이터가 바뀔 수 있으므로 반드시 사용자에게 대상 시스템과 요청 목록을 알리고 확인받은 뒤에만 true"),
+      features: z.array(z.string()).optional().describe("이 기능 id만 녹화"),
+      refresh: z.boolean().optional().describe("대상 기능(이번에 보낸 것)의 기존 녹화를 버리고 다시 녹화. 건너뛴 변경 요청 기능의 녹화는 유지, 중단되면 모두 유지"),
+      apply: z.boolean().optional().describe("기본 true. false면 녹화·drift만"),
+    }),
+    outputSchema: z.object({
+      baseUrl: z.string(),
+      recorded: z.array(z.string()),
+      matched: z.array(z.string()),
+      drifted: z.array(z.object({ featureId: z.string(), errors: z.array(z.string()) })),
+      statusMismatch: z.array(z.object({ featureId: z.string(), expected: z.number(), actual: z.number(), hint: z.string().optional() })),
+      skipped: z.array(z.object({ featureId: z.string(), reason: z.literal("mutating") })),
+      failed: z.array(z.object({ featureId: z.string(), reason: z.string() })),
+      applied: z.object({ selected: z.number(), generated: z.boolean(), outDir: z.string().nullable(), preserved: z.array(z.string()) }).nullable(),
+      notes: z.array(z.string()),
+      driftPath: z.string(),
+      driftSummary: z.string(),
+    }),
+  }, guard(async ({ system, allowMutating, features, refresh, apply }, ctx) => {
+    const v = await withProgress(ctx, onEvent, (ev) => recordResponses(ws, system, { allowMutating, features, refresh, apply, onEvent: ev }), opts.heartbeatMs ?? 5000, "record");
+    const r = v.result;
+    const g = r.applied?.generate ?? null;
+    // drift.md 머리(제목·요약 줄) + 다름·불일치 항목. 건너뜀·실패 목록은 구조화 결과에 있다.
+    const md = v.driftMarkdown.split("\n");
+    const items = md.filter((l, i) => l.startsWith("- ") && md.slice(0, i).reverse().find((x) => x.startsWith("## "))?.match(/^## (스펙과 다름|상태 불일치)$/));
+    const driftSummary = [md[0], md[1], ...items].join("\n");
+    const data = {
+      baseUrl: r.baseUrl, recorded: r.recorded, matched: r.matched, drifted: r.drifted, statusMismatch: r.statusMismatch, skipped: r.skipped, failed: r.failed,
+      applied: r.applied ? { selected: r.applied.selected, generated: g !== null, outDir: g?.outDir ?? null, preserved: g?.preserved ?? [] } : null,
+      notes: v.notes, driftPath: absPath(ws.dir(system), v.driftPath), driftSummary,
+    };
+    const failedNote = v.notes.find((n) => n.startsWith(APPLY_FAILED));
+    return ok(`${failedNote ? `⚠ ${failedNote}\n\n` : ""}${driftSummary}\n\ndrift: ${data.driftPath}${v.notes.length ? `\n${v.notes.map((n) => `- ${n}`).join("\n")}` : ""}`, data);
   }));
 }

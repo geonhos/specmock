@@ -1,5 +1,7 @@
-import { CatalogSchema, MockSpecSchema, SelectionSchema, SourceSchema, type Contract, type MockFeature, type MockSpec } from "../types.js";
+import { readRecorded } from "../record/recorded.js";
+import { CatalogSchema, MockSpecSchema, SelectionSchema, SourceSchema, type Contract, type MockFeature, type MockSpec, type Recorded } from "../types.js";
 import { hashJson } from "../util/hash.js";
+import { featureInputHash } from "../util/specHash.js";
 import type { Workspace } from "../workspace.js";
 import { withSystemLock } from "../workspaceLock.js";
 import { orderFeatures } from "../catalog/order.js";
@@ -75,9 +77,17 @@ async function selectUnlocked(ws: Workspace, system: string, exprs: string[], op
   const features: MockFeature[] = [];
   const contracts: Contract[] = [];
   const assumptions: string[] = [];
+  const recordings: Recorded[] = [];
   for (const id of resolved) {
     const feature = byId.get(id)!;
-    const built = buildFixtures(feature);
+    let rec: Recorded | null = null;
+    try { rec = await readRecorded(ws, system, id); } catch { assumptions.push(`${id}: 녹화 파일을 읽지 못해 사용하지 않음`); }
+    if (rec && rec.featureId !== id) {
+      assumptions.push(`${id}: 녹화 파일의 featureId가 파일 이름과 다릅니다. 사용하지 않음`);
+      rec = null;
+    }
+    if (rec) recordings.push(rec);
+    const built = buildFixtures(feature, rec);
     assumptions.push(...built.assumptions);
     features.push({ ...feature, fixtures: built.fixtures });
     contracts.push(...buildContracts(feature, built.fixtures));
@@ -90,9 +100,15 @@ async function selectUnlocked(ws: Workspace, system: string, exprs: string[], op
   }
   const chosen = new Set(resolved);
   const notMocked = catalog.features.filter((f) => !chosen.has(f.id)).map((f) => ({ id: f.id, method: f.method, path: f.path }));
+  const fresh: MockSpec = { system, baseUrl: "/", features, notMocked, contracts, assumptions: [] };
+  for (const r of recordings) {
+    if (r.mockspecHash !== featureInputHash(fresh, r.featureId)) {
+      assumptions.push(`${r.featureId}: 녹화가 지금 mockspec과 다른 시점에 만들어졌습니다(낡은 녹화). 다시 녹화하려면 record --refresh`);
+    }
+  }
 
   const selectionFile = await ws.write(system, "selection.json", SelectionSchema, {
-    system, catalogHash, selected, resolved, catalogIds: currentIds, updatedAt: new Date().toISOString(),
+    system, catalogHash, selected, resolved, catalogIds: currentIds, literal: opts.literalIds === true, updatedAt: new Date().toISOString(),
   });
   const mockspecFile = await ws.write(system, "mockspec.json", MockSpecSchema, {
     system, baseUrl: "/", features, notMocked, contracts, assumptions,

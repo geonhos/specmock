@@ -10,6 +10,7 @@ import { registerSelect } from "./commands/select.js";
 import { registerUi } from "./commands/ui.js";
 import { registerShow } from "./commands/show.js";
 import { registerVerify } from "./commands/verify.js";
+import { registerRecord } from "./commands/record.js";
 
 const program = new Command();
 program
@@ -25,6 +26,7 @@ registerShow(program);
 registerSelect(program);
 registerGenerate(program);
 registerVerify(program);
+registerRecord(program);
 registerRun(program);
 registerUi(program);
 

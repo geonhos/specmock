@@ -4,6 +4,7 @@ import type { LlmAdapter } from "../llm/adapter.js";
 import { ClaudeCodeAdapter } from "../llm/claudeCode.js";
 import { GenerateInfoSchema, MockSpecSchema } from "../types.js";
 import { hashJson, hashText } from "../util/hash.js";
+import { specInputHash } from "../util/specHash.js";
 import type { Workspace } from "../workspace.js";
 import { withSystemLock } from "../workspaceLock.js";
 import type { ExistingSources, GenerateProgress, GenerateReport, LanguageGenerator } from "./generator.js";
@@ -146,6 +147,7 @@ async function generateUnlocked(ws: Workspace, system: string, opts: GenerateOpt
   await rm(path.join(outDir, ATTEMPT_DIR), { recursive: true, force: true });
 
   const mockspecHash = hashJson(spec);
+  const inputHash = specInputHash(spec);
   const profile = language === "ts" ? null : (opts.profile ?? getProfile(language));
   if (language !== "ts" && !profile) throw new Error(`'${language}' 언어 프로필이 없습니다.`);
   const sameLanguage = previous !== null && previous.language === language;
@@ -158,6 +160,20 @@ async function generateUnlocked(ws: Workspace, system: string, opts: GenerateOpt
     return {
       outDir, language, written: [], preserved: [], orphaned: [],
       launch: launchHint(outDir, previous), attempts: 0, notes: [], userModified: [], skipped: true,
+    };
+  }
+
+  // fixture 본문만 바뀌었으면(녹화 반영 등) LLM 소스는 그대로 두고 scaffold·lock만 새로 쓴다.
+  if (profile && previous && sameLanguage && previous.generator === "llm" && previous.inputHash === inputHash && !opts.force) {
+    const written: string[] = [];
+    const s = await writeScaffold(spec, outDir, previous, {}, written);
+    await writeLock(outDir, { ...previous, mockspecHash, inputHash, generatedAt: new Date().toISOString(), fixtureHashes: s.fixtureHashes });
+    const prior = (await ws.exists(system, "generate.json")) ? await ws.read(system, "generate.json", GenerateInfoSchema) : null;
+    const keepNotes = prior && path.resolve(prior.outDir) === outDir ? (prior.notes ?? []) : [];
+    await ws.write(system, "generate.json", GenerateInfoSchema, { outDir, generatedAt: new Date().toISOString(), language, notes: keepNotes, attempts: prior?.attempts ?? 0 });
+    return {
+      outDir, language, written, preserved: s.preserved, orphaned: s.orphaned,
+      launch: launchHint(outDir, previous), attempts: 0, notes: ["fixture만 바뀌어 LLM을 다시 부르지 않았습니다"], userModified: [], skipped: false,
     };
   }
 
@@ -179,6 +195,7 @@ async function generateUnlocked(ws: Workspace, system: string, opts: GenerateOpt
     language,
     generator: generator.generator,
     mockspecHash,
+    inputHash,
     generatedAt: new Date().toISOString(),
     install: output.install,
     installCheck: output.installCheck ?? null,

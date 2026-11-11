@@ -1,4 +1,6 @@
 import { access, readFile, realpath, mkdtemp, rm, writeFile, cp, readdir, symlink } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -18,10 +20,10 @@ async function copySample(): Promise<{ pets: string; recorded: unknown }> {
 }
 
 describe("tool registry", () => {
-  it("registers exactly TOOL_NAMES (12 tools, no leftovers)", async () => {
+  it("registers exactly TOOL_NAMES (13 tools, no leftovers)", async () => {
     const { tools } = await s.client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([...TOOL_NAMES].sort());
-    expect(TOOL_NAMES).toHaveLength(12);
+    expect(TOOL_NAMES).toHaveLength(13);
   });
 });
 
@@ -204,13 +206,13 @@ describe("errors", () => {
     const t = await s.err("list_features", { system: "nosuch" });
     expect(t).toContain("analyze_spec");
     expect(t).not.toContain("specmock analyze");
-    expect((await s.client.listTools()).tools.length).toBe(12);
+    expect((await s.client.listTools()).tools.length).toBe(13);
   });
 
   it("invalid system name and missing required args are tool errors", async () => {
     expect(await s.err("list_features", { system: "../x" })).toMatch(/시스템 이름이 올바르지 않습니다/);
     await s.err("list_features", {});
-    expect((await s.client.listTools()).tools.length).toBe(12);
+    expect((await s.client.listTools()).tools.length).toBe(13);
   });
 
   it("bad selection expression and unknown feature id → isError", async () => {
@@ -309,5 +311,39 @@ describe("generation tools", () => {
     await s.ok("select_features", { system: "petstore", exprs: ["getPet"] });
     await s.ok("generate_mock", { system: "petstore", language: "ts" });
     expect(await s.err("generate_mock", { system: "petstore", language: "java" })).toContain("ts로 생성됐습니다");
+  });
+});
+
+describe("record_responses", () => {
+  let real: Server | undefined;
+  afterEach(async () => { await new Promise<void>((r) => (real ? real.close(() => r()) : r())); real = undefined; });
+  async function realSystem(): Promise<string> {
+    real = createServer((req, res) => {
+      const ok = req.method === "GET" && /^\/pets\/[^/?]+/.test(req.url!);
+      res.writeHead(ok ? 200 : 404, { "content-type": "application/json" });
+      res.end(JSON.stringify(ok ? { id: 1, name: "Real" } : {}));
+    });
+    await new Promise<void>((r) => real!.listen(0, "127.0.0.1", () => r()));
+    return `http://127.0.0.1:${(real!.address() as AddressInfo).port}`;
+  }
+
+  it("녹화하고 drift 요약을 돌려주며 TS mock의 fixture를 바꾼다", async () => {
+    await s.ok("ingest_spec", { system: "petstore", origins: [PETSTORE] });
+    await s.ok("analyze_spec", { system: "petstore" });
+    await s.ok("select_features", { system: "petstore", exprs: ["getPet", "createPet"] });
+    const g = await s.ok("generate_mock", { system: "petstore" });
+    await writeFile(path.join(dir, ".specmock", "petstore", "target.json"), JSON.stringify({ baseUrl: await realSystem() }));
+    const r = await s.ok("record_responses", { system: "petstore" });
+    expect(r).toMatchObject({ matched: ["getPet"], skipped: [{ featureId: "createPet", reason: "mutating" }], driftPath: path.join(dir, ".specmock", "petstore", "drift.md") });
+    expect(r.driftSummary).toContain("요청 2 · 일치 1");
+    expect(r.applied).toMatchObject({ selected: 2, generated: true });
+    expect(JSON.parse(await readFile(path.join(g.outDir, "fixtures", "getPet", "200.json"), "utf8"))).toEqual({ id: 1, name: "Real" });
+  });
+
+  it("target.json이 없으면 예시를 담은 isError", async () => {
+    await s.ok("ingest_spec", { system: "petstore", origins: [PETSTORE] });
+    await s.ok("analyze_spec", { system: "petstore" });
+    await s.ok("select_features", { system: "petstore", exprs: ["getPet"] });
+    expect(await s.err("record_responses", { system: "petstore" })).toContain("https://api.example.com/v2");
   });
 });

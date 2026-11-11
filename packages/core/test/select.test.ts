@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { analyze } from "../src/analyze/index.js";
 import { ingest } from "../src/ingest/index.js";
 import { select } from "../src/select/index.js";
-import { CatalogSchema, MockSpecSchema, SelectionSchema, SourceSchema } from "../src/types.js";
+import { CatalogSchema, MockSpecSchema, RecordedSchema, SelectionSchema, SourceSchema } from "../src/types.js";
+import { featureInputHash } from "../src/util/specHash.js";
 import { Workspace } from "../src/workspace.js";
 import { PETSTORE } from "./helpers.js";
 
@@ -93,5 +94,56 @@ describe("select", () => {
     expect(r.resolved.sort()).toEqual(["123", "all"]);
     expect(r.selected).toEqual(["all", "123"]);
     await expect(select(ws, "petstore", ["nope"], { literalIds: true })).rejects.toThrow(/알 수 없는 기능 id/);
+  });
+});
+
+describe("select with recordings", () => {
+  async function writeRec(id: string, body: unknown, mockspecHash: string, status = 200): Promise<void> {
+    await ws.write("petstore", `recorded/${id}.json`, RecordedSchema, {
+      featureId: id, recordedAt: "2026-11-09T00:00:00.000Z", mockspecHash,
+      request: { method: "GET", path: "/pets", query: {}, headers: {} },
+      response: { status, kind: "json", headers: {}, body, bytes: 10 },
+      contract: { expectedStatus: 200, statusMatch: status === 200, schemaErrors: [] },
+    });
+  }
+
+  it("녹화가 있으면 기본 fixture를 바꾸고, 해시가 같으면 경고가 없다", async () => {
+    await select(ws, "petstore", ["all"]);
+    const before = await ws.read("petstore", "mockspec.json", MockSpecSchema);
+    await writeRec("listPets", [{ id: 7, name: "Real" }], featureInputHash(before, "listPets"));
+    await select(ws, "petstore", ["all"]);
+    const spec = await ws.read("petstore", "mockspec.json", MockSpecSchema);
+    const f = spec.features.find((x) => x.id === "listPets")!;
+    expect(f.fixtures[0]).toEqual({ status: 200, body: [{ id: 7, name: "Real" }], source: "recorded" });
+    expect(spec.assumptions.some((a) => a.includes("낡은 녹화"))).toBe(false);
+    expect(spec.contracts).toEqual(before.contracts);
+  });
+
+  it("해시가 다르면 낡은 녹화 경고를 남기되 사용한다", async () => {
+    await writeRec("listPets", [{ id: 7, name: "Real" }], "old-hash");
+    await select(ws, "petstore", ["all"]);
+    const spec = await ws.read("petstore", "mockspec.json", MockSpecSchema);
+    expect(spec.features.find((x) => x.id === "listPets")!.fixtures[0].source).toBe("recorded");
+    expect(spec.assumptions).toContain("listPets: 녹화가 지금 mockspec과 다른 시점에 만들어졌습니다(낡은 녹화). 다시 녹화하려면 record --refresh");
+  });
+
+  it("깨진 녹화 파일은 무시하고 사유를 남긴다", async () => {
+    await ws.writeText("petstore", "recorded/listPets.json", "{ broken");
+    await select(ws, "petstore", ["all"]);
+    const spec = await ws.read("petstore", "mockspec.json", MockSpecSchema);
+    expect(spec.features.find((x) => x.id === "listPets")!.fixtures[0].source).not.toBe("recorded");
+    expect(spec.assumptions).toContain("listPets: 녹화 파일을 읽지 못해 사용하지 않음");
+  });
+
+  it("파일 이름과 featureId가 다른 녹화는 무시하고 사유를 남긴다", async () => {
+    await select(ws, "petstore", ["all"]);
+    const before = await ws.read("petstore", "mockspec.json", MockSpecSchema);
+    await writeRec("listPets", [{ id: 7, name: "Real" }], featureInputHash(before, "listPets"));
+    const rec = await ws.read("petstore", "recorded/listPets.json", RecordedSchema);
+    await ws.write("petstore", "recorded/listPets.json", RecordedSchema, { ...rec, featureId: "getPet" });
+    await select(ws, "petstore", ["all"]);
+    const spec = await ws.read("petstore", "mockspec.json", MockSpecSchema);
+    expect(spec.features.find((x) => x.id === "listPets")!.fixtures[0].source).not.toBe("recorded");
+    expect(spec.assumptions).toContain("listPets: 녹화 파일의 featureId가 파일 이름과 다릅니다. 사용하지 않음");
   });
 });

@@ -57,3 +57,10 @@ it("core renderCoverage의 실제 출력과 맞는다(출력 형식이 바뀌면
   expect(parsed!.sources.find((s) => s.name === "schema-generated")!.count).toBe(1);
   expect(parsed!.confidence.find((c) => c.range === "0.5 이상")!.count).toBe(1);
 });
+
+it("recorded 행이 더해진 5행 표도 푼다", () => {
+  const md = MD.replace("| spec-example |", "| recorded | 1 | 실제 시스템 응답을 녹화 |\n| spec-example |");
+  const parsed = parseCoverage(md)!;
+  expect(parsed.sources).toHaveLength(5);
+  expect(parsed.sources[0]).toEqual({ name: "recorded", count: 1, meaning: "실제 시스템 응답을 녹화" });
+});

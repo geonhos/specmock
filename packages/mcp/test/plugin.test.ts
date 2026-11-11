@@ -21,7 +21,7 @@ describe("plugin MCP wiring", () => {
   it("tool names in the skill docs are exactly the registered tools", async () => {
     const docs = [await readFile(path.join(SKILL_DIR, "SKILL.md"), "utf8"), await readFile(path.join(SKILL_DIR, "references", "extraction.md"), "utf8")].join("\n");
     // 스킬은 도구를 `ingest_spec`처럼 백틱 안의 짧은 이름으로 부른다. 밑줄이 든 소문자 백틱 토큰 중 도구 접미사를 가진 것만 모은다.
-    const mentioned = new Set([...docs.matchAll(/`([a-z]+_(?:spec|chunk|extraction|extractions|features?|mock|ui|generation))`/g)].map((x) => x[1]!));
+    const mentioned = new Set([...docs.matchAll(/`([a-z]+_(?:spec|chunk|extraction|extractions|features?|mock|ui|generation|responses))`/g)].map((x) => x[1]!));
     expect([...mentioned].sort()).toEqual([...TOOL_NAMES].sort());
 
     const dir = await realpath(await mkdtemp(path.join(os.tmpdir(), "specmock-plugin-")));

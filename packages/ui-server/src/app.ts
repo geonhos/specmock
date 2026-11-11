@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import path from "node:path";
-import { analyzeSpec, assertLanguage, CatalogSchema, ClaudeCodeAdapter, findFeature, generate, ingestSpec, listFeatures, readLock, select, summarizeChunks, verifyMock, Workspace } from "@specmock/core";
+import { analyzeSpec, assertLanguage, CatalogSchema, ClaudeCodeAdapter, findFeature, generate, ingestSpec, listFeatures, readLock, readTarget, recordResponses, select, summarizeChunks, TARGET_EXAMPLE, TARGET_FILE, verifyMock, Workspace } from "@specmock/core";
 import { streamSSE } from "hono/streaming";
 import { EventBus, pushBounded, type BusEvent } from "./bus.js";
 import { BusyJobError, JobManager, NotCancellableError, ShuttingDownError } from "./jobs.js";
@@ -16,6 +16,9 @@ const IngestBody = z.object({ system: z.string().min(1), origins: z.array(z.stri
 const ExtractBody = z.object({ refresh: z.boolean().optional() });
 const GenerateBody = z.object({ outDir: z.string().min(1).optional(), force: z.boolean().optional(), language: z.string().min(1).optional() });
 const VerifyBody = z.object({ dir: z.string().min(1).optional() });
+const RecordBody = z.object({ allowMutating: z.boolean().optional(), refresh: z.boolean().optional() });
+/** GET target은 존재·형식만 본다. 모든 `${ENV}`가 값이 있는 것처럼 치환해 env 오류가 나지 않게 한다(치환 결과는 버린다). */
+const ANY_ENV: Record<string, string> = new Proxy({}, { get: () => "x" });
 const SelectionBody = z.object({ ids: z.array(z.string()) });
 
 /** 본문이 없거나 비어 있어도 되는 요청용. 있으면 형식을 검사한다. */
@@ -134,6 +137,26 @@ export function createApp(opts: AppOptions) {
     await assertRegistered(ws, system);
     const dir = resolveFromRoot(b.dir);
     return accepted(c, jobs.start(system, "verify", ({ signal, onEvent }) => verifyMock(ws, system, { dir, onEvent, signal })).id);
+  });
+  // target.json의 headers·params는 응답·로그에 싣지 않는다(비밀). baseUrl만 보인다.
+  app.get("/api/systems/:s/target", async (c) => {
+    const system = c.req.param("s");
+    await assertRegistered(ws, system);
+    if (!(await ws.exists(system, TARGET_FILE))) return ok(c, { exists: false, example: TARGET_EXAMPLE });
+    try {
+      const t = await readTarget(ws, system, ANY_ENV);
+      return ok(c, { exists: true, baseUrl: t.baseUrl, example: TARGET_EXAMPLE });
+    } catch (e) {
+      return ok(c, { exists: true, error: e instanceof Error ? e.message : String(e), example: TARGET_EXAMPLE });
+    }
+  });
+  app.post("/api/systems/:s/record", async (c) => {
+    const system = c.req.param("s");
+    const b = await optionalBody(c, RecordBody);
+    await assertRegistered(ws, system);
+    return accepted(c, jobs.start(system, "record", ({ signal, onEvent }) => recordResponses(ws, system, {
+      allowMutating: b.allowMutating, refresh: b.refresh, signal, onEvent,
+    })).id);
   });
   app.get("/api/jobs", (c) => ok(c, jobs.list()));
   app.post("/api/jobs/:id/cancel", (c) => {

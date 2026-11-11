@@ -89,6 +89,8 @@ export const SelectionSchema = z.object({
   resolved: z.array(z.string()),
   /** 선택 시점의 카탈로그 기능 id. 이후 카탈로그가 바뀌었을 때 선택 시점 기준으로 비교한다. */
   catalogIds: z.array(z.string()).optional(),
+  /** true면 selected가 기능 id 그대로(UI·--interactive), false면 표현식. 없으면(옛 파일) 추정한다. */
+  literal: z.boolean().optional(),
   updatedAt: z.string(),
 });
 export type Selection = z.infer<typeof SelectionSchema>;
@@ -96,9 +98,39 @@ export type Selection = z.infer<typeof SelectionSchema>;
 export const FixtureSchema = z.object({
   status: z.number().int(),
   body: z.unknown(),
-  source: z.enum(["spec-example", "doc-sample", "schema-generated", "empty"]),
+  source: z.enum(["recorded", "spec-example", "doc-sample", "schema-generated", "empty"]),
 });
 export type Fixture = z.infer<typeof FixtureSchema>;
+/** `.specmock/<system>/recorded/<featureId>.json` — record가 쓴다(설계 3B §3.2). */
+export const RecordedSchema = z.object({
+  featureId: z.string().min(1),
+  recordedAt: z.string(),
+  /** 녹화 시점 mockspec의 featureInputHash(그 기능만, fixture 본문 제외). */
+  mockspecHash: z.string(),
+  request: z.object({
+    method: HttpMethod,
+    path: z.string(),
+    query: z.record(z.string(), z.string()),
+    /** maskHeaders를 거친 값. 재전송용이 아니다. */
+    headers: z.record(z.string(), z.string()),
+  }),
+  response: z.object({
+    status: z.number().int(),
+    /** json: body가 파싱 값 · raw: body가 { raw, contentType } · empty: body null · truncated: body 없음. */
+    kind: z.enum(["json", "raw", "empty", "truncated"]),
+    /** content-type·content-length만. */
+    headers: z.record(z.string(), z.string()),
+    body: z.unknown().optional(),
+    truncated: z.literal(true).optional(),
+    bytes: z.number().int().nonnegative(),
+  }),
+  contract: z.object({
+    expectedStatus: z.number().int(),
+    statusMatch: z.boolean(),
+    schemaErrors: z.array(z.string()),
+  }),
+});
+export type Recorded = z.infer<typeof RecordedSchema>;
 
 export const ContractSchema = z.object({
   featureId: z.string(),

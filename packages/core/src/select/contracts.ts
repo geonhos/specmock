@@ -20,9 +20,10 @@ export function sampleScalar(schema: JsonSchema | null): string {
   }
 }
 
-export function fillPath(feature: Feature): string {
+/** `{name}`을 overrides 값(있으면) 또는 스키마 샘플로 채운다. 기존 호출(인자 하나)은 결과가 같다. */
+export function fillPath(feature: Feature, overrides: Record<string, string> = {}): string {
   return feature.path.replace(/\{([^}]+)\}/g, (_m, name: string) =>
-    encodeURIComponent(sampleScalar(feature.request.params[name]?.schema ?? null)),
+    encodeURIComponent(Object.hasOwn(overrides, name) ? overrides[name] : sampleScalar(feature.request.params[name]?.schema ?? null)),
   );
 }
 

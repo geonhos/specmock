@@ -1,4 +1,6 @@
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -304,5 +306,86 @@ describe("Task 9 리뷰 수정", () => {
     expect(forced.status).toBe(202);
     await c.post(`/jobs/${forced.body.data.jobId}/cancel`); // 실제 claude를 부르지 않게 끊고, 정리 전에 끝나길 기다린다
     await vi.waitFor(async () => expect((await c.get("/jobs")).body.data.running).toHaveLength(0), { timeout: 10_000 });
+  });
+});
+
+describe("record (3B)", () => {
+  let real: Server | undefined;
+  afterEach(async () => { real?.closeAllConnections(); await new Promise<void>((r) => (real ? real.close(() => r()) : r())); real = undefined; });
+  /** hang이면 응답하지 않는다(취소 테스트용). */
+  async function realSystem(hang = false): Promise<string> {
+    real = createServer((req, res) => {
+      if (hang) return;
+      const ok = req.method === "GET" && /^\/pets\/[^/?]+/.test(req.url!);
+      res.writeHead(ok ? 200 : 404, { "content-type": "application/json" });
+      res.end(JSON.stringify(ok ? { id: 1, name: "Real" } : {}));
+    });
+    await new Promise<void>((r) => real!.listen(0, "127.0.0.1", () => r()));
+    return `http://127.0.0.1:${(real!.address() as AddressInfo).port}`;
+  }
+  async function prepare(c: ReturnType<typeof client>, target?: unknown) {
+    await c.post("/systems", { system: "petstore", origins: [PETSTORE] });
+    await c.post("/systems/petstore/analyze");
+    await c.post("/systems/petstore/selection", { ids: ["getPet"] });
+    if (target) {
+      await mkdir(path.join(root, ".specmock", "petstore"), { recursive: true });
+      await writeFile(path.join(root, ".specmock", "petstore", "target.json"), JSON.stringify(target));
+    }
+  }
+  const finished = async (c: ReturnType<typeof client>) => {
+    await vi.waitFor(async () => expect((await c.get("/jobs")).body.data.running).toHaveLength(0), { timeout: 10_000 });
+    return (await c.get("/jobs")).body.data.recent[0] as { kind: string; state: string; cancellable: boolean; result?: { result: { matched: string[] }; driftMarkdown: string } };
+  };
+
+  it("GET target: 없으면 exists false와 예시", async () => {
+    const c = client();
+    await prepare(c);
+    const r = await c.get("/systems/petstore/target");
+    expect(r.body).toEqual({ ok: true, data: { exists: false, example: expect.stringContaining("https://api.example.com/v2") } });
+  });
+
+  it("GET target: baseUrl만 싣고 headers·params·환경변수 이름은 싣지 않는다", async () => {
+    const c = client();
+    await prepare(c, { baseUrl: "https://real.example.com/v2/", headers: { Authorization: "Bearer ${UI_SECRET_TOKEN}" }, params: { petId: "777" } });
+    const r = await c.get("/systems/petstore/target");
+    expect(r.body.data).toMatchObject({ exists: true, baseUrl: "https://real.example.com/v2" });
+    const { example: _example, ...rest } = r.body.data;   // example은 고정 예시(Authorization 문구 포함)
+    const text = JSON.stringify(rest);
+    for (const x of ["Authorization", "UI_SECRET_TOKEN", "777"]) expect(text).not.toContain(x);
+  });
+
+  it("GET target: 형식 오류는 exists true + error(필드 이름)", async () => {
+    const c = client();
+    await prepare(c, { baseUrl: "https://x.example.com", header: {} });
+    expect((await c.get("/systems/petstore/target")).body.data).toMatchObject({ exists: true, error: expect.stringContaining("header") });
+  });
+
+  it("POST record → job kind record(취소 가능), 끝나면 결과와 drift 본문", async () => {
+    const c = client();
+    await prepare(c, { baseUrl: await realSystem() });
+    const r = await c.post("/systems/petstore/record", { allowMutating: false });
+    expect(r.status).toBe(202);
+    const j = await finished(c);
+    expect(j).toMatchObject({ kind: "record", state: "done", cancellable: true });
+    expect(j.result!.result.matched).toEqual(["getPet"]);
+    expect(j.result!.driftMarkdown).toContain("# petstore 실제 시스템 대조 (");
+    expect(await readdir(path.join(root, ".specmock", "petstore", "recorded"))).toEqual(["getPet.json"]);
+  });
+
+  it("record 진행 중 두 번째 POST는 409 busy, 취소하면 cancelled", async () => {
+    const c = client();
+    await prepare(c, { baseUrl: await realSystem(true), timeoutMs: 30_000 });
+    const first = await c.post("/systems/petstore/record");
+    const second = await c.post("/systems/petstore/record");
+    expect(second.status).toBe(409);
+    expect(second.body).toMatchObject({ ok: false, error: { code: "busy" }, jobId: first.body.data.jobId });
+    await c.post(`/jobs/${first.body.data.jobId}/cancel`);
+    expect((await finished(c)).state).toBe("cancelled");
+  });
+
+  it("GET /record는 405", async () => {
+    const c = client();
+    await prepare(c);
+    expect((await c.get("/systems/petstore/record")).status).toBe(405);
   });
 });
