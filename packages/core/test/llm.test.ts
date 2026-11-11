@@ -130,6 +130,13 @@ describe("ClaudeCodeAdapter onUsage", () => {
     expect(got[0]!.billing).toBe("api-key");
   });
 
+  it.each([["ANTHROPIC_AUTH_TOKEN", "tok"], ["CLAUDE_CODE_USE_BEDROCK", "1"], ["CLAUDE_CODE_USE_VERTEX", "1"]])("%s가 있으면 billing은 api-key", async (name, value) => {
+    const { got, onUsage } = collect();
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-usage"), env: { ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "", CLAUDE_CODE_USE_BEDROCK: "", CLAUDE_CODE_USE_VERTEX: "", [name]: value } });
+    await adapter.complete({ prompt: "x", schema, onUsage });
+    expect(got[0]!.billing).toBe("api-key");
+  });
+
   it("usage가 없는 봉투는 토큰 필드가 null이고 실패가 아니다", async () => {
     const { got, onUsage } = collect();
     const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude"), model: "sonnet" });
@@ -171,6 +178,26 @@ describe("ClaudeCodeAdapter onUsage", () => {
     expect(b.got).toHaveLength(1);
     expect(b.got[0]!.ok).toBe(false);
   }, 5_000);
+
+  it("실행할 수 없는 command(spawn 실패)도 ok:false · durationMs ≥ 0으로 기록한다", async () => {
+    const { got, onUsage } = collect();
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "no-such-claude") });
+    await expect(adapter.complete({ prompt: "x", schema, onUsage })).rejects.toThrow(/실행할 수 없습니다/);
+    expect(got).toHaveLength(1);
+    expect(got[0]!.ok).toBe(false);
+    expect(got[0]!.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("error는 첫 줄 200자 이내이고 stdout 발췌를 넣지 않는다(사용자에게 던지는 예외는 그대로)", async () => {
+    const a = collect();
+    await expect(new ClaudeCodeAdapter({ command: path.join(BIN, "claude-garbage") }).complete({ prompt: "x", schema, onUsage: a.onUsage })).rejects.toThrow(/this is not json/);
+    expect(a.got[0]!.error).toBe("claude 출력을 JSON으로 읽을 수 없습니다");
+    const b = collect();
+    await expect(new ClaudeCodeAdapter({ command: path.join(BIN, "claude-usage"), env: { USAGE_FAIL: "1", USAGE_FAIL_LONG: "1" } }).complete({ prompt: "x", schema, onUsage: b.onUsage })).rejects.toThrow(/boom/);
+    expect(b.got[0]!.error!.length).toBeLessThanOrEqual(200);
+    expect(b.got[0]!.error).not.toContain("\n");
+    expect(b.got[0]!.error).not.toContain("SECOND-LINE");
+  });
 
   it("onUsage가 던져도 결과를 잃지 않고 경고만 낸다", async () => {
     const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-usage") });

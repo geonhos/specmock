@@ -60,7 +60,6 @@ export class ClaudeCodeAdapter implements LlmAdapter {
     const models = Object.entries(env?.modelUsage ?? {});
     const weight = (m: ModelUsageEntry) => (m.inputTokens ?? 0) + (m.outputTokens ?? 0) + (m.cacheReadInputTokens ?? 0) + (m.cacheCreationInputTokens ?? 0);
     const top = models.sort((a, b) => weight(b[1]) - weight(a[1]))[0];
-    const key = { ...process.env, ...this.opts.env }.ANTHROPIC_API_KEY;
     const usage: LlmUsage = {
       at: start.toISOString(),
       model: top?.[0] ?? this.opts.model ?? null,
@@ -70,11 +69,11 @@ export class ClaudeCodeAdapter implements LlmAdapter {
       cacheCreationTokens: n(u?.cache_creation_input_tokens),
       costUsd: n(env?.total_cost_usd),
       costBasis: top?.[1].costBasis ?? null,
-      billing: key ? "api-key" : "subscription",
+      billing: detectsApiBilling({ ...process.env, ...this.opts.env }) ? "api-key" : "subscription",
       durationMs: Math.round(performance.now() - t0),
       apiDurationMs: n(env?.duration_api_ms),
       ok,
-      ...(ok ? {} : { error: maskSecrets(err instanceof Error ? err.message : String(err)) }),
+      ...(ok ? {} : { error: logLine(err instanceof ClaudeCallError ? err.logMessage : err instanceof Error ? err.message : String(err)) }),
     };
     try { req.onUsage!(usage); } catch (e) { process.stderr.write(`경고: LLM 사용량 기록 콜백이 실패했습니다: ${(e as Error).message}\n`); }
   }
@@ -110,15 +109,19 @@ export class ClaudeCodeAdapter implements LlmAdapter {
         if (code === 0) return resolve(out);
         // 실패해도 JSON 봉투를 내는 경우가 있으므로 메시지를 뽑아 본다.
         const message = tryParse(out)?.result;
-        if (code === null) return reject(new Error(`claude 종료 (signal ${signal}): ${err.trim() || out.trim().slice(0, 300)}`));
-        reject(new Error(`claude 종료 코드 ${code}: ${typeof message === "string" ? message : err.trim() || out.trim().slice(0, 300)}`));
+        const stderrLine = err.trim();
+        if (code === null) {
+          return reject(new ClaudeCallError(`claude 종료 (signal ${signal}): ${stderrLine || out.trim().slice(0, 300)}`, `claude 종료 (signal ${signal})${stderrLine ? `: ${stderrLine}` : ""}`));
+        }
+        const logDetail = typeof message === "string" ? message : stderrLine;
+        reject(new ClaudeCallError(`claude 종료 코드 ${code}: ${typeof message === "string" ? message : stderrLine || out.trim().slice(0, 300)}`, `claude 종료 코드 ${code}${logDetail ? `: ${logDetail}` : ""}`));
       });
       child.stdin.on("error", () => { /* 자식이 먼저 죽으면 EPIPE. close에서 처리된다. */ });
       child.stdin.end(req.prompt);
     }).finally(() => { if (ownCwd) return rm(cwd, { recursive: true, force: true }).catch(() => {}); });
 
     const envelope = tryParse(stdout);
-    if (!envelope) throw new Error(`claude 출력을 JSON으로 읽을 수 없습니다: ${stdout.slice(0, 300)}`);
+    if (!envelope) throw new ClaudeCallError(`claude 출력을 JSON으로 읽을 수 없습니다: ${stdout.slice(0, 300)}`, "claude 출력을 JSON으로 읽을 수 없습니다");
     if (envelope.is_error) throw new Error(`claude 오류: ${String(envelope.result ?? envelope.subtype)}`);
     if (envelope.structured_output === undefined) {
       // 구버전 CLI 호환: result 문자열이 JSON일 수 있다.
@@ -127,6 +130,21 @@ export class ClaudeCodeAdapter implements LlmAdapter {
     }
     return envelope.structured_output;
   }
+}
+
+/** jsonl `error`용 한 줄 요약: 첫 줄만, 200자 이내, 비밀 마스킹. */
+function logLine(text: string): string {
+  return maskSecrets(text.trim().split("\n")[0] ?? "").slice(0, 200);
+}
+
+/** 사용자에게 보이는 메시지와 별개로, 사용량 기록에 넣을 요약(stdout 발췌 없음)을 같이 싣는 오류. */
+class ClaudeCallError extends Error {
+  constructor(message: string, readonly logMessage: string) { super(message); }
+}
+
+/** 환경에서 API 과금 경로로 보이는 신호가 있는가(settings `apiKeyHelper`는 볼 수 없다). */
+function detectsApiBilling(env: NodeJS.ProcessEnv): boolean {
+  return Boolean(env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN || env.CLAUDE_CODE_USE_BEDROCK || env.CLAUDE_CODE_USE_VERTEX);
 }
 
 const abortError = () => new DOMException("작업이 취소되었습니다", "AbortError");

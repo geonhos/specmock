@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { appendFile, mkdir, open, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { LlmUsage } from "./adapter.js";
 
@@ -27,11 +27,26 @@ export interface UsageSummary {
   durationMs: number;
 }
 
+async function endsWithPartialLine(file: string): Promise<boolean> {
+  let fh;
+  try { fh = await open(file, "r"); } catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") return false; throw e; }
+  try {
+    const { size } = await fh.stat();
+    if (size === 0) return false;
+    const buf = Buffer.alloc(1);
+    await fh.read(buf, 0, 1, size - 1);
+    return buf[0] !== 0x0a;
+  } finally { await fh.close(); }
+}
+
 /** 한 줄을 덧붙인다. 잠금은 없다(호출은 순차). 실패해도 던지지 않고 경고만 낸다. */
 export async function appendUsage(systemDir: string, record: UsageRecord): Promise<void> {
   try {
     await mkdir(systemDir, { recursive: true });
-    await appendFile(path.join(systemDir, USAGE_FILE), JSON.stringify(record) + "\n");
+    const file = path.join(systemDir, USAGE_FILE);
+    // 이전 쓰기가 줄 중간에서 끊겼으면 새 레코드가 그 줄에 붙지 않도록 개행부터 쓴다.
+    const lead = (await endsWithPartialLine(file)) ? "\n" : "";
+    await appendFile(file, lead + JSON.stringify(record) + "\n");
   } catch (e) {
     process.stderr.write(`경고: LLM 사용량을 ${USAGE_FILE}에 기록하지 못했습니다: ${(e as Error).message}\n`);
   }

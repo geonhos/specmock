@@ -3,6 +3,11 @@
 set -euo pipefail
 cat > /dev/null
 if [ -n "${USAGE_FAIL:-}" ]; then
+  if [ -n "${USAGE_FAIL_LONG:-}" ]; then
+    long=$(printf 'x%.0s' $(seq 1 300))
+    printf '{"type":"result","subtype":"error_during_execution","is_error":true,"result":"boom %s\\nSECOND-LINE","usage":{"input_tokens":5,"output_tokens":1}}\n' "$long"
+    exit 0
+  fi
   printf '{"type":"result","subtype":"error_during_execution","is_error":true,"result":"boom Bearer abcdefghijklmnopqrstuvwxyz0123456789","duration_ms":50,"duration_api_ms":40,"total_cost_usd":0.001,"usage":{"input_tokens":5,"output_tokens":1}}\n'
   exit 0
 fi

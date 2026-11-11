@@ -192,6 +192,16 @@ describe("Phase 1B CLI", () => {
     expect(j.catalog.features).toBe(1);
   });
 
+  it("run --llm claude-code: 합계 줄과 --json usage가 나온다", async () => {
+    const env = await withClaude("claude");   // usage 없는 스텁: 토큰은 0, 호출 수는 센다
+    const { stdout, stderr } = await run(TSX, [CLI, "run", "pets", PETS_MD, "--llm", "claude-code", "--select", "all", "--no-verify", "--json"], env);
+    expect(stderr).toContain("LLM 호출 1회(실패 0) · 입력 0 · ");
+    expect(JSON.parse(stdout).usage).toMatchObject({ calls: 1, failed: 0, inputTokens: 0, billing: "subscription" });
+    const ts = await specmock("run", "petstore", PETSTORE, "--select", "getPet", "--no-verify", "--json");
+    expect(JSON.parse(ts.stdout).usage).toBeNull();
+    expect(ts.stderr).not.toContain("LLM 호출");
+  });
+
   it("run with a failing claude exits 1 with the all-failed message", async () => {
     await expect(run(TSX, [CLI, "run", "pets", PETS_MD, "--llm", "claude-code", "--no-verify"], await withClaude("claude-fail"))).rejects.toMatchObject({
       code: 1,
@@ -422,7 +432,7 @@ describe("LLM 사용량 기록", () => {
     expect(rows[0]).toMatchObject({ stage: "extract", ok: true, model: "claude-sonnet-4-5", inputTokens: 1842, costUsd: 0.0219, billing: "subscription" });
     expect(rows[0].detail).toMatch(/^chunk 000 · /);
     expect(rows[0]).not.toHaveProperty("prompt");
-    expect(stderr).toContain("LLM 호출 1회(실패 0) · 입력 1,842 · 출력 611 · 캐시 읽기 12 · API 환산 $0.02 (구독: 실제 청구 아님) · ");
+    expect(stderr).toContain("LLM 호출 1회(실패 0) · 입력 1,842 · 출력 611 · 캐시 읽기 12 · API 환산 $0.02 (API 키 미감지 → 구독으로 간주, 실제 청구 아님) · ");
     const j = JSON.parse(stdout);
     expect(j.usage).toEqual({
       calls: 1, failed: 0, inputTokens: 1842, outputTokens: 611, cacheReadTokens: 12, cacheCreationTokens: 3977,
@@ -441,11 +451,11 @@ describe("LLM 사용량 기록", () => {
     expect(third.stderr).toContain("LLM 호출 1회");   // 파일에는 2줄이 쌓였지만 이번 실행분만 센다
   });
 
-  it("api-key로 과금되면 괄호가 (API 키 청구)", async () => {
+  it("api-key가 감지되면 괄호가 (API 키 감지 → 실제 청구)", async () => {
     await specmock("ingest", "pets", PETS_MD);
     const env = await withClaude("claude-usage", { ANTHROPIC_API_KEY: "sk-test" });
     const { stderr } = await run(TSX, [CLI, "analyze", "pets", "--llm", "claude-code"], env);
-    expect(stderr).toContain("(API 키 청구)");
+    expect(stderr).toContain("(API 키 감지 → 실제 청구)");
   });
 
   it("세션 모드 · merge · TS 생성은 usage null, 합계 줄 없음", async () => {

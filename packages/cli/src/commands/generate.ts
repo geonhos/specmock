@@ -1,4 +1,4 @@
-import { assertLanguage, finalizeGeneration, generate, prepareGeneration } from "@specmock/core";
+import { assertLanguage, DEFAULT_LLM_MAX_ATTEMPTS, finalizeGeneration, generate, prepareGeneration } from "@specmock/core";
 import type { Command } from "commander";
 import { collectUsage, fail, formatGenerate, formatUsageLine, parseAttempts, printJsonOr, SYSTEM_ARG_HELP, usageJson, workspaceFrom } from "../context.js";
 
@@ -67,7 +67,7 @@ export function registerGenerate(program: Command): void {
       })).finally(async () => {
         // 시도를 다 써서 실패해도 합계는 보인다. TS 생성 · 재사용(skipped)은 호출이 0회라 줄이 없다.
         usage = await collectUsage(ws, system, startedAt);
-        if (usage) process.stderr.write(formatUsageLine(usage, { used: usage.calls, max: maxAttempts ?? 3 }) + "\n");
+        if (usage) process.stderr.write(formatUsageLine(usage, { used: usage.calls, max: maxAttempts ?? DEFAULT_LLM_MAX_ATTEMPTS }) + "\n");
       });
       printJsonOr(opts.json, { ...report, usage: usageJson(usage) }, () =>
         `${formatGenerate(report)}\n실행: ${report.launch}\n검증: specmock verify ${system}`,

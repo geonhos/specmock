@@ -21,6 +21,8 @@ const TEMPLATES = fileURLToPath(new URL("../../templates/", import.meta.url));
 
 /** 마지막 실패 시도를 남기는 outDir 안 디렉터리. 다음 generate가 지운다. */
 export const ATTEMPT_DIR = ".specmock-attempt";
+/** `maxAttempts`를 주지 않았을 때의 LLM 생성 시도 수. */
+export const DEFAULT_LLM_MAX_ATTEMPTS = 3;
 
 export interface LlmGeneratorOptions {
   maxAttempts?: number;
@@ -76,7 +78,7 @@ export class LlmGenerator implements LanguageGenerator {
   constructor(private readonly profile: LanguageProfile, private readonly adapter: LlmAdapter, opts: LlmGeneratorOptions = {}) {
     this.language = profile.language;
     assertMaxAttempts(opts.maxAttempts);
-    this.maxAttempts = opts.maxAttempts ?? 3;
+    this.maxAttempts = opts.maxAttempts ?? DEFAULT_LLM_MAX_ATTEMPTS;
     this.timeoutMs = opts.timeoutMs ?? 600_000;
     this.platform = opts.platform ?? process.platform;
   }

@@ -25,7 +25,7 @@ export { readLock, launchCommand, launchHint, type Lock } from "./generate/lock.
 export type { GenerateReport, GenerateProgress, LanguageOutput } from "./generate/generator.js";
 export { prepareGeneration, finalizeGeneration, readSessionMarker, REQUEST_FILE, SESSION_MARKER, type PrepareGenerationOptions, type PrepareGenerationResult, type FinalizeResult, type FinalizeReason } from "./generate/session.js";
 export { SUPPORTED_LANGUAGES, assertLanguage } from "./generate/profiles/index.js";
-export { LlmGenerator, ATTEMPT_DIR, type LlmGeneratorOptions } from "./generate/llm.js";
+export { LlmGenerator, ATTEMPT_DIR, DEFAULT_LLM_MAX_ATTEMPTS, type LlmGeneratorOptions } from "./generate/llm.js";
 export { GenerationFailedError, EnvironmentError, LlmForbiddenError } from "./generate/errors.js";
 export { forbiddenLlmAdapter } from "./llm/forbidden.js";
 export { appendUsage, createUsageSink, readUsage, readUsageSince, summarizeUsage, USAGE_FILE, type UsageRecord, type UsageSummary } from "./llm/usageLog.js";

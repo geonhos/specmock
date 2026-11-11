@@ -111,7 +111,7 @@ function formatDuration(ms: number): string {
 
 /**
  * stderr 합계 한 줄. generate는 `attempts`를 주면 `(실패 n)` 대신 `(시도 n/m)`.
- * 구독이면 비용은 API 정가 환산이라 실제 청구가 아님을 괄호로 밝힌다.
+ * 비용은 API 정가 환산이다. 환경의 API 키 유무로 추정한 과금 방식을 괄호로 밝힌다(settings `apiKeyHelper`는 볼 수 없어 단정하지 않는다).
  */
 export function formatUsageLine(u: UsageSummary, attempts?: { used: number; max: number }): string {
   const parts = [
@@ -120,7 +120,7 @@ export function formatUsageLine(u: UsageSummary, attempts?: { used: number; max:
     `출력 ${nf.format(u.outputTokens)}`,
     `캐시 읽기 ${nf.format(u.cacheReadTokens)}`,
   ];
-  if (u.costUsd !== null) parts.push(`API 환산 $${u.costUsd.toFixed(2)} (${u.billing === "api-key" ? "API 키 청구" : "구독: 실제 청구 아님"})`);
+  if (u.costUsd !== null) parts.push(`API 환산 $${u.costUsd.toFixed(2)} (${u.billing === "api-key" ? "API 키 감지 → 실제 청구" : "API 키 미감지 → 구독으로 간주, 실제 청구 아님"})`);
   parts.push(formatDuration(u.durationMs));
   return parts.join(" · ");
 }

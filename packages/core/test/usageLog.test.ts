@@ -33,6 +33,12 @@ describe("usageLog", () => {
     expect((await readUsage(dir)).map((r) => r.detail)).toEqual(["chunk 001 · x", "z"]);
   });
 
+  it("개행 없는 부분 줄 뒤에 append해도 새 레코드를 읽는다", async () => {
+    await writeFile(path.join(dir, USAGE_FILE), `${JSON.stringify(rec({ detail: "a" }))}\n{"at":"2026-11-1`);
+    await appendUsage(dir, rec({ detail: "b" }));
+    expect((await readUsage(dir)).map((r) => r.detail)).toEqual(["a", "b"]);
+  });
+
   it("기록 실패는 던지지 않고 경고만 낸다", async () => {
     const blocker = path.join(dir, "file");
     await writeFile(blocker, "x");
