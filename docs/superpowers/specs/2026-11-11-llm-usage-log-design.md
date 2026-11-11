@@ -93,3 +93,15 @@ CLI analyze / generate 끝: summarizeUsage(이번 실행분) → stderr 한 줄,
 ## 8. 구현 중 변경
 
 (구현자 · 리뷰어가 기록)
+
+| 설계 | 구현에서 바꾼 것 | 이유 |
+|---|---|---|
+| 성공 호출 중심 | 시간 초과 · spawn 실패 · 중단도 `onUsage`로 `ok: false` 기록 | 실패한 시도도 시간과 토큰을 쓴다. 점검 근거에서 빠지면 안 됨 |
+| 어댑터가 직접 append | 호출자가 `createUsageSink(systemDir)`(`record`/`flush`)로 기록 | 콜백은 동기, append는 비동기. 순서를 지키며 종료 전에 `flush`로 기다리려고 |
+| generate 합계 줄 | `(시도 <호출 수>/<max ?? 3>)`로 표기 | 실패 횟수보다 시도 횟수가 generate의 재시도 맥락에 맞음 |
+| `--json` `usage`는 합계 전체 | `ok` 필드 제외(`calls` · `failed`가 대신함) | 중복 |
+| 호출 0회면 `usage: null` | prepare 모드 JSON도 `usage: null` | 필드 유무가 모드마다 달라지지 않게 |
+| `appendUsage` 오류 처리는 호출자 | `appendUsage`가 스스로 경고하고 던지지 않음 | 기록 실패가 본 작업을 막으면 안 됨 |
+| 비밀값 마스킹 | `maskSecrets` 패턴에 `sk-ant-…`가 없어 테스트는 `Bearer` 토큰으로 확인 | 기존 패턴을 넓히는 것은 이 작업 범위 밖 |
+| (미정) `run` 명령 | `runPipeline` 경로는 기록만 되고 합계 줄 · `--json` `usage`는 없음 | 설계 §4가 analyze · generate만 지정. 필요하면 후속 |
+| (미정) Web UI | 코어를 거쳐 기록되지만 화면 표시 없음 | 범위 밖 |

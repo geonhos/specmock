@@ -27,7 +27,7 @@
 
 | 층 | 무엇 | 어디서 얻나 |
 |---|---|---|
-| 제품(specmock) | specmock이 `claude`를 부른 호출마다 입력 · 출력 · 캐시 토큰, API 환산 비용, 소요 시간, 단계(analyze 청크 / generate Java 시도 n) | `.specmock/<system>/llm-usage.jsonl` + CLI 합계 줄(선행 구현) |
+| 제품(specmock) | specmock이 `claude`를 부른 호출마다 입력 · 출력 · 캐시 토큰, API 환산 비용, 소요 시간, 단계(analyze 청크 / generate Java 시도 n) | `.specmock/<system>/llm-usage.jsonl` + `analyze` · `generate`가 끝에 stderr로 내는 합계 한 줄(`--json`은 `usage` 필드). 구현 완료 |
 | 개발(harness) | 이 점검으로 생긴 개선 작업에 쓴 analyst · implementer · reviewer 비용 · 시간 | `harness metrics --json --since 2026-11-11`(비용 · 시간), `.harness/log/*.jsonl` result 줄(토큰) |
 
 벽시계 시간은 각 명령의 시작 · 종료를 기록한다. 세션 모드 · MCP 경로의 토큰은 사용자 세션이 쓰므로 "미측정"으로 적는다. 비용은 `costBasis: list`의 **API 정가 환산**이며 구독 사용 시 실제 청구액이 아니다.

@@ -119,6 +119,7 @@ flowchart LR
 | `chunks/NNN.md` | analyze (prepare) | LLM 어댑터 / 세션의 Claude | 헤딩 기준 청크(최대 6,000자, 겹침 200자). 호출 수 = 청크 수 |
 | `extracted/NNN.json` | LLM 어댑터 / 세션의 Claude | analyze (merge) | 청크별 추출 결과. 재현의 기준이라 남겨 둔다 |
 | `extracted/manifest.json` | analyze (extract) | analyze (extract) | 청크 번호별 추출 당시 본문 해시. 본문이 바뀐 청크만 다시 추출 |
+| `llm-usage.jsonl` | LLM 어댑터 호출자(analyze extract, LLM generate) | 사람 · CLI 합계 | `claude` 호출마다 한 줄: 토큰 · API 환산 비용 · 시간 · 성공 여부. 프롬프트 · 응답 본문 없음. 세션 모드는 기록 없음 |
 | `catalog.json` | analyze | list / select | 모든 기능. `provenance`, `confidence`, `hasExample`, `evidence`, `notes` |
 | `catalog-diff.json` | analyze | select | 이전 카탈로그와 id 기준으로 비교한 추가·삭제 목록(내용 변경은 감지하지 않음) |
 | `selection.json` | select | select / generate | 선택 표현식, 해석 결과, 선택 시점의 `catalogIds`. 재현과 추가 선택의 기준 |
