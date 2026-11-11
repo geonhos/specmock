@@ -77,6 +77,9 @@
 | 15 | analyze | 본문 청크가 큰 페이지의 body 속성이 적게 추출됨: `payment_intents.create` 4개(create 페이지 35,126자, Stripe 실제 파라미터는 수십 개: 추정), `confirm.create` 2개, `customers.update` 3개(1차 중복 `create3`는 19개였고 PR #12 병합 후 3개 쪽이 남음). create의 required 없음(문서상 `amount` · `currency` 필수) | 추정: 청크 분할로 파라미터 표 일부만 해당 청크에 들어감, 병합이 속성 수가 더 많은 쪽을 우선하지 않음. 미확인(청크 경계 · 병합 선택 규칙 확인 필요) | 청크 분할 지점 확인, 병합 시 같은 기능의 body 속성은 합집합 | 중 | 수정(PR 대기) |
 | 16 | generate(런타임) | POST 엔드포인트에 body를 안 보내면 400: `POST /v1/payment_intents/pi_123/confirm` · `…/cancel`을 body 없이 호출하면 `must have required property 'body'`. Stripe는 body 없이 호출 가능 | 생성 스키마가 POST body 객체가 있으면 최상위 `required:["body"]`로 둠(`mock/stripe/src/routes/PaymentIntents.ts` `schema_confirm_create`, `…_capture_create`, `…_increment_authorization_create`). body 속성이 모두 선택이어도 동일 | body의 `required`가 비어 있고 속성이 모두 선택이면 최상위 `required`에서 `body` 제외 | 소 | 수정(PR 대기) |
 | 17 | generate(런타임) | `GET /v1/payment_intents/pi_123`이 요청 id와 다른 고정 샘플 id(`pi_3MtwBwLkdIwHu7ix…`)를 돌려줌, 같은 이유로 confirm은 다른 샘플 id | 고정 fixture 응답(설계대로). 경로 id 반영 없음 | 경로 변수와 같은 이름 속성이 응답에 있으면 치환하는 옵션 검토 | 소 | 기록 |
+| 18 | analyze(merge) | `unionBodies`가 1위 body에 `properties`가 없으면 합집합을 건너뛰고(그 body 그대로), 중첩 object는 얕게 합침(속성 이름만 합치고 하위는 한쪽 것) | `merge.ts` `unionBodies`가 최상위 속성만 합침 | 1위가 properties 없으면 다음 object body로 합집합, 중첩은 재귀 합집합 | 소 | 기록 |
+| 19 | analyze(merge) | required 합집합은 한 조각의 오표기(다른 청크에서 선택인 속성을 필수로 추출)만으로 body 전체가 필수가 될 수 있음 | 합집합이 조각 하나의 `required`도 그대로 포함 | 과반 조각이 필수로 본 이름만 필수로 하거나 신뢰도 가중 | 소 | 기록 |
+| 20 | analyze(openapi) | OpenAPI `requestBody.required`가 카탈로그에 기록되지 않음: body가 `required: true`여도 object·속성 required 규칙으로만 필수 판정 | `openapi.ts:98-100`이 `requestBody.required`를 읽지 않음 | `Feature.request`에 body 필수 여부 필드 추가(스키마 변경 필요) | 중 | 기록 |
 
 ## 5. 개선 과제 (우선순위)
 
