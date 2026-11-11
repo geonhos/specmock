@@ -440,4 +440,27 @@ describe("merge", () => {
     const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
     expect(catalog.features[0].request.body).toEqual({ type: "array", items: { type: "string" } });
   });
+  it("unifies singular, plural and spaced group spellings of doc-extracted groups, keeping sub-resource groups apart", async () => {
+    await writeExtracted([
+      mk({ method: "GET", path: "/v1/payment_intents", group: "Payment Intents" }),
+      mk({ method: "POST", path: "/v1/payment_intents", group: "PaymentIntent" }),
+      mk({ method: "GET", path: "/v1/payment_intents/{id}", group: "PaymentIntents" }),
+      mk({ method: "DELETE", path: "/v1/payment_intents/{id}", group: "PaymentIntent" }),
+      mk({ method: "GET", path: "/v1/payment_intents/{id}/amount_details_line_items", group: "PaymentIntent LineItems" }),
+    ]);
+    await merge(ws, "pets");
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    const groups = catalog.features.map((f) => f.group);
+    expect(groups.filter((g) => g === "PaymentIntent")).toHaveLength(4); // 최다 철자
+    expect(groups.filter((g) => g === "PaymentIntent LineItems")).toHaveLength(1);
+  });
+
+  it("does not loosen openapi tags: pet and pets stay distinct", async () => {
+    const op = (id: string, tag: string) => ({ operationId: id, tags: [tag], responses: { "200": { description: "ok" } } });
+    const catalog = await mergeWithSpec(
+      { "/pet": { get: op("listPet", "pet") }, "/pets": { get: op("listPets", "pets") } },
+      [],
+    );
+    expect(catalog.features.map((f) => f.group).sort()).toEqual(["pet", "pets"]);
+  });
 });

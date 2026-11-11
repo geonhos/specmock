@@ -377,36 +377,51 @@ export async function merge(ws: Workspace, system: string): Promise<MergeResult>
     }
   }
 
-  // group은 대소문자를 무시하고 묶어 대표 철자 하나로 통일한다. OpenAPI 태그 철자가 있으면 그것이 대표
-  // (스펙 원문이라 문서 추출보다 권위가 높고, 문서를 추가해도 OpenAPI 기능의 group이 바뀌지 않는다).
-  // 없으면 가장 많이 나온 철자, 동률이면 먼저 나온 것. 경로에서 파생한 group도 같은 규칙으로 묶는다.
-  const spellings = new Map<string, Map<string, number>>();
+  // group 철자를 대표 하나로 통일한다. OpenAPI 태그 철자가 있으면 그것이 대표(스펙 원문이라 문서 추출보다 권위가 높고,
+  // 문서를 추가해도 OpenAPI 기능의 group이 바뀌지 않는다). OpenAPI 태그끼리는 대소문자만 무시해 묶는다(`pet`과 `pets`는 다른 태그).
+  // 문서 추출 group은 느슨한 키(소문자, 공백·`_` 제거, 끝 `s` 하나 제거)로 묶어 `Payment Intents`·`PaymentIntent`·`PaymentIntents`를 하나로 본다.
+  // 대표는 가장 많이 나온 철자, 동률이면 먼저 나온 것. 하위 리소스(`PaymentIntent LineItems`)는 키가 달라 따로 남는다.
+  // 경로에서 파생한 group은 문서 쪽과 같은 규칙.
+  const looseKey = (g: string): string => g.toLowerCase().replace(/[\s_]+/g, "").replace(/s$/, "");
   const specSpellings = new Map<string, Map<string, number>>();
-  const countSpelling = (raw: string, into: Map<string, Map<string, number>> = spellings): void => {
+  const docSpellings = new Map<string, Map<string, number>>();
+  const countSpelling = (raw: string, into: Map<string, Map<string, number>>, key: (g: string) => string): void => {
     const g = raw.trim();
     if (!g) return;
-    const m = into.get(g.toLowerCase()) ?? new Map<string, number>();
+    const m = into.get(key(g)) ?? new Map<string, number>();
     m.set(g, (m.get(g) ?? 0) + 1);
-    into.set(g.toLowerCase(), m);
+    into.set(key(g), m);
   };
-  for (const f of features) {
-    countSpelling(f.group);
-    countSpelling(f.group, specSpellings);
-  }
+  const lowerKey = (g: string): string => g.toLowerCase();
+  for (const f of features) countSpelling(f.group, specSpellings, lowerKey);
   for (const key of [...buckets.keys()]) {
     const bucket = buckets.get(key)!;
-    for (const { ep } of bucket.items) countSpelling(ep.group);
-    if (!bucket.items.some((i) => i.ep.group.trim())) countSpelling(deriveGroup({ path: bucket.path }));
+    for (const { ep } of bucket.items) countSpelling(ep.group, docSpellings, looseKey);
+    if (!bucket.items.some((i) => i.ep.group.trim())) countSpelling(deriveGroup({ path: bucket.path }), docSpellings, looseKey);
   }
-  const canonical = new Map<string, string>();
-  for (const [lower, all] of spellings) {
-    const m = specSpellings.get(lower) ?? all;
+  const mostFrequent = (m: Map<string, number>): string => {
     let best = "";
     let bestN = 0;
     for (const [g, n] of m) if (n > bestN) [best, bestN] = [g, n];
-    canonical.set(lower, best);
+    return best;
+  };
+  const specCanonical = new Map([...specSpellings].map(([k, m]) => [k, mostFrequent(m)] as const));
+  const docCanonical = new Map([...docSpellings].map(([k, m]) => [k, mostFrequent(m)] as const));
+  // 문서 group이 OpenAPI 태그와 느슨한 키로 정확히 하나만 겹치면 그 태그 철자를 쓴다.
+  const specByLoose = new Map<string, Set<string>>();
+  for (const rep of specCanonical.values()) {
+    const set = specByLoose.get(looseKey(rep)) ?? new Set<string>();
+    set.add(rep);
+    specByLoose.set(looseKey(rep), set);
   }
-  const groupOf = (g: string): string => canonical.get(g.trim().toLowerCase()) ?? g;
+  const groupOf = (g: string): string => {
+    const t = g.trim();
+    const exact = specCanonical.get(lowerKey(t));
+    if (exact) return exact;
+    const loose = specByLoose.get(looseKey(t));
+    if (loose?.size === 1) return [...loose][0];
+    return docCanonical.get(looseKey(t)) ?? g;
+  };
   for (const f of features) f.group = groupOf(f.group);
   const siblings = methodsByShape(
     [...features, ...buckets.values()].map((e) => ({ method: e.method, path: normalizePath(e.path) ?? e.path })),
