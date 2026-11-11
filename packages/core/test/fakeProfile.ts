@@ -52,7 +52,9 @@ const server = createServer(async (req, res) => {
     const raw = Buffer.concat(chunks).toString("utf8");
     if (r.hasBody) {
       let parsed = null;
-      try { parsed = raw ? JSON.parse(raw) : null; } catch { parsed = null; }
+      const form = (req.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase() === "application/x-www-form-urlencoded";
+      // 폼 본문은 평면 키만 읽는 최소 구현(대괄호 중첩은 생성기 테스트가 따로 본다).
+      try { parsed = !raw ? null : form ? Object.fromEntries(new URLSearchParams(raw)) : JSON.parse(raw); } catch { parsed = null; }
       if (parsed === null || typeof parsed !== "object") return send(res, 400, { error: "validation_failed", details: ["body is required"] });
     }
     if (r.status === 204 || r.status === 205) return send(res, r.status);

@@ -183,11 +183,21 @@ describe("TsHonoGenerator", () => {
     const spec = await ws.read("petstore", "mockspec.json", MockSpecSchema);
     const output = await new TsHonoGenerator().generate({ spec, outDir: out, existing: null });
     expect(output.files.map((f) => f.path)).toEqual([
-      "package.json", "tsconfig.json", "README.md", "src/server.ts", "src/notMocked.ts", "src/fixtures.ts", "src/validate.ts", "src/routes/pets.ts",
+      "package.json", "tsconfig.json", "README.md", "src/server.ts", "src/notMocked.ts", "src/fixtures.ts", "src/validate.ts", "src/form.ts", "src/routes/pets.ts",
     ]);
     expect(output.start).toEqual({ command: "npx", args: ["tsx", "src/server.ts"] });
     expect(output.healthPath).toBe("/__specmock/health");
     expect(output.prune).toEqual([{ dir: "src/routes", ext: ".ts" }]);
     expect(await exists(out)).toBe(false);
+  });
+  it("body 있는 그룹 파일은 readBody를 import하고, GET만 있는 그룹 파일은 import하지 않는다", async () => {
+    const spec = await ws.read("petstore", "mockspec.json", MockSpecSchema);
+    const withBody = (await new TsHonoGenerator().generate({ spec, outDir: out, existing: null })).files.find((f) => f.path === "src/routes/pets.ts")!.content;
+    expect(withBody).toContain('import { readBody } from "../form.js";');
+    expect(withBody).toContain("await readBody(c)");
+    expect(withBody).not.toContain("c.req.json()");
+    const getOnly = { ...spec, features: spec.features.filter((f) => f.method === "GET") };
+    const plain = (await new TsHonoGenerator().generate({ spec: getOnly, outDir: out, existing: null })).files.find((f) => f.path === "src/routes/pets.ts")!.content;
+    expect(plain).not.toContain("readBody");
   });
 });

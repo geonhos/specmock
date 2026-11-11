@@ -1,12 +1,12 @@
 // pnpm llm:check [model]          (= pnpm build:core && tsx scripts/live-llm-check.ts)
 // pnpm llm:check [model] --java   Petstore를 Java로 생성하고 verify까지 돌린다(JDK 17 필요, 수 분 걸림)
 // 로컬 claude CLI가 구조화 출력을 제대로 내는지 확인한다. 구독 호출이 발생한다.
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildChunkPrompt, ClaudeCodeAdapter, extractionJsonSchema, ExtractionResultSchema, runPipeline, verifyFailed, Workspace } from "@specmock/core";
+import { buildChunkPrompt, ClaudeCodeAdapter, extractionJsonSchema, ExtractionResultSchema, runPipeline, summarizeUsage, readUsage, verifyFailed, Workspace } from "@specmock/core";
 
 const args = process.argv.slice(2);
 const java = args.includes("--java");
@@ -26,7 +26,9 @@ if (!java) {
 
 try {
   // java -version은 stderr로 나온다. 주 버전: "17.0.17", "1.8.0_392"(→8), "21".
-  const out = execFileSync("java", ["-version"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const res = spawnSync("java", ["-version"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  if (res.error || res.status !== 0) throw new Error("java -version 실패");
+  const out = `${res.stderr}${res.stdout}`;
   const m = /version "(\d+)(?:\.(\d+))?/.exec(out);
   const major = m ? (m[1] === "1" ? Number(m[2]) : Number(m[1])) : NaN;
   if (!(major >= 17)) {
@@ -56,6 +58,8 @@ try {
   const v = r.verify!;
   console.log(`contract: 통과 ${v.passed} / 실패 ${v.failed} / 전체 ${v.total}, runtime 실패 ${v.runtimeFailed}`);
   const ok = !verifyFailed(v) && g.language === "java";
+  const u = summarizeUsage(await readUsage(ws.dir("petstore")));
+  console.log(`LLM 호출 ${u.calls}회(실패 ${u.failed}) · 입력 ${u.inputTokens} · 출력 ${u.outputTokens} · 캐시 읽기 ${u.cacheReadTokens} · 캐시 생성 ${u.cacheCreationTokens} · API 환산 ${u.costUsd === null ? "-" : `$${u.costUsd.toFixed(2)}`} · ${Math.round(u.durationMs / 1000)}초`);
   if (ok) await rm(root, { recursive: true, force: true });
   console.log(ok ? `OK (${elapsed()}, model=${model ?? "default"})` : `FAIL: verify 실패. ${outDir}을 확인하세요.`);
   process.exit(ok ? 0 : 1);

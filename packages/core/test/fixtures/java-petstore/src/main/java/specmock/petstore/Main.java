@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import specmock.runtime.FormBody;
 
 /** specmock이 생성한 Petstore mock. fixtures/<기능 id>/<status>.json 을 요청마다 읽는다. */
 public final class Main {
@@ -68,7 +69,11 @@ public final class Main {
       if (!e.getValue().isEmpty()) query.set(e.getKey(), coerce(shape, "query", e.getKey(), e.getValue().get(0)));
     }
     if (r.hasBody() && !ctx.body().isBlank()) {
-      try { data.set("body", JSON.readTree(ctx.body())); } catch (Exception invalid) { /* 잘못된 JSON은 바디 없음으로 본다 */ }
+      if (FormBody.isForm(ctx.contentType())) {
+        data.set("body", FormBody.coerce(shape.path("properties").path("body"), FormBody.parse(ctx.body())));
+      } else {
+        try { data.set("body", JSON.readTree(ctx.body())); } catch (Exception invalid) { /* 잘못된 JSON은 바디 없음으로 본다 */ }
+      }
     }
     Set<ValidationMessage> errors = schema.validate(data);
     if (!errors.isEmpty()) {

@@ -105,4 +105,18 @@ describe("runContract", () => {
     setTimeout(() => ac.abort(), 30);
     await expect(runContract(t.url, contract(), { signal: ac.signal })).rejects.toThrow();
   });
+
+  it("계약 headers의 content-type이 form이면 본문을 form-encoded로 보낸다", async () => {
+    t = await startFakeTarget(() => ({ status: 200, body: { id: 1 } }));
+    await runContract(t.url, contract({ method: "POST", path: "/pets", body: { amount: 1000, meta: { k: "v" } }, headers: { "content-type": "application/x-www-form-urlencoded" } }));
+    expect(t.requests[0].headers["content-type"]).toBe("application/x-www-form-urlencoded");
+    expect(t.requests[0].body).toBe("amount=1000&meta%5Bk%5D=v");
+  });
+
+  it("content-type 지정이 없으면 기존처럼 JSON으로 보낸다", async () => {
+    t = await startFakeTarget(() => ({ status: 200, body: { id: 1 } }));
+    await runContract(t.url, contract({ method: "POST", path: "/pets", body: { amount: 1000 } }));
+    expect(t.requests[0].headers["content-type"]).toBe("application/json");
+    expect(t.requests[0].body).toBe('{"amount":1000}');
+  });
 });

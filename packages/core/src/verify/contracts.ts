@@ -2,6 +2,7 @@
 import type { Ajv } from "ajv";
 import type { Contract } from "../types.js";
 import { makeAjv } from "../util/ajv.js";
+import { encodeForm, isFormContentType } from "./formEncode.js";
 
 export interface ContractRunOptions {
   /** 모든 요청에 붙일 헤더. 같은 이름(대소문자 무시)의 contract 헤더보다 우선한다. */
@@ -72,10 +73,14 @@ export async function runContract(baseUrl: string, c: Contract, opts: ContractRu
   if (c.expect.schema) { try { validate = (opts.ajv ?? makeAjv()).compile(c.expect.schema); } catch (e) { errors.push(`schema: ${(e as Error).message}`); } }
   const signals = [opts.signal, opts.timeoutMs !== undefined ? AbortSignal.timeout(opts.timeoutMs) : undefined].filter((s): s is AbortSignal => s !== undefined);
   try {
+    const headers = mergeHeaders(c.request.body !== null ? { "content-type": "application/json" } : {}, c.request.headers, opts.headers ?? {});
+    const body = c.request.body === null ? undefined
+      : isFormContentType(headers) ? encodeForm(c.request.body)
+      : JSON.stringify(c.request.body);
     const res = await fetch(url, {
       method: c.request.method,
-      headers: mergeHeaders(c.request.body !== null ? { "content-type": "application/json" } : {}, c.request.headers, opts.headers ?? {}),
-      body: c.request.body !== null ? JSON.stringify(c.request.body) : undefined,
+      headers,
+      body,
       ...(signals.length > 0 ? { signal: signals.length === 1 ? signals[0] : AbortSignal.any(signals) } : {}),
     });
     run.status = res.status;

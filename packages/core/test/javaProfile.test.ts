@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { matchesAny } from "../src/generate/glob.js";
 import { readStaticFiles } from "../src/generate/llm.js";
+import { validateOutput } from "../src/generate/validateOutput.js";
 import { launchCommand } from "../src/generate/lock.js";
 import { SUPPORTED_LANGUAGES, getProfile } from "../src/generate/profiles/index.js";
 import { javaProfile } from "../src/generate/profiles/java.js";
@@ -15,9 +16,9 @@ const JAVA_TEMPLATES = path.resolve(here, "..", "templates", "java");
 const sha256 = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 
 describe("javaProfile", () => {
-  it("정적 파일은 mvnw(실행 권한)·mvnw.cmd·wrapper 설정 세 개이고 내용은 3.3.4 only-script 배포본과 같다", async () => {
+  it("정적 파일은 mvnw(실행 권한)·mvnw.cmd·wrapper 설정·FormBody.java 네 개이고 내용은 3.3.4 only-script 배포본과 같다", async () => {
     const files = await readStaticFiles(javaProfile);
-    expect(files.map((f) => f.path)).toEqual(["mvnw", "mvnw.cmd", ".mvn/wrapper/maven-wrapper.properties"]);
+    expect(files.map((f) => f.path)).toEqual(["mvnw", "mvnw.cmd", ".mvn/wrapper/maven-wrapper.properties", "src/main/java/specmock/runtime/FormBody.java"]);
     const byPath = Object.fromEntries(files.map((f) => [f.path, f]));
     expect(sha256(byPath["mvnw"]!.content!)).toBe("cae96cef89ebea3531221f4ae17c23cf8edf67d00eae8306d4186ae1bbed4d02");
     expect(sha256(byPath["mvnw.cmd"]!.content!)).toBe("46eedb8419bd14fe70d5bb2916d7b6f51806e51b39d5b76a42610384ca929c1c");
@@ -27,6 +28,21 @@ describe("javaProfile", () => {
     expect(byPath[".mvn/wrapper/maven-wrapper.properties"]!.content).toMatch(/apache-maven-3\.9\.16-bin\.zip/);
     // 템플릿 파일 자체도 실행 권한을 가진다(git이 보존).
     expect((await stat(path.join(JAVA_TEMPLATES, "mvnw"))).mode & 0o111).not.toBe(0);
+  });
+
+  it("FormBody.java는 정적 파일이면서 보호 경로이고 고정 패키지 specmock.runtime에 있다", async () => {
+    const p = "src/main/java/specmock/runtime/FormBody.java";
+    expect(javaProfile.staticFiles.map((f) => f.path)).toContain(p);
+    expect(matchesAny(javaProfile.protectedPaths, p)).toBe(true);
+    const files = await readStaticFiles(javaProfile);
+    expect(files.find((f) => f.path === p)!.content).toMatch(/^package specmock\.runtime;/);
+  });
+
+  it("validateOutput은 LLM 출력이 FormBody.java를 쓰는 것을 거부한다", () => {
+    const p = "src/main/java/specmock/runtime/FormBody.java";
+    const r = validateOutput({ files: [{ path: p, content: "x" }], notes: [] }, javaProfile);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.join("\n")).toContain(`보호 경로입니다: ${p}`);
   });
 
   it("install은 플랫폼별로 갈린다(Windows는 cmd.exe /c mvnw.cmd)", () => {
