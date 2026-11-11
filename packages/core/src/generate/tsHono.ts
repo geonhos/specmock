@@ -56,7 +56,7 @@ export function validationSchema(f: MockFeature) {
   };
 }
 
-export const TS_FIXED_FILES = ["package.json", "tsconfig.json", "README.md", "src/server.ts", "src/notMocked.ts", "src/fixtures.ts", "src/validate.ts"];
+export const TS_FIXED_FILES = ["package.json", "tsconfig.json", "README.md", "src/server.ts", "src/notMocked.ts", "src/fixtures.ts", "src/validate.ts", "src/form.ts"];
 
 /** 기존 eta 템플릿으로 TS(Hono) 파일을 렌더한다. 디스크에 쓰지 않는다. */
 export function renderTsHonoFiles(spec: MockSpec): { path: string; content: string }[] {
