@@ -1,6 +1,6 @@
 import { analyzeSpec, CatalogSchema, formatCatalog, type CatalogDiff } from "@specmock/core";
 import type { Command } from "commander";
-import { EXPR_HELP, fail, formatDiff, formatMerge, formatPrepared, printJsonOr, SYSTEM_ARG_HELP, workspaceFrom } from "../context.js";
+import { collectUsage, EXPR_HELP, fail, formatDiff, formatUsageLine, formatMerge, formatPrepared, printJsonOr, SYSTEM_ARG_HELP, usageJson, workspaceFrom } from "../context.js";
 
 interface Opts { llm?: string; model?: string; prepare: boolean; merge: boolean; refresh: boolean; json: boolean }
 
@@ -26,7 +26,7 @@ export function registerAnalyze(program: Command): void {
 
       const printCatalog = async (diff: CatalogDiff | undefined, extra: Record<string, unknown> = {}, summary?: string, incomplete = false) => {
         const catalog = await ws.read(system, "catalog.json", CatalogSchema);
-        printJsonOr(opts.json, { mode: "catalog", ...extra, diff, catalog }, () => {
+        printJsonOr(opts.json, { mode: "catalog", ...extra, diff, catalog, usage: usageJson(usage) }, () => {
           const head = [formatCatalog(catalog), diff ? formatDiff(diff) : "", summary ?? ""].filter((x) => x !== "");
           const next = incomplete
             ? [`다음: 실패/미추출 청크만 다시 추출 — specmock analyze ${system} --llm claude-code (claude 로그인·모델 확인). 또는 세션에서 extracted/NNN.json 을 채운 뒤 specmock analyze ${system} --merge`]
@@ -35,18 +35,24 @@ export function registerAnalyze(program: Command): void {
         });
       };
 
+      const startedAt = new Date();
+      let usage: Awaited<ReturnType<typeof collectUsage>> = null;
+      // 실패해도 이미 쓴 토큰은 보인다. 호출이 0회(세션 모드, OpenAPI, merge)면 줄을 내지 않는다.
       const r = await analyzeSpec(ws, system, {
         step: opts.merge ? "merge" : opts.prepare ? "prepare" : "auto",
         llm: llm as "session" | "claude-code",
         model: opts.model,
         refresh: opts.refresh,
         onEvent: (e) => process.stderr.write(e.message + "\n"),
+      }).finally(async () => {
+        usage = await collectUsage(ws, system, startedAt);
+        if (usage) process.stderr.write(formatUsageLine(usage) + "\n");
       });
       if (r.mode === "prepared") {
         // 세션 어댑터는 extract를 호출하지 않는다(Claude Code 세션이 직접 extracted/를 쓴다). 안내만 출력하고 끝낸다.
         return printJsonOr(
           opts.json,
-          { mode: "prepared", chunks: r.request.chunks.length, request: ws.file(system, "analyze-request.json"), chunkFiles: r.request.chunks.map((c) => ws.file(system, c.file)) },
+          { mode: "prepared", usage: null, chunks: r.request.chunks.length, request: ws.file(system, "analyze-request.json"), chunkFiles: r.request.chunks.map((c) => ws.file(system, c.file)) },
           () => formatPrepared(system, r.request, ws.dir(system)),
         );
       }

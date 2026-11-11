@@ -404,3 +404,73 @@ describe("Phase 3B CLI (record)", () => {
     expect((err as { stderr: string }).stderr).not.toContain("Bearer");
   });
 });
+
+describe("LLM 사용량 기록", () => {
+  const withClaude = async (script: string, extraEnv: Record<string, string> = {}) => {
+    const bin = path.join(dir, "fakebin");
+    await mkdir(bin, { recursive: true });
+    await symlink(path.join(FAKE_BIN, script), path.join(bin, "claude"));
+    return { cwd: dir, env: { ...process.env, NO_COLOR: "1", ANTHROPIC_API_KEY: "", PATH: `${bin}:${process.env.PATH}`, ...extraEnv } };
+  };
+
+  it("analyze --llm claude-code: 어댑터 → extract → jsonl → stderr 합계 · --json usage까지 지난다", async () => {
+    await specmock("ingest", "pets", PETS_MD);
+    const env = await withClaude("claude-usage");
+    const { stdout, stderr } = await run(TSX, [CLI, "analyze", "pets", "--llm", "claude-code", "--json"], env);
+    const rows = (await readFile(path.join(dir, ".specmock", "pets", "llm-usage.jsonl"), "utf8")).trim().split("\n").map((l) => JSON.parse(l));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ stage: "extract", ok: true, model: "claude-sonnet-4-5", inputTokens: 1842, costUsd: 0.0219, billing: "subscription" });
+    expect(rows[0].detail).toMatch(/^chunk 000 · /);
+    expect(rows[0]).not.toHaveProperty("prompt");
+    expect(stderr).toContain("LLM 호출 1회(실패 0) · 입력 1,842 · 출력 611 · 캐시 읽기 12 · API 환산 $0.02 (구독: 실제 청구 아님) · ");
+    const j = JSON.parse(stdout);
+    expect(j.usage).toEqual({
+      calls: 1, failed: 0, inputTokens: 1842, outputTokens: 611, cacheReadTokens: 12, cacheCreationTokens: 3977,
+      costUsd: 0.0219, costBasis: "list", billing: "subscription", durationMs: rows[0].durationMs,
+    });
+  });
+
+  it("합계는 이번 실행분만: 두 번째 실행(재추출 없음)은 줄이 없고 usage는 null", async () => {
+    await specmock("ingest", "pets", PETS_MD);
+    const env = await withClaude("claude-usage");
+    await run(TSX, [CLI, "analyze", "pets", "--llm", "claude-code"], env);
+    const second = await run(TSX, [CLI, "analyze", "pets", "--llm", "claude-code", "--json"], env);
+    expect(second.stderr).not.toContain("LLM 호출");
+    expect(JSON.parse(second.stdout).usage).toBeNull();
+    const third = await run(TSX, [CLI, "analyze", "pets", "--llm", "claude-code", "--refresh"], env);
+    expect(third.stderr).toContain("LLM 호출 1회");   // 파일에는 2줄이 쌓였지만 이번 실행분만 센다
+  });
+
+  it("api-key로 과금되면 괄호가 (API 키 청구)", async () => {
+    await specmock("ingest", "pets", PETS_MD);
+    const env = await withClaude("claude-usage", { ANTHROPIC_API_KEY: "sk-test" });
+    const { stderr } = await run(TSX, [CLI, "analyze", "pets", "--llm", "claude-code"], env);
+    expect(stderr).toContain("(API 키 청구)");
+  });
+
+  it("세션 모드 · merge · TS 생성은 usage null, 합계 줄 없음", async () => {
+    await specmock("ingest", "pets", PETS_MD);
+    const prepared = await specmock("analyze", "pets", "--prepare", "--json");
+    expect(JSON.parse(prepared.stdout).usage).toBeNull();
+    expect(prepared.stderr).not.toContain("LLM 호출");
+    await specmock("ingest", "petstore", PETSTORE);
+    const a = await specmock("analyze", "petstore", "--json");
+    expect(JSON.parse(a.stdout).usage).toBeNull();
+    await specmock("select", "petstore", "getPet");
+    const g = await specmock("generate", "petstore", "--json");
+    expect(JSON.parse(g.stdout).usage).toBeNull();
+    expect(g.stderr).not.toContain("LLM 호출");
+  });
+
+  it("generate --lang java가 실패해도 시도 합계가 stderr에 남는다", async () => {
+    await specmock("ingest", "petstore", PETSTORE);
+    await specmock("analyze", "petstore");
+    await specmock("select", "petstore", "getPet");
+    const env = await withClaude("claude-fail");
+    await expect(run(TSX, [CLI, "generate", "petstore", "--lang", "java", "--max-attempts", "2"], env)).rejects.toMatchObject({
+      code: 5, stderr: expect.stringContaining("LLM 호출 2회(시도 2/2) · 입력 0 · 출력 0 · 캐시 읽기 0 · "),
+    });
+    const rows = (await readFile(path.join(dir, ".specmock", "petstore", "llm-usage.jsonl"), "utf8")).trim().split("\n").map((l) => JSON.parse(l));
+    expect(rows.map((r) => [r.stage, r.detail, r.ok])).toEqual([["generate", "java attempt 1/2", false], ["generate", "java attempt 2/2", false]]);
+  });
+});

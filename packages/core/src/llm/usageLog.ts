@@ -53,6 +53,12 @@ export async function readUsage(systemDir: string): Promise<UsageRecord[]> {
   return out;
 }
 
+/** `at`이 startedAt 이후인 줄만. "이번 실행분"을 가르는 데 쓴다(파일에 run id는 넣지 않는다). */
+export async function readUsageSince(systemDir: string, startedAt: Date): Promise<UsageRecord[]> {
+  const from = startedAt.getTime();
+  return (await readUsage(systemDir)).filter((r) => Date.parse(r.at) >= from);
+}
+
 export function summarizeUsage(records: UsageRecord[]): UsageSummary {
   let costUsd: number | null = null;
   const s: UsageSummary = { calls: records.length, ok: 0, failed: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, costUsd: null, costBasis: null, billing: "subscription", durationMs: 0 };

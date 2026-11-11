@@ -1,5 +1,5 @@
 import path from "node:path";
-import { Workspace, type AnalyzeRequest, type CatalogDiff, type GenerateReport, type MergeResult, type VerifyResult } from "@specmock/core";
+import { Workspace, readUsageSince, summarizeUsage, type UsageSummary, type AnalyzeRequest, type CatalogDiff, type GenerateReport, type MergeResult, type VerifyResult } from "@specmock/core";
 import type { Command } from "commander";
 
 export const SYSTEM_ARG_HELP = "시스템 이름 (ingest 때 준 이름)";
@@ -78,5 +78,49 @@ export function formatMerge(r: MergeResult): string {
   if (r.rejected) parts.push(`거절 ${r.rejected}건 (catalog.json의 rejected 참고)`);
   if (r.missingChunks.length) parts.push(`미추출 청크 ${r.missingChunks.length}개`);
   if (r.invalidChunks.length) parts.push(`형식 오류 청크 ${r.invalidChunks.length}개`);
+  return parts.join(" · ");
+}
+
+/** `--json` 결과의 `usage` 필드. 호출이 0회(세션 모드, TS 생성, merge)면 null. */
+export type UsageJson = Omit<UsageSummary, "ok"> | null;
+
+/** startedAt 이후 llm-usage.jsonl 줄의 합계. 읽기 실패는 경고만 내고 null(본 작업을 멈추지 않는다). */
+export async function collectUsage(ws: Workspace, system: string, startedAt: Date): Promise<UsageSummary | null> {
+  try {
+    const rows = await readUsageSince(ws.dir(system), startedAt);
+    return rows.length ? summarizeUsage(rows) : null;
+  } catch (e) {
+    process.stderr.write(`경고: LLM 사용량을 읽지 못했습니다: ${(e as Error).message}\n`);
+    return null;
+  }
+}
+
+export function usageJson(u: UsageSummary | null): UsageJson {
+  if (!u) return null;
+  const { ok: _ok, ...rest } = u;
+  return rest;
+}
+
+const nf = new Intl.NumberFormat("en-US");
+
+function formatDuration(ms: number): string {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}초`;
+  return `${Math.floor(s / 60)}분 ${s % 60}초`;
+}
+
+/**
+ * stderr 합계 한 줄. generate는 `attempts`를 주면 `(실패 n)` 대신 `(시도 n/m)`.
+ * 구독이면 비용은 API 정가 환산이라 실제 청구가 아님을 괄호로 밝힌다.
+ */
+export function formatUsageLine(u: UsageSummary, attempts?: { used: number; max: number }): string {
+  const parts = [
+    `LLM 호출 ${u.calls}회(${attempts ? `시도 ${attempts.used}/${attempts.max}` : `실패 ${u.failed}`})`,
+    `입력 ${nf.format(u.inputTokens)}`,
+    `출력 ${nf.format(u.outputTokens)}`,
+    `캐시 읽기 ${nf.format(u.cacheReadTokens)}`,
+  ];
+  if (u.costUsd !== null) parts.push(`API 환산 $${u.costUsd.toFixed(2)} (${u.billing === "api-key" ? "API 키 청구" : "구독: 실제 청구 아님"})`);
+  parts.push(formatDuration(u.durationMs));
   return parts.join(" · ");
 }
