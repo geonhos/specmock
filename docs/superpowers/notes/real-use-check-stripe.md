@@ -44,6 +44,7 @@
 | 5 | 2026-11-11 14:19 | `generate stripe --lang ts` | 1s | LLM 없음 | - | 종료 0 | 21개 파일. `src/routes/`에 `Customers.ts` 하나만 생성됨(§4 4행) |
 | 6 | 2026-11-11 14:19 | `verify stripe` (npm install 포함) | 2s(설치 별도) | LLM 없음 | - | 종료 2 | contract 통과 2 / 실패 4 / 전체 6. get·list·search.list는 404, create3은 501. 원인은 §4 4행 |
 | 7 | 2026-11-11 14:19 | 생성 mock 기동 후 `curl` | 수 초 | LLM 없음 | - | 확인 | `GET /v1/customers` → 404 `unknown_path`(§4 4행). `POST /v1/customers -d "name=x"` → 400 `validation_failed`(body 필수). 같은 요청을 `-H content-type: application/json -d '{"name":"x"}'`로 보내면 200과 샘플 고객 객체(§4 8행) |
+| 8 | 2026-11-11 15:00 | 수정 후 재실행(`fix/catalog-merge-naming`): `analyze stripe --llm claude-code --json`(extracted 그대로) → `list` → `select stripe all` → `generate --lang ts --force` → `verify` → `curl` | analyze 15s(병합만) | LLM 호출 0회(청크 12개 모두 skipped, `usage: null`, `llm-usage.jsonl` 12줄 그대로) | $0 | 종료 0 | 기능 7→6개(create · get · update · delete · list · search.list, group `Customers` 하나). generate 20개 파일(21→20: `Customers.ts`·`customers.ts` 충돌 해소), verify 통과 6/6 종료 0. `GET /v1/customers` 200, `GET /v1/customers/cus_123` 200, `POST /v1/customers/cus_123` JSON body 200. 프롬프트 변경은 manifest가 청크 내용 해시만 쓰므로 재추출 없음 |
 
 ## 4. 걸린 지점 (증상 → 원인 → 개선안 → 크기)
 
