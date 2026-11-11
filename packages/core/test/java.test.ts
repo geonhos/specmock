@@ -62,7 +62,7 @@ describe.skipIf(!javaVersion)("Java 생성 (JDK·네트워크 필요)", () => {
     }
 
     const v = await verifyMock(ws, "petstore");
-    expect(v.result).toMatchObject({ total: 3, failed: 0, runtimeFailed: 0 });
+    expect(v.result).toMatchObject({ total: 4, failed: 0, runtimeFailed: 0 });
     expect(v.result.runtime.map((c) => [c.id, c.passed, c.skipped])).toEqual([["not_mocked", true, false], ["unknown_path", true, false]]);
   }, 900_000);
 

@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { analyze } from "../src/analyze/index.js";
 import { buildGenerateRequest, retrySection } from "../src/generate/request.js";
+import { javaProfile } from "../src/generate/profiles/java.js";
 import { ingest } from "../src/ingest/index.js";
 import { select } from "../src/select/index.js";
 import { MockSpecSchema, type MockSpec } from "../src/types.js";
@@ -37,6 +38,14 @@ describe("buildGenerateRequest", () => {
     expect(req.runtimeContract).toHaveLength(9);
     expect(req.outputSchema).toMatchObject({ type: "object", required: ["files"] });
     expect(req).toMatchObject({ system: "petstore", language: "fake", outDir: "/abs/mock/petstore", sourceGlobs: ["server.mjs", "lib/**"] });
+  });
+
+  it("form-encoded 규칙을 런타임 계약과 java 프로필 규칙에 담는다", async () => {
+    const req = await buildGenerateRequest({ spec, profile: fakeProfile, outDir: "/abs/mock/petstore", existing: null });
+    expect(req.runtimeContract[5]).toContain("application/x-www-form-urlencoded");
+    const java = await buildGenerateRequest({ spec, profile: javaProfile, outDir: "/abs/mock/petstore", existing: null });
+    expect(java.prompt).toContain("application/x-www-form-urlencoded");
+    expect(java.prompt).toContain("specmock.runtime.FormBody");
   });
 
   it("증분이면 7항목과 existingSources·userModified를 넣는다", async () => {
