@@ -277,7 +277,7 @@ sequenceDiagram
 |---|---|---|---|
 | `session` (기본) | Claude Code 스킬 | `analyze --prepare` 후 세션의 Claude가 청크를 읽고 `extracted/`를 직접 씀. `analyze --merge`로 합침 | 지원 |
 | `claude-code` | CLI 단독 | 청크마다 로컬 `claude --print --output-format json --json-schema …`를 자동 호출 | 지원 |
-| `api` | 배포용 | Anthropic API 키 | 3단계 |
+| `api` | 배포용 | Anthropic API 키 | 제외 |
 
 - **호출 수 = 청크 수.** 청크는 헤딩 기준으로 최대 6,000자(겹침 200자)입니다. `analyze --prepare`로 호출 전에 청크 수와 내용을 볼 수 있습니다.
 - **재현 가능.** 추출 결과는 `.specmock/<system>/extracted/`에 파일로 남습니다. 이 파일을 두고 `analyze --merge`를 다시 돌리면 LLM 없이 같은 카탈로그가 나옵니다. 일부 청크가 실패하면 다시 실행할 때 실패한 청크만 재시도하고, `--refresh`는 전부 다시 추출합니다.
@@ -398,4 +398,4 @@ pnpm test:e2e      # 브라우저 E2E(별도). 처음 한 번 `pnpm exec playwri
 | 2B | Web UI(`specmock ui`, MCP `open_ui`로 11개), 파일 잠금, Playwright E2E — 완료 |
 | 3A | 다른 언어 생성: `LanguageGenerator`·언어 프로필, Java(Maven + Javalin) LLM 생성과 검증 루프, 세션 모드, MCP `finalize_generation`(12개) — 완료 |
 | 3B | 녹화(record): `target.json`의 실제 시스템에 정상 요청을 보내 `recorded/`·`drift.md`, fixture 출처 `recorded`, MCP `record_responses`(13개) ← 현재 |
-| 3 | 녹화(record, 3B 완료), 다른 언어 생성(3A 완료), API 키 어댑터 |
+| 3 | 녹화(record, 3B 완료), 다른 언어 생성(3A 완료). API 키 어댑터는 제외 |

@@ -45,7 +45,7 @@ flowchart TB
     subgraph LLM["LLM 어댑터 (교체 가능)"]
         A1["세션 자신<br/>(스킬 모드)"]
         A2["claude --print<br/>(CLI · Web · 코드 생성도)"]
-        A3["API 키<br/>(3단계)"]
+        A3["API 키<br/>(제외)"]
     end
 
     CLI & SKILL & MCP & WEB --> CORE
@@ -230,11 +230,10 @@ gantt
     section 3단계
     다른 언어 생성(3A, Java)             :done, a3, after a2, 1
     녹화(record, 3B)                     :done, a4, after a3, 1
-    API 키                               :a5, after a4, 1
 ```
 
 | 단계 | 완료 기준 |
 |---|---|
 | 1 | OpenAPI와 웹 문서에서 TS mock 생성, contract test 통과, coverage.md 출력, 기능 추가 재생성 |
 | 2 | 2A: MCP로 Claude Code에서 도구 호출(셸 없이 끝까지). 2B: 브라우저 화면에서 같은 흐름 |
-| 3 | 3A(완료): 검증된 MockSpec으로 Java mock을 LLM이 생성하고 같은 verify 통과. 3B(완료): `record`가 실제 시스템 응답을 녹화해 fixture로 반영, drift.md. 이후: API 키 어댑터 |
+| 3 | 3A(완료): 검증된 MockSpec으로 Java mock을 LLM이 생성하고 같은 verify 통과. 3B(완료): `record`가 실제 시스템 응답을 녹화해 fixture로 반영, drift.md. API 키 어댑터(3C)는 제외 |
