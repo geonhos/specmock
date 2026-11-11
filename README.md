@@ -317,6 +317,8 @@ mock/<system>/
 └── fixtures/, contracts/, specmock.lock.json   # TS와 같다 (lock의 install·start가 빌드·기동 명령)
 ```
 
+생성된 mock은 `application/x-www-form-urlencoded` 요청 본문도 읽습니다(`a[b]=1`, `a[0]=x`, `a[]=x` 같은 대괄호 중첩 포함). 값은 스키마의 type에 맞춰 바꾼 뒤 JSON 본문과 같은 규칙으로 검증하므로 `amount=abc`처럼 맞지 않는 값은 400입니다. multipart 본문과 query의 대괄호 키(`created[gte]`)는 읽지 않습니다. verify는 body가 object인 POST 기능마다 "폼 바디 요청" 계약을 하나 더 실행하고, 그래서 계약 수가 늘어납니다. 계약 요청에 `--header`로 content-type을 주면 모든 body 계약이 그 형식으로 전송됩니다. 이 변경으로 계약이 바뀌므로, 기존 Java mock은 업그레이드 후 첫 `generate`에서 한 번 다시 생성됩니다(`claude` 호출 발생).
+
 서버 동작:
 
 | 요청 | 응답 |
