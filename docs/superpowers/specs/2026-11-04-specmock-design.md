@@ -370,7 +370,7 @@ ego-browser는 셸 CLI이므로 CLI 모드에서는 core가 자식 프로세스�
 
 ### 5.2 analyze
 
-- **OpenAPI**: 결정적 변환. `paths × methods` 전부를 feature로. id는 `operationId` → 없으면 `리소스.동작` 규칙(`GET /users/{id}` → `users.get`, `GET /users` → `users.list`, `POST` → `create`(operationId가 없고 경로 마지막 세그먼트가 변수이고, 같은 경로 모양에 PUT/PATCH가 없을 때만 `update`), `PUT/PATCH` → `update`, `DELETE` → `delete`, 그 외는 path 마지막 세그먼트). 충돌 시 숫자 접미사. `provenance: openapi`, `confidence: 1.0`.
+- **OpenAPI**: 결정적 변환. `paths × methods` 전부를 feature로. id는 `operationId` → 없으면 `리소스.동작` 규칙(`GET /users/{id}` → `users.get`, `GET /users` → `users.list`, `POST` → `create`(operationId가 없고 경로 마지막 세그먼트가 변수이고, 같은 경로 모양에 PUT/PATCH가 없을 때만 `update`), `PUT/PATCH` → `update`, `DELETE` → `delete`, 그 외는 path 마지막 세그먼트). 하위 동작은 카탈로그의 경로 모양을 보고 부모 접두를 붙인다: POST `/<r>/{v}/<x>`는 부모 `/<r>/{}`가 있고 자기 모양에 GET이 없으면 `<r>.<x>`(`payment_intents.cancel`), GET `/<r>/<x>`는 부모 `/<r>`가 있으면 `<r>.<x>`(`customers.search`). 충돌 시 숫자 접미사. `provenance: openapi`, `confidence: 1.0`.
 - **비구조 문서**: 세 단계.
   - `prepare`: 헤딩 기준 청크 분할(청크당 최대 6,000자, 겹침 200자). `chunks/NNN.md`를 쓰고, `analyze-request.json`에 `{ system, createdAt, prompt, schema, chunks: [{ index, file, heading, contentHash, … }], openapiFeatures }`를 기록한다. `schema`는 zod에서 만든 얇은 JSON Schema다. 프롬프트는 "이 청크에서 API 엔드포인트를 찾아라. 각 항목에 method, path, 요청/응답 스키마(알 수 있는 만큼), 샘플 응답 JSON(원문에 있으면 그대로), 근거 인용, 0~1 confidence를 적어라. 없으면 빈 배열"을 요구한다.
   - LLM 추출: 어댑터가 청크별로 호출하여 `extracted/NNN.json`을 원자적으로(.tmp → rename) 쓰고, 추출 당시 본문 해시를 `extracted/manifest.json`에 적는다(본문이 바뀐 청크만 다시 추출). 스킬 모드에서는 Claude가 직접 쓴다.
@@ -617,3 +617,8 @@ specmock/
 | **3A** TS 라우트 정리를 `LanguageOutput.prune`으로 | 쓰지 않은 `src/routes/*.ts`를 지우는 기존 동작 유지 |
 | **3A** 세션 지시서는 `prepareGeneration`·`finalizeGeneration`으로 `generate`와 분리 | `generate`가 늘 `GenerateReport`를 돌려주게(CLI·MCP·Web 출력 단순화) |
 | **실사용 점검** LLM 사용량 기록: `LlmAdapter.complete`의 선택 콜백 `onUsage`, `.specmock/<system>/llm-usage.jsonl`, CLI 종료 합계 | `ClaudeCodeAdapter`가 응답 봉투의 토큰 · 비용을 버리고 `--no-session-persistence`라 사후 복구도 안 돼, 점검의 근거 자료를 남길 수 없었다. 반환형을 바꾸지 않아 기존 어댑터 · 테스트는 그대로 |
+| **실사용 점검**: 같은 기능(bucket)의 body는 속성 이름 합집합, required도 합집합(합친 속성에 있는 이름만), 같은 이름 속성은 신뢰도 높은 쪽. 최상위가 object가 아닌 body는 합치지 않는다. 응답 스키마는 상태 코드별 첫 스키마 유지(조각 문맥이 아니라 별도 청크에서 오므로) | 큰 페이지의 파라미터 표가 청크 여러 개로 잘려 추출되는데 병합이 body 하나만 골라 `payment_intents.create` 속성이 4개뿐이었다(원문 36개) |
+| **실사용 점검**: 문서 추출 group은 느슨한 키(소문자, 공백·`_` 제거, 끝 `s` 제거)로 묶어 최다 철자를 대표로. OpenAPI 태그끼리는 지금처럼 대소문자만 무시(`pet`·`pets`는 다른 태그), 문서 group이 태그와 느슨한 키로 정확히 하나만 겹치면 태그 철자. 하위 리소스 group(`PaymentIntent LineItems`)은 따로 둔다 | `PaymentIntent` · `PaymentIntents`가 별도 group이 되어 라우트 파일이 갈렸다 |
+| **실사용 점검**: 하위 동작 id 규칙(5.2)과 `deriveFeatureId`의 `shapes` 인자(merge · openapi가 같은 경로 모양 집합을 넘긴다. 생략하면 현행) | `cancel.create` · `search.list2`처럼 리소스 접두가 없고 충돌 번호가 붙었다 |
+| **실사용 점검**: 같은 접두 아래 경로 변수 이름을 위치별(그 변수까지의 경로 모양)로 bucket 대표 이름 최다(동률 선착, 같은 접두의 OpenAPI 이름이 우선)로 통일. 자기 경로 변수와 맞지 않는 pathParam은 버린다 | `/v1/payment_intents/{id}`와 `.../{payment_intent_id}/cancel`이 섞여 이름 충돌에 엄격한 라우터(3A-2 후보)에서 문제가 될 수 있었다 |
+| **실사용 점검**: body는 `required` 속성이 하나라도 있을 때만 최상위 `required:["body"]`(`tsHono`)이고 "필수 값 누락" contract도 같은 조건. Java 런타임 계약 6항 문구도 같은 뜻으로 보강 | body 없는 `POST …/confirm`이 400이었다(Stripe는 body 없이 호출 가능). LLM 요청 해시(`inputHash`)는 mockspec에서만 계산돼 문구 변경이 lock에 영향 없다 |
