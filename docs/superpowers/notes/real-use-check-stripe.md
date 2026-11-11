@@ -1,7 +1,7 @@
 # 실사용 점검 기록: Stripe
 
 시작일: 2026-11-11
-상태: 2차 완료 · 카탈로그 품질 묶음 반영(PR #14), 다음은 §4 8행(form-encoded)
+상태: 3차 완료 · form-encoded 지원 반영(PR #16), 다음은 사용자 선택(15의 B안 / OpenAPI 대조 / query 대괄호 / record)
 목적: Petstore(교과서 스펙)가 아닌 **실제 문서 사이트 하나**를 실제 사용자처럼 처음부터 끝까지 써 보며 걸리는 지점을 개선 과제로 쌓고, 그 과정의 **비용(토큰 · 시간)** 을 근거 자료로 남긴다. 이 repo는 작성자의 AI 활용 이력이기도 하다(설계 §1.4).
 
 ## 0. 대상과 범위
@@ -69,7 +69,7 @@
 | 5 | analyze(merge) | 같은 `Update a customer`가 두 기능으로 나뉨: `customers.create2`(경로 `{CUSTOMER_ID}`, body 3개 속성)와 `customers.create3`(경로 `{id}`, body 19개). 카탈로그 7개 중 1개가 중복 | 청크 7은 문서 curl 예시의 `{{CUSTOMER_ID}}`를 그대로 경로 변수로 썼고 청크 0 · 8은 `{id}`. 병합이 `method + 경로`로 묶을 때 변수 이름이 다르면 다른 경로로 봄(추정, `merge.ts` bucket 키 확인 필요) | 병합 키에서 경로 변수 이름을 지우고(`/v1/customers/{}`) 묶기, 또는 프롬프트에 "경로 변수는 `{id}` 꼴 소문자" 규칙 | 중 | 완료(PR #12) |
 | 6 | analyze(featureId) | POST update의 기능 id가 `customers.create2` · `customers.create3`: 이름만 봐서는 수정인지 알 수 없고 번호는 충돌 회피용 접미사 | `analyze/featureId.ts:49` `case "POST": return "create"`가 경로 끝이 변수인 POST도 create로 만듦. 문서에는 operationId가 없음 | 경로 끝이 변수인 POST는 `update`로 파생(Stripe식 관례), 또는 LLM이 준 title에서 동사 파생 | 소 | 완료(PR #12) |
 | 7 | analyze | 메서드 · 경로 오추론은 없었으나 `customers.list` · `customers.get` · 중복 update는 신뢰도 0.5 · `method 추론됨` 표시. 색인 페이지(청크 0)만 메서드를 명시해 본문 청크 3개는 추론에 의존 | 설계대로(엔드포인트 페이지에 `POST /v1/...` 없음, curl 예시만 있음). 본문 청크의 `curl -G`는 GET으로 정확히 추론됨 | 청크 병합 시 색인 청크가 같은 경로를 명시하면 신뢰도를 올리는 규칙 검토 | 중 | 기록(2차에서도 10/18 기능이 0.5 — 색인 청크가 메서드를 명시해도 본문 청크 쪽 신뢰도가 그대로) |
-| 8 | generate(런타임) | Stripe POST는 form-encoded인데 생성 mock이 JSON만 파싱: `curl -d "name=x"`는 400 `must have required property 'body'`, JSON으로 보내야 200 | `mock/stripe/src/routes/Customers.ts:13` `c.req.json().catch(() => undefined)`; 스키마에 `required:["body"]` | `content-type`이 `application/x-www-form-urlencoded`면 `c.req.parseBody()`로 읽어 같은 검증에 통과시킴. 카탈로그에 요청 content-type 기록 필요 | 중 | 완료(PR 대기)(2차 확인에서 body 없는 POST 400은 §4 16행으로 별도 처리) |
+| 8 | generate(런타임) | Stripe POST는 form-encoded인데 생성 mock이 JSON만 파싱: `curl -d "name=x"`는 400 `must have required property 'body'`, JSON으로 보내야 200 | `mock/stripe/src/routes/Customers.ts:13` `c.req.json().catch(() => undefined)`; 스키마에 `required:["body"]` | `content-type`이 `application/x-www-form-urlencoded`면 `c.req.parseBody()`로 읽어 같은 검증에 통과시킴. 카탈로그에 요청 content-type 기록 필요 | 중 | 완료(PR #16)(2차 확인에서 body 없는 POST 400은 §4 16행으로 별도 처리) |
 | 9 | analyze | 중첩 객체가 얕음: `address`·`shipping`·`invoice_settings` 등이 `{"type":"object"}`뿐이고 `customers.get` 응답의 `address: {}`. update(create3) 응답 스키마는 `{"type":"object"}`에 예시 없음(출처 schema-generated) | 하위 속성이 `?query=` 링크 뒤에만 있음(사전 조사 ④), 청크 8은 응답 본문이 없는 청크로 추정 | 하위 속성 링크 추종 또는 OpenAPI(`spec3.json`) 대조(2차) | 대 | 기록 |
 | 10 | verify | verify는 실패 원인을 "404"로만 보임: 라우트가 통째로 사라진 것인지 경로 불일치인지 구분 안 됨. 종료 코드 2 | `verify`가 계약 실패를 상태 코드만 기록 | 404의 응답 본문(`unknown_path`)과 생성된 라우트 목록 대조를 coverage.md에 추가 | 소 | 기록 |
 | 11 | analyze(merge) | pathParam 이름이 자기 경로의 변수와 맞지 않으면 이름 바꾸기에서 빠져, 경로에 없는 필수 param이 남을 수 있음 | `merge.ts` `toFeature`의 `own.findIndex`가 일치하지 않으면 원래 이름을 그대로 둠(main부터 있던 동작) | 일치하는 변수가 없으면 해당 param을 버리거나 위치 기준으로 매핑 | 소 | 완료(PR #14) |
@@ -91,15 +91,18 @@
 
 ## 5. 개선 과제 (우선순위)
 
-(§4에서 묶음)
+- (가) 15의 B안 재추출 ≈$4
+- (나) C OpenAPI spec3.json 대조(9 · 15 채점)
+- (다) query 대괄호 21 + 7 · 10 · 17
+- (라) record 단계
 
 ## 6. 비용 합계
 
 | 구분 | 토큰 합계 | API 환산 비용 | 시간 합계 |
 |---|---|---|---|
-| 제품(specmock LLM 호출) | 1차 12호출 + 2차 42호출 = 54호출: 입력 108 / 출력 50,016 / 캐시 읽기 710,226 / 캐시 생성 544,547 (2차분: 입력 84 / 출력 34,302 / 캐시 읽기 557,040 / 캐시 생성 423,072) | $10.86 (1차 $2.60 + 2차 $8.25, 반올림 차이, API 환산 · 구독 간주) | 10분 15초(1차 2분 41초 + 2차 7분 34초, `llm-usage.jsonl` durationMs 합 615,464) |
-| 개발 층(harness 워커) ask 24회(분석 2 · 구현 16 · 리뷰 6) | metrics에 토큰 필드 없음(`.harness/log` result 줄 합산은 후속) | $17.19 (API 환산) — analyst $6.04 + implementer $6.48 + reviewer $4.66 | 중앙값 analyst 500s · implementer 222s · reviewer 253s (p95 555 / 592 / 354) |
+| 제품(specmock LLM 호출) | 1차 12호출 + 2차 42호출 = 54청크 호출: 입력 108 / 출력 50,016 / 캐시 읽기 710,226 / 캐시 생성 544,547 (2차분: 입력 84 / 출력 34,302 / 캐시 읽기 557,040 / 캐시 생성 423,072). 여기에 Java 참조 재생성 `llm:check --java` 2회(1회 측정 $0.56 · 47s · 출력 5,727 · 캐시 생성 20,840; 1회는 임시 작업공간 삭제로 미측정 → 동일 추정)를 더해 56호출 | ≈$11.98 (54청크 $10.86 + Java 재생성 ≈$1.12; 1차 $2.60 + 2차 $8.25는 반올림 차이, API 환산 · 구독 간주) | 청크 10분 15초(1차 2분 41초 + 2차 7분 34초, `llm-usage.jsonl` durationMs 합 615,464) + Java 재생성 약 1분 34초 |
+| 개발 층(harness 워커) ask 32회(분석 3 · 구현 20 · 리뷰 9) | metrics에 토큰 필드 없음(`.harness/log` result 줄 합산은 후속) | $25.33 (API 환산) — analyst $8.20 + implementer $8.90 + reviewer $8.23 | 중앙값 analyst 444s · implementer 222s · reviewer 268s (p95 555 / 549 / 448) |
 
-개발 층 비고: 3단계 머지 정리(#8) $0.38 포함. 품질 묶음(#14: 분석 1 · 구현 2 · 리뷰 2) 포함. 이 점검으로 생긴 작업: 사전 조사 · 사용량 기록(#10) · 결함 수정(#12) · 기록.
+개발 층 비고: 3단계 머지 정리(#8) $0.38 포함. 품질 묶음(#14: 분석 1 · 구현 2 · 리뷰 2) 포함. 이 점검으로 생긴 작업: 사전 조사 · 사용량 기록(#10) · 결함 수정(#12) · 기록. form-encoded(#16: 분석 1 · 구현 4 · 리뷰 3, ≈$8.14) 포함.
 
-제품 + 개발 합계: $28.05 (API 환산)
+제품 + 개발 합계: ≈$37.31 (API 환산)
