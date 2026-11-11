@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveFeatureId, deriveGroup, FeatureIdRegistry } from "../src/analyze/featureId.js";
+import { deriveFeatureId, deriveGroup, FeatureIdRegistry, methodsByShape } from "../src/analyze/featureId.js";
 
 describe("deriveFeatureId", () => {
   it("uses operationId when present", () => {
@@ -72,5 +72,59 @@ describe("FeatureIdRegistry", () => {
     expect(reg.claim("users.get")).toBe("users.get");
     expect(reg.claim("users.get")).toBe("users.get2");
     expect(reg.claim("users.get")).toBe("users.get3");
+  });
+});
+
+describe("deriveFeatureId sub-actions (shape context)", () => {
+  const shapes = methodsByShape([
+    { method: "GET", path: "/v1/payment_intents" },
+    { method: "POST", path: "/v1/payment_intents" },
+    { method: "GET", path: "/v1/payment_intents/{id}" },
+    { method: "POST", path: "/v1/payment_intents/{id}" },
+    { method: "POST", path: "/v1/payment_intents/{id}/cancel" },
+    { method: "GET", path: "/v1/payment_intents/search" },
+    { method: "GET", path: "/v1/payment_intents/{id}/amount_details_line_items" },
+    { method: "POST", path: "/v1/customers/{id}/sources" },
+    { method: "GET", path: "/v1/customers/{id}/sources" },
+    { method: "GET", path: "/v1/customers" },
+    { method: "GET", path: "/v1/customers/{id}" },
+    { method: "GET", path: "/store/inventory" },
+  ]);
+  const id = (method: "GET" | "POST", path: string) => deriveFeatureId({ method, path, shapes });
+  it("names a POST sub-action after its parent resource when the parent shape exists and the shape has no GET", () => {
+    expect(id("POST", "/v1/payment_intents/{id}/cancel")).toBe("payment_intents.cancel");
+    expect(id("POST", "/v1/payment_intents/{payment_intent_id}/cancel")).toBe("payment_intents.cancel");
+  });
+  it("keeps sub-collections (shape also has GET) and unknown parents as before", () => {
+    expect(id("POST", "/v1/customers/{id}/sources")).toBe("sources.create");
+    expect(id("POST", "/v1/orphans/{id}/cancel")).toBe("cancel.create");
+  });
+  it("names a static GET after the parent collection only when the parent path exists", () => {
+    expect(id("GET", "/v1/payment_intents/search")).toBe("payment_intents.search");
+    expect(id("GET", "/store/inventory")).toBe("inventory.list");
+    expect(id("GET", "/v1/payment_intents/{id}/amount_details_line_items")).toBe("amount_details_line_items.list");
+  });
+  it("behaves as before without shape context", () => {
+    expect(deriveFeatureId({ method: "POST", path: "/v1/payment_intents/{id}/cancel" })).toBe("cancel.create");
+  });
+});
+
+describe("deriveFeatureId GET sub-action needs a resource parent", () => {
+  it("does not treat a version or root prefix without a single-item path as a resource", () => {
+    const shapes = methodsByShape([
+      { method: "GET", path: "/api" },
+      { method: "GET", path: "/api/users" },
+      { method: "POST", path: "/api/users" },
+    ]);
+    expect(deriveFeatureId({ method: "GET", path: "/api/users", shapes })).toBe("users.list");
+    expect(deriveFeatureId({ method: "POST", path: "/api/users", shapes })).toBe("users.create");
+  });
+  it("still applies it when the parent has a single-item shape (Stripe customers/search)", () => {
+    const shapes = methodsByShape([
+      { method: "GET", path: "/v1/customers" },
+      { method: "GET", path: "/v1/customers/{id}" },
+      { method: "GET", path: "/v1/customers/search" },
+    ]);
+    expect(deriveFeatureId({ method: "GET", path: "/v1/customers/search", shapes })).toBe("customers.search");
   });
 });

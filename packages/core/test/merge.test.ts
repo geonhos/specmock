@@ -417,4 +417,114 @@ describe("merge", () => {
     expect(f.id).toBe("customers.update");
     expect(Object.keys(f.request.params)).toEqual(["id"]);
   });
+  it("unions body properties and required across items of the same bucket (higher confidence wins on type conflicts)", async () => {
+    await writeExtracted([
+      mk({ method: "POST", path: "/v1/intents", confidence: 0.85, requestBody: { type: "object", properties: { amount: { type: "integer" }, currency: { type: "string" } }, required: ["amount"] } }),
+      mk({ method: "POST", path: "/v1/intents", confidence: 0.4, requestBody: { type: "object", properties: { amount: { type: "string" }, hooks: { type: "object" }, metadata: { type: "object" } }, required: ["hooks", "ghost"] } }),
+      mk({ method: "POST", path: "/v1/intents", confidence: 0.7, requestBody: null }),
+    ]);
+    await merge(ws, "pets");
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    const body = catalog.features[0].request.body!;
+    expect(Object.keys(body.properties as object).sort()).toEqual(["amount", "currency", "hooks", "metadata"]);
+    expect((body.properties as Record<string, unknown>).amount).toEqual({ type: "integer" });
+    expect(body.required).toEqual(["amount", "hooks"]);
+  });
+
+  it("keeps a single body unchanged and ignores a non-object body when a first body exists", async () => {
+    await writeExtracted([
+      mk({ method: "POST", path: "/v1/a", confidence: 0.9, requestBody: { type: "array", items: { type: "string" } } }),
+      mk({ method: "POST", path: "/v1/a", confidence: 0.5, requestBody: { type: "object", properties: { x: { type: "string" } } } }),
+    ]);
+    await merge(ws, "pets");
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    expect(catalog.features[0].request.body).toEqual({ type: "array", items: { type: "string" } });
+  });
+  it("unifies singular, plural and spaced group spellings of doc-extracted groups, keeping sub-resource groups apart", async () => {
+    await writeExtracted([
+      mk({ method: "GET", path: "/v1/payment_intents", group: "Payment Intents" }),
+      mk({ method: "POST", path: "/v1/payment_intents", group: "PaymentIntent" }),
+      mk({ method: "GET", path: "/v1/payment_intents/{id}", group: "PaymentIntents" }),
+      mk({ method: "DELETE", path: "/v1/payment_intents/{id}", group: "PaymentIntent" }),
+      mk({ method: "GET", path: "/v1/payment_intents/{id}/amount_details_line_items", group: "PaymentIntent LineItems" }),
+    ]);
+    await merge(ws, "pets");
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    const groups = catalog.features.map((f) => f.group);
+    expect(groups.filter((g) => g === "PaymentIntent")).toHaveLength(4); // 최다 철자
+    expect(groups.filter((g) => g === "PaymentIntent LineItems")).toHaveLength(1);
+  });
+
+  it("does not loosen openapi tags: pet and pets stay distinct", async () => {
+    const op = (id: string, tag: string) => ({ operationId: id, tags: [tag], responses: { "200": { description: "ok" } } });
+    const catalog = await mergeWithSpec(
+      { "/pet": { get: op("listPet", "pet") }, "/pets": { get: op("listPets", "pets") } },
+      [],
+    );
+    expect(catalog.features.map((f) => f.group).sort()).toEqual(["pet", "pets"]);
+  });
+  it("derives sub-action ids from the catalog's own path shapes", async () => {
+    await writeExtracted([
+      mk({ method: "POST", path: "/v1/payment_intents", group: "" }),
+      mk({ method: "GET", path: "/v1/payment_intents/{id}", group: "" }),
+      mk({ method: "POST", path: "/v1/payment_intents/{id}/cancel", group: "" }),
+      mk({ method: "GET", path: "/v1/payment_intents/search", group: "" }),
+    ]);
+    await merge(ws, "pets");
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    expect(catalog.features.map((f) => f.id).sort()).toEqual(["payment_intents.cancel", "payment_intents.create", "payment_intents.get", "payment_intents.search"]);
+  });
+  it("unifies path variable names per position across buckets (most frequent, ties to first seen)", async () => {
+    await writeExtracted([
+      mk({ method: "GET", path: "/v1/payment_intents/{id}", group: "" }),
+      mk({ method: "POST", path: "/v1/payment_intents/{id}/confirm", group: "" }),
+      mk({ method: "POST", path: "/v1/payment_intents/{payment_intent_id}/cancel", group: "" }),
+      mk({ method: "POST", path: "/v1/payment_intents/{id}/capture", group: "" }),
+      mk({ method: "POST", path: "/v1/payment_intents", group: "" }),
+      mk({ method: "GET", path: "/v1/customers/{customer}/sources/{id}", group: "" }),
+      mk({ method: "DELETE", path: "/v1/customers/{id}/sources/{source}", group: "" }),
+    ]);
+    await merge(ws, "pets");
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    const byId = (id: string) => catalog.features.find((f) => f.id === id)!;
+    expect(byId("payment_intents.cancel").path).toBe("/v1/payment_intents/{id}/cancel");
+    expect(Object.keys(byId("payment_intents.cancel").request.params)).toEqual(["id"]);
+    expect(byId("payment_intents.get").path).toBe("/v1/payment_intents/{id}");
+    // 위치별로 따로: 첫 변수 {customer}(1) vs {id}(1) 동률 → 먼저 나온 것, 둘째 변수 {id}(1) vs {source}(1) → 먼저 나온 것
+    expect(catalog.features.filter((f) => f.path.startsWith("/v1/customers")).map((f) => f.path)).toEqual(["/v1/customers/{customer}/sources/{id}", "/v1/customers/{customer}/sources/{id}"]);
+  });
+
+  it("never gives two positions of one path the same variable name when unifying", async () => {
+    await writeExtracted([
+      mk({ method: "GET", path: "/users/{id}", group: "" }),
+      mk({ method: "DELETE", path: "/users/{id}", group: "" }),
+      mk({ method: "GET", path: "/users/{user_id}/posts/{id}", group: "" }),
+    ]);
+    await merge(ws, "pets");
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    const posts = catalog.features.find((f) => f.path.includes("/posts/"))!;
+    expect(posts.path).toBe("/users/{user_id}/posts/{id}");
+    expect(Object.keys(posts.request.params)).toEqual(["user_id", "id"]);
+  });
+
+  it("prefers the openapi variable name for a shared prefix when unifying", async () => {
+    const catalog = await mergeWithSpec(
+      { "/orders/{orderId}": { get: { operationId: "getOrder", responses: { "200": { description: "ok" } } } } },
+      [mk({ method: "DELETE", path: "/orders/{id}", group: "" }), mk({ method: "PUT", path: "/orders/{id}", group: "" })],
+    );
+    expect(catalog.features.map((f) => f.path).sort()).toEqual(["/orders/{orderId}", "/orders/{orderId}", "/orders/{orderId}"]);
+  });
+
+  it("drops a path param that matches none of its own path variables", async () => {
+    await writeExtracted([
+      mk({ method: "GET", path: "/v1/things/{id}", group: "",
+        pathParams: [
+          { name: "id", required: true, schema: { type: "string" }, description: "" },
+          { name: "stray", required: true, schema: { type: "string" }, description: "" },
+        ] }),
+    ]);
+    await merge(ws, "pets");
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    expect(Object.keys(catalog.features[0].request.params)).toEqual(["id"]);
+  });
 });

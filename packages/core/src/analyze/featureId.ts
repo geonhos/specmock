@@ -52,15 +52,51 @@ export function methodsByShape(entries: Iterable<{ method: HttpMethod; path: str
 }
 
 /**
+ * 하위 동작 규칙(카탈로그의 경로 모양 집합 `shapes`가 있을 때만):
+ * - POST `/<r>/{v}/<x>`: 부모 모양 `/<r>/{}`가 있고 자기 모양에 GET이 없으면 `<r>.<x>`(`payment_intents.cancel`). GET이 있으면 하위 컬렉션이라 현행(`sources.create`).
+ * - GET `/<r>/<x>`(앞이 정적): 부모 경로 `/<r>`가 있고 `<r>`가 리소스라는 근거(단건 모양 `/<r>/{}`)가 있으면 `<r>.<x>`(`customers.search`).
+ *   `/api`·`/v1`처럼 단건 경로가 없는 접두이거나 부모가 없으면 현행(`users.list`, `inventory.list`).
+ */
+function subActionId(method: HttpMethod, segs: string[], shapes: ReadonlyMap<string, ReadonlySet<HttpMethod>>, path: string): string | null {
+  if (segs.length < 2) return null;
+  const last = segs[segs.length - 1];
+  const prev = segs[segs.length - 2];
+  if (isParamSegment(last) || PARAM.test(last)) return null;
+  const x = sanitize(segmentName(last));
+  if (!x) return null;
+  const parent = pathShape("/" + segs.slice(0, -1).join("/"));
+  if (!shapes.has(parent)) return null;
+  if (method === "POST" && isParamSegment(prev)) {
+    if (shapes.get(pathShape(path))?.has("GET")) return null;
+    const r = staticSegments("/" + segs.slice(0, -2).join("/")).at(-1);
+    return r ? `${sanitize(r) || "root"}.${x}` : null;
+  }
+  if (method === "GET" && !isParamSegment(prev)) {
+    const r = segmentName(prev);
+    if (!shapes.has(pathShape("/" + segs.slice(0, -1).join("/") + "/{}"))) return null;
+    return r ? `${sanitize(r) || "root"}.${x}` : null;
+  }
+  return null;
+}
+
+/**
  * `siblingMethods`는 같은 경로 모양에 있는 메서드들. PUT/PATCH가 있으면 끝이 변수인 POST도 `update`가 아니라 `create`로 남긴다
  * (`update`는 PUT/PATCH가 차지한다). 생략하면 형제가 없는 것으로 본다.
  */
-export function deriveFeatureId(input: { method: HttpMethod; path: string; operationId?: string; siblingMethods?: ReadonlySet<HttpMethod> }): string {
+export function deriveFeatureId(input: {
+  method: HttpMethod;
+  path: string;
+  operationId?: string;
+  siblingMethods?: ReadonlySet<HttpMethod>;
+  shapes?: ReadonlyMap<string, ReadonlySet<HttpMethod>>;
+}): string {
   if (input.operationId && input.operationId.trim().length > 0) {
     const id = sanitize(input.operationId.trim());
     if (hasAlnum(id)) return id;
   }
   const segs = segments(input.path);
+  const sub = input.shapes ? subActionId(input.method, segs, input.shapes, input.path) : null;
+  if (sub) return sub;
   const statics = staticSegments(input.path);
   const resource = statics.length > 0 ? statics[statics.length - 1] : "root";
   const endsWithParam = segs.length > 0 && isParamSegment(segs[segs.length - 1]);

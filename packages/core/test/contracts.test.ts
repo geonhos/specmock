@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { validationSchema } from "../src/generate/tsHono.js";
 import { buildContracts, sampleScalar } from "../src/select/contracts.js";
 import type { Feature, Fixture } from "../src/types.js";
 
@@ -62,5 +63,37 @@ describe("buildContracts", () => {
     const f: Feature = { ...base, responses: { "201": base.responses["201"], "422": base.responses["400"] } };
     const contracts = buildContracts(f, [{ status: 201, body: {}, source: "empty" }, { status: 422, body: {}, source: "empty" }]);
     expect(contracts[1].expect).toEqual({ status: 400, schema: null });
+  });
+});
+
+describe("body without required properties is optional", () => {
+  const optionalBody: Feature = {
+    ...base, path: "/pets/{petId}/confirm",
+    request: { ...base.request, query: {}, body: { type: "object", properties: { note: { type: "string" } } } },
+  };
+  it("requires the body at the top level of the validation schema only when body.required is non-empty", () => {
+    expect(validationSchema(base as never).required).toEqual(["body"]);
+    expect(validationSchema(optionalBody as never).required).toEqual([]);
+    expect(validationSchema({ ...optionalBody, request: { ...optionalBody.request, body: null } } as never).required).toEqual([]);
+  });
+  it("does not build a missing-required contract for an optional-only body", () => {
+    expect(buildContracts(optionalBody, fixtures)).toHaveLength(1);
+    expect(buildContracts({ ...optionalBody, request: { ...optionalBody.request, body: { type: "object", required: ["note"], properties: { note: { type: "string" } } } } }, fixtures)).toHaveLength(2);
+  });
+});
+
+describe("non-object or property-less bodies stay required", () => {
+  const withBody = (body: Record<string, unknown>): Feature => ({
+    ...base, request: { ...base.request, query: {}, body },
+  });
+  it("requires an array body at the top level and builds a missing-required contract", () => {
+    const f = withBody({ type: "array", items: { type: "string" } });
+    expect(validationSchema(f as never).required).toEqual(["body"]);
+    expect(buildContracts(f, fixtures)).toHaveLength(2);
+  });
+  it("requires oneOf/allOf and property-less object bodies", () => {
+    for (const body of [{ oneOf: [{ type: "object" }, { type: "array" }] }, { allOf: [{ type: "object" }] }, { type: "object" }, { type: "object", properties: {} }]) {
+      expect(validationSchema(withBody(body) as never).required).toEqual(["body"]);
+    }
   });
 });

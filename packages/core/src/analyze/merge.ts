@@ -153,6 +153,28 @@ function mergeParams(ajv: Ajv, target: Feature["request"]["params"], list: Extra
   }
 }
 
+/**
+ * 같은 기능(bucket)의 body 스키마를 합친다. 최상위가 object이고 properties가 있는 body끼리는 속성 이름의 합집합,
+ * required도 합집합(합친 속성에 있는 이름만). 같은 이름의 속성은 먼저 온(신뢰도 높은) 쪽을 지킨다.
+ * object가 아닌 body는 합치지 않고, 첫 body가 object가 아니면 첫 것만 쓴다.
+ */
+function unionBodies(bodies: JsonSchema[]): JsonSchema | null {
+  if (bodies.length === 0) return null;
+  const isObj = (b: JsonSchema): boolean => b.type === "object" && typeof b.properties === "object" && b.properties !== null && !Array.isArray(b.properties);
+  const [first, ...rest] = bodies;
+  if (!isObj(first)) return first;
+  const properties: Record<string, unknown> = {};
+  const required = new Set<string>();
+  for (const b of [first, ...rest]) {
+    if (!isObj(b)) continue;
+    for (const [k, v] of Object.entries(b.properties as Record<string, unknown>)) if (!Object.hasOwn(properties, k)) setOwn(properties, k, v);
+    if (Array.isArray(b.required)) for (const r of b.required) if (typeof r === "string") required.add(r);
+  }
+  const names = [...required].filter((r) => Object.hasOwn(properties, r));
+  const { required: _r, ...base } = first;
+  return { ...base, properties, ...(names.length > 0 ? { required: names } : {}) };
+}
+
 function toFeature(ajv: Ajv, bucket: Bucket, registry: FeatureIdRegistry, groupOf: (g: string) => string, siblings: ReadonlyMap<string, ReadonlySet<HttpMethod>>): Feature {
   const notes: string[] = [];
   const items = [...bucket.items].sort((a, b) => b.ep.confidence - a.ep.confidence);
@@ -169,18 +191,22 @@ function toFeature(ajv: Ajv, bucket: Bucket, registry: FeatureIdRegistry, groupO
   let evidenceTotal = 0;
   let hasExample = false;
 
+  const bodies: JsonSchema[] = [];
   const repVars = pathVars(bucket.path);
   for (const { ep, chunk, evidenceFound: f, evidenceTotal: t } of items) {
     // 변수 이름이 다른 경로(`{CUSTOMER_ID}`)에서 온 항목은 대표 경로의 변수 이름(위치 기준)으로 맞춘다.
     const own = pathVars(ep.path);
     const pathParams = ep.pathParams.map((pp) => {
       const i = own.findIndex((v) => v === pp.name || v === normalizeVarName(pp.name));
-      return i >= 0 && i < repVars.length ? { ...pp, name: repVars[i] } : pp;
-    });
+      return i >= 0 && i < repVars.length ? { ...pp, name: repVars[i] } : null;
+    }).filter((pp): pp is NonNullable<typeof pp> => pp !== null);
     mergeParams(ajv, request.params, pathParams, notes, "pathParams");
     mergeParams(ajv, request.query, ep.queryParams, notes, "queryParams");
     mergeParams(ajv, request.headers, ep.headers, notes, "headers");
-    if (!request.body && ep.requestBody) request.body = sanitizeSchema(ajv, ep.requestBody, notes, "requestBody");
+    if (ep.requestBody) {
+      const body = sanitizeSchema(ajv, ep.requestBody, notes, "requestBody");
+      if (body) bodies.push(body);
+    }
     for (const r of ep.responses) {
       const key = String(r.status);
       if (!Object.hasOwn(responses, key)) setOwn(responses, key, { schema: null, examples: [] });
@@ -195,6 +221,9 @@ function toFeature(ajv: Ajv, bucket: Bucket, registry: FeatureIdRegistry, groupO
     evidenceFound += f;
     evidenceTotal += t;
   }
+
+  request.body = unionBodies(bodies);
+  if (request.body && bodies.length > 1) request.body = sanitizeSchema(ajv, request.body, notes, "requestBody");
 
   // 스키마 없이 샘플만 있으면 샘플에서 유추한다(설계 5.3).
   for (const [key, slot] of Object.entries(responses)) {
@@ -223,7 +252,7 @@ function toFeature(ajv: Ajv, bucket: Bucket, registry: FeatureIdRegistry, groupO
 
   const tags = primary.group ? [groupOf(primary.group)] : undefined;
   return {
-    id: registry.claim(deriveFeatureId({ method: bucket.method, path: bucket.path, siblingMethods: siblings.get(pathShape(bucket.path)) })),
+    id: registry.claim(deriveFeatureId({ method: bucket.method, path: bucket.path, siblingMethods: siblings.get(pathShape(bucket.path)), shapes: siblings })),
     group: groupOf(deriveGroup({ path: bucket.path, tags })),
     title: primary.title || `${bucket.method} ${bucket.path}`,
     summary: items.map((i) => i.ep.summary).find((s) => s) ?? "",
@@ -238,6 +267,57 @@ function toFeature(ajv: Ajv, bucket: Bucket, registry: FeatureIdRegistry, groupO
     evidence,
     notes,
   };
+}
+
+/**
+ * 같은 접두 아래 경로 변수 이름을 위치별로 하나로 맞춘다(`/v1/payment_intents/{id}` 와 `.../{payment_intent_id}/cancel`).
+ * 위치 키는 그 변수까지의 경로 모양(`/v1/payment_intents/{}`). 같은 접두에 OpenAPI 기능이 있으면 그 이름이 이기고,
+ * 없으면 bucket 대표 경로의 이름 중 최다, 동률은 먼저 나온 것. 위치마다 따로 정하고, bucket의 path만 고친다.
+ */
+function unifyPathVars(specFeatures: Feature[], buckets: Bucket[]): void {
+  const positions = (p: string): { key: string; name: string; start: number; end: number }[] =>
+    [...p.matchAll(/\{([^}]+)\}/g)].map((m) => ({ key: pathShape(p.slice(0, m.index + m[0].length)), name: m[1], start: m.index, end: m.index + m[0].length }));
+  const spec = new Map<string, string>();
+  for (const f of specFeatures) {
+    const p = normalizePath(f.path) ?? f.path;
+    for (const { key, name } of positions(p)) if (!spec.has(key)) spec.set(key, name);
+  }
+  const votes = new Map<string, Map<string, number>>();
+  for (const b of buckets) {
+    for (const { key, name } of positions(b.path)) {
+      const m = votes.get(key) ?? new Map<string, number>();
+      m.set(name, (m.get(name) ?? 0) + 1);
+      votes.set(key, m);
+    }
+  }
+  const chosen = new Map<string, string>();
+  for (const [key, m] of votes) {
+    let best = "";
+    let bestN = 0;
+    for (const [name, n] of m) if (n > bestN) [best, bestN] = [name, n];
+    chosen.set(key, spec.get(key) ?? best);
+  }
+  for (const b of buckets) {
+    const ps = positions(b.path);
+    const names = ps.map((p) => chosen.get(p.key)!);
+    // 통일 이름이 같은 경로의 다른 위치 이름과 겹치면(`/users/{id}/posts/{id}`) 바뀐 위치는 원래 이름을 유지한다.
+    for (let dup = true; dup; ) {
+      dup = false;
+      for (let i = 0; i < ps.length; i++) {
+        if (names[i] !== ps[i].name && names.some((n, j) => j !== i && n === names[i])) {
+          names[i] = ps[i].name;
+          dup = true;
+        }
+      }
+    }
+    let out = "";
+    let last = 0;
+    ps.forEach((p, i) => {
+      out += b.path.slice(last, p.start) + `{${names[i]}}`;
+      last = p.end;
+    });
+    b.path = out + b.path.slice(last);
+  }
 }
 
 /** extracted/NNN.json의 바깥 모양만 본다. 항목은 하나씩 따로 검증해 하나가 깨져도 나머지를 살린다. */
@@ -348,40 +428,57 @@ export async function merge(ws: Workspace, system: string): Promise<MergeResult>
     }
   }
 
-  // group은 대소문자를 무시하고 묶어 대표 철자 하나로 통일한다. OpenAPI 태그 철자가 있으면 그것이 대표
-  // (스펙 원문이라 문서 추출보다 권위가 높고, 문서를 추가해도 OpenAPI 기능의 group이 바뀌지 않는다).
-  // 없으면 가장 많이 나온 철자, 동률이면 먼저 나온 것. 경로에서 파생한 group도 같은 규칙으로 묶는다.
-  const spellings = new Map<string, Map<string, number>>();
+  // group 철자를 대표 하나로 통일한다. OpenAPI 태그 철자가 있으면 그것이 대표(스펙 원문이라 문서 추출보다 권위가 높고,
+  // 문서를 추가해도 OpenAPI 기능의 group이 바뀌지 않는다). OpenAPI 태그끼리는 대소문자만 무시해 묶는다(`pet`과 `pets`는 다른 태그).
+  // 문서 추출 group은 느슨한 키(소문자, 공백·`_` 제거, 끝 `s` 하나 제거)로 묶어 `Payment Intents`·`PaymentIntent`·`PaymentIntents`를 하나로 본다.
+  // 대표는 가장 많이 나온 철자, 동률이면 먼저 나온 것. 하위 리소스(`PaymentIntent LineItems`)는 키가 달라 따로 남는다.
+  // 경로에서 파생한 group은 문서 쪽과 같은 규칙.
+  const looseKey = (g: string): string => g.toLowerCase().replace(/[\s_]+/g, "").replace(/s$/, "");
   const specSpellings = new Map<string, Map<string, number>>();
-  const countSpelling = (raw: string, into: Map<string, Map<string, number>> = spellings): void => {
+  const docSpellings = new Map<string, Map<string, number>>();
+  const countSpelling = (raw: string, into: Map<string, Map<string, number>>, key: (g: string) => string): void => {
     const g = raw.trim();
     if (!g) return;
-    const m = into.get(g.toLowerCase()) ?? new Map<string, number>();
+    const m = into.get(key(g)) ?? new Map<string, number>();
     m.set(g, (m.get(g) ?? 0) + 1);
-    into.set(g.toLowerCase(), m);
+    into.set(key(g), m);
   };
-  for (const f of features) {
-    countSpelling(f.group);
-    countSpelling(f.group, specSpellings);
-  }
+  const lowerKey = (g: string): string => g.toLowerCase();
+  for (const f of features) countSpelling(f.group, specSpellings, lowerKey);
   for (const key of [...buckets.keys()]) {
     const bucket = buckets.get(key)!;
-    for (const { ep } of bucket.items) countSpelling(ep.group);
-    if (!bucket.items.some((i) => i.ep.group.trim())) countSpelling(deriveGroup({ path: bucket.path }));
+    for (const { ep } of bucket.items) countSpelling(ep.group, docSpellings, looseKey);
+    if (!bucket.items.some((i) => i.ep.group.trim())) countSpelling(deriveGroup({ path: bucket.path }), docSpellings, looseKey);
   }
-  const canonical = new Map<string, string>();
-  for (const [lower, all] of spellings) {
-    const m = specSpellings.get(lower) ?? all;
+  const mostFrequent = (m: Map<string, number>): string => {
     let best = "";
     let bestN = 0;
     for (const [g, n] of m) if (n > bestN) [best, bestN] = [g, n];
-    canonical.set(lower, best);
+    return best;
+  };
+  const specCanonical = new Map([...specSpellings].map(([k, m]) => [k, mostFrequent(m)] as const));
+  const docCanonical = new Map([...docSpellings].map(([k, m]) => [k, mostFrequent(m)] as const));
+  // 문서 group이 OpenAPI 태그와 느슨한 키로 정확히 하나만 겹치면 그 태그 철자를 쓴다.
+  const specByLoose = new Map<string, Set<string>>();
+  for (const rep of specCanonical.values()) {
+    const set = specByLoose.get(looseKey(rep)) ?? new Set<string>();
+    set.add(rep);
+    specByLoose.set(looseKey(rep), set);
   }
-  const groupOf = (g: string): string => canonical.get(g.trim().toLowerCase()) ?? g;
+  const groupOf = (g: string): string => {
+    const t = g.trim();
+    const exact = specCanonical.get(lowerKey(t));
+    if (exact) return exact;
+    const loose = specByLoose.get(looseKey(t));
+    if (loose?.size === 1) return [...loose][0];
+    return docCanonical.get(looseKey(t)) ?? g;
+  };
   for (const f of features) f.group = groupOf(f.group);
   const siblings = methodsByShape(
     [...features, ...buckets.values()].map((e) => ({ method: e.method, path: normalizePath(e.path) ?? e.path })),
   );
+
+  unifyPathVars(features, [...buckets.values()]);
 
   // 3) 버킷 → Feature. 키 순서를 고정해 id 접미사(…2, …3)가 실행마다 같게 한다. 하나가 실패해도 나머지는 계속.
   for (const key of [...buckets.keys()].sort()) {
