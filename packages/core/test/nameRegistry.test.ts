@@ -21,6 +21,13 @@ describe("NameRegistry", () => {
     expect(r.claim("pets")).toBe("pets");
   });
 
+  it("treats names differing only in case as the same name", () => {
+    const r = new NameRegistry();
+    expect(r.claim("Customers")).toBe("Customers");
+    expect(r.claim("customers")).toBe("customers2");
+    expect(r.claim("CUSTOMERS")).toBe("CUSTOMERS3");
+  });
+
   it("safeName itself is not injective", () => {
     expect(safeName("a.b")).toBe(safeName("a-b"));
   });
