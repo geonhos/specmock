@@ -573,7 +573,7 @@ specmock/
 | 비밀값 마스킹은 패턴 3종(Bearer, `sk|pk|rk_live|test_`, `api_key:`/`password=` 류 키-값) | §6 그대로. OpenAPI의 파라미터 이름(`name: X-API-Key`)과 스키마 정의(`"password": {…}`)는 값이 아니므로 건드리지 않는다. 완전하지 않음을 README에 명시 |
 | `.specmock/<system>/generate.json`에 outDir 기록, `verify`가 `--dir` 없이 그 경로 사용 | `generate --out`을 쓴 뒤 `verify`가 기본 경로를 찾다 실패하는 흐름이 불편했다 |
 | `ingest --refresh`(원문 캐시) 미구현 | OpenAPI는 다시 읽는 비용이 작다. 캐시는 웹 수확을 넣는 1B에서 |
-| **실사용 점검**: 병합이 group을 대소문자 무시로 묶어 대표 철자(최다, 동률은 먼저 나온 것) 하나로 통일(LLM group · 경로에서 파생한 group · OpenAPI 태그 모두), `NameRegistry`는 소문자 기준으로 중복 판정 | LLM이 청크마다 `Customers`/`customers`를 달리 적으면 대소문자 비구분 파일시스템(macOS)에서 라우트 파일이 서로 덮어쓰였다 |
+| **실사용 점검**: 병합이 group을 대소문자 무시로 묶어 대표 철자(최다, 동률은 먼저 나온 것) 하나로 통일(LLM group · 경로에서 파생한 group · OpenAPI 태그 모두). 같은 group에 OpenAPI 태그 철자가 있으면 그것이 대표(스펙 원문이라 문서 추출보다 권위가 높고, 문서를 추가해도 OpenAPI 기능의 group·생성 경로가 바뀌지 않게), `NameRegistry`는 소문자 기준으로 중복 판정 | LLM이 청크마다 `Customers`/`customers`를 달리 적으면 대소문자 비구분 파일시스템(macOS)에서 라우트 파일이 서로 덮어쓰였다 |
 | **실사용 점검**: 병합 bucket 키에서 경로 변수 이름을 지우고(`/v1/customers/{}`) 묶는다. 경로 입구에서 `{{x}}`·`:x` 표기는 `{x}`로, 전부 대문자인 변수 이름은 소문자로(`{CUSTOMER_ID}` → `{customer_id}`), camelCase(`{petId}`)는 유지. 프롬프트에도 한 줄 | 문서 curl 예시의 `{{CUSTOMER_ID}}`와 `{id}`가 다른 경로로 취급돼 같은 기능이 둘로 나뉘었다 |
 | **실사용 점검**: operationId 없는 POST는 경로 마지막 세그먼트가 변수이고 같은 경로 모양(변수 이름 무시)에 PUT/PATCH가 없을 때만 id 동작을 `update`로. PUT/PATCH가 있으면 POST는 `create`로 남긴다 | `POST /v1/customers/{id}`가 `customers.create2`로 나와 수정인지 알 수 없었다(Stripe식 관례) |
 | §4.4 카탈로그 변경 diff("새 기능 N개 / 사라진 기능 M개") 미구현 | 1A는 `catalogHash` 불일치 경고만 낸다. diff는 1B에서 |

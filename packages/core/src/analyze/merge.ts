@@ -285,7 +285,8 @@ export async function merge(ws: Workspace, system: string): Promise<MergeResult>
     if (input.kind === "openapi") features.push(...analyzeOpenApiDocument(JSON.parse(input.content), registry));
   }
   // 문서 쪽 path와 같은 규칙으로 정규화해 비교한다(`/pets/` vs `/pets`).
-  const known = new Set(features.map((f) => `${f.method} ${pathShape(normalizePath(f.path) ?? f.path)}`));
+  const shapeOf = (p: string): string => pathShape(normalizePath(p) ?? p);
+  const known = new Set(features.map((f) => `${f.method} ${shapeOf(f.path)}`));
 
   // 2) extracted/NNN.json 읽기 → 항목별 스키마 검증 → path 정규화 → 근거 대조 → 버킷
   const rejected: Catalog["rejected"] = [];
@@ -347,24 +348,30 @@ export async function merge(ws: Workspace, system: string): Promise<MergeResult>
     }
   }
 
-  // group은 대소문자를 무시하고 묶어 대표 철자 하나로 통일한다(가장 많이 나온 철자, 동률이면 먼저 나온 것).
-  // LLM group뿐 아니라 경로에서 파생한 group과 OpenAPI 태그도 같은 규칙으로 묶는다.
+  // group은 대소문자를 무시하고 묶어 대표 철자 하나로 통일한다. OpenAPI 태그 철자가 있으면 그것이 대표
+  // (스펙 원문이라 문서 추출보다 권위가 높고, 문서를 추가해도 OpenAPI 기능의 group이 바뀌지 않는다).
+  // 없으면 가장 많이 나온 철자, 동률이면 먼저 나온 것. 경로에서 파생한 group도 같은 규칙으로 묶는다.
   const spellings = new Map<string, Map<string, number>>();
-  const countSpelling = (raw: string): void => {
+  const specSpellings = new Map<string, Map<string, number>>();
+  const countSpelling = (raw: string, into: Map<string, Map<string, number>> = spellings): void => {
     const g = raw.trim();
     if (!g) return;
-    const m = spellings.get(g.toLowerCase()) ?? new Map<string, number>();
+    const m = into.get(g.toLowerCase()) ?? new Map<string, number>();
     m.set(g, (m.get(g) ?? 0) + 1);
-    spellings.set(g.toLowerCase(), m);
+    into.set(g.toLowerCase(), m);
   };
-  for (const f of features) countSpelling(f.group);
+  for (const f of features) {
+    countSpelling(f.group);
+    countSpelling(f.group, specSpellings);
+  }
   for (const key of [...buckets.keys()]) {
     const bucket = buckets.get(key)!;
     for (const { ep } of bucket.items) countSpelling(ep.group);
     if (!bucket.items.some((i) => i.ep.group.trim())) countSpelling(deriveGroup({ path: bucket.path }));
   }
   const canonical = new Map<string, string>();
-  for (const [lower, m] of spellings) {
+  for (const [lower, all] of spellings) {
+    const m = specSpellings.get(lower) ?? all;
     let best = "";
     let bestN = 0;
     for (const [g, n] of m) if (n > bestN) [best, bestN] = [g, n];
@@ -372,7 +379,9 @@ export async function merge(ws: Workspace, system: string): Promise<MergeResult>
   }
   const groupOf = (g: string): string => canonical.get(g.trim().toLowerCase()) ?? g;
   for (const f of features) f.group = groupOf(f.group);
-  const siblings = methodsByShape([...features, ...[...buckets.values()]]);
+  const siblings = methodsByShape(
+    [...features, ...buckets.values()].map((e) => ({ method: e.method, path: normalizePath(e.path) ?? e.path })),
+  );
 
   // 3) 버킷 → Feature. 키 순서를 고정해 id 접미사(…2, …3)가 실행마다 같게 한다. 하나가 실패해도 나머지는 계속.
   for (const key of [...buckets.keys()].sort()) {

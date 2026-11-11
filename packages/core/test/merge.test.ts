@@ -371,6 +371,35 @@ describe("merge", () => {
     expect(gets[0].provenance).toBe("openapi");
   });
 
+  async function mergeWithSpec(paths: Record<string, unknown>, endpoints: unknown[]) {
+    const spec = { openapi: "3.0.0", info: { title: "t", version: "1" }, paths };
+    const specFile = path.join(dir, "mix.json");
+    await writeFile(specFile, JSON.stringify(spec));
+    await ingest(ws, "mix", [specFile, path.join(DOCS, "pets.md")]);
+    await prepare(ws, "mix");
+    await writeFile(path.join(dir, "mix", "extracted", "000.json"), JSON.stringify({ endpoints }));
+    await merge(ws, "mix");
+    return ws.read("mix", "catalog.json", CatalogSchema);
+  }
+
+  it("normalizes openapi paths before looking for PUT/PATCH siblings of a doc POST", async () => {
+    const catalog = await mergeWithSpec(
+      { "/users/{id}/": { put: { responses: { "200": { description: "ok" } } } } },
+      [mk({ method: "POST", path: "/users/{id}", group: "" })],
+    );
+    const ids = catalog.features.map((f) => f.id).sort();
+    expect(ids).toEqual(["users.create", "users.update"]);
+  });
+
+  it("prefers the openapi tag spelling as the group representative over a more frequent doc spelling", async () => {
+    const op = (id: string) => ({ operationId: id, tags: ["pet"], responses: { "200": { description: "ok" } } });
+    const catalog = await mergeWithSpec(
+      { "/pet": { get: op("listPet") } },
+      ["/a", "/b", "/c", "/d", "/e"].map((p) => mk({ method: "GET", path: `/other${p}`, group: "Pet" })),
+    );
+    expect([...new Set(catalog.features.map((f) => f.group))]).toEqual(["pet"]);
+  });
+
   it("merges the same endpoint whose path variable names differ", async () => {
     await writeExtracted([
       mk({ method: "POST", path: "/v1/customers/{{CUSTOMER_ID}}", confidence: 0.9, inferred: { method: true },
