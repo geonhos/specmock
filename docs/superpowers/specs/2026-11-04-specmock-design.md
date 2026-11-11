@@ -1,7 +1,7 @@
 # specmock 설계 문서
 
 작성일: 2026-11-04
-상태: 승인됨. 2A 구현 완료 (2026-11-05, 사용자 수동 확인 2건 대기). 구현 중 확인된 사항은 12장 "구현 중 변경" 참고.
+상태: 승인됨. 3단계 중 3A(Java 생성기)·3B(실제 시스템 녹화 record) 머지 완료(2026-11-11). API 키 어댑터는 제외(§10·§11). 구현 중 확인된 사항은 12장 "구현 중 변경" 참고.
 대상 범위: 전체 아키텍처 + 1단계 상세. 2·3단계는 인터페이스 경계만 정의.
 
 ---
@@ -70,7 +70,7 @@ flowchart LR
     subgraph llm["LLM 어댑터 (교체 가능)"]
         L1[Claude Code 세션 자신]
         L2[claude --print 헤드리스]
-        L3[API 키 · 3단계]
+        L3[API 키 · 제외 §11]
     end
 
     subgraph 인터페이스
@@ -140,7 +140,7 @@ interface LlmAdapter {
 |---|---|---|
 | `SessionAdapter` | Claude Code 스킬 모드. 어댑터는 호출하지 않고, Claude 자신이 `chunks/`를 읽고 `extracted/`에 결과 파일을 쓴다. core는 파일이 생길 때까지 기다리지 않고 `merge` 단계에서 읽는다 | 1 |
 | `ClaudeCodeAdapter` | CLI 단독 모드, Web UI. `claude --print --output-format json --json-schema <schema>`를 자식 프로세스로 실행. 구독 인증 사용 | 1 |
-| `ApiAdapter` | 배포용. Anthropic API 키 | 3 |
+| `ApiAdapter` | 배포용. Anthropic API 키 | 제외(§11) |
 
 왜 어댑터를 두는가: 처음 요구가 "로컬 Claude Code 구독 우선, 바꿀 수 있는 구조"였다. 어댑터가 그 교체 지점이다.
 
@@ -522,7 +522,7 @@ specmock/
 |---|---|---|
 | 1 | core + CLI + Claude Code 스킬 | OpenAPI 파일과 웹 문서 URL에서 TS mock 생성. contract test 통과. coverage.md 출력. 기능 추가 재생성 동작 |
 | 2 | MCP 서버 + Web UI | 브라우저 화면에서 같은 흐름 수행(스펙 입력 → 진행 로그 → 기능 체크리스트 → 언어 선택 → 결과·리포트). MCP로 Claude Code에서 도구 호출 |
-| 3 | 다른 언어 생성, Proxy/녹화, API 키 어댑터 | 검증된 MockSpec + TS 참조 구현을 보고 Claude가 임의 언어로 생성, 같은 verify 통과. 키 있을 때 실제 시스템 전달 및 응답 녹화 |
+| 3 | 다른 언어 생성, 녹화(record). API 키 어댑터는 제외(§11) | 검증된 MockSpec + TS 참조 구현을 보고 Claude가 임의 언어로 생성, 같은 verify 통과. 키 있을 때 실제 시스템에 contract를 보내 응답 녹화·스펙 대조(상주 프록시·전달은 하지 않음) |
 
 2단계 인터페이스 경계: 2A(서비스 층 + MCP)와 2B(Web UI)로 나눈다. 2A는 완료, 2B도 완료(`specmock ui`, MCP `open_ui`, Playwright E2E)했다. MCP 도구는 2A에서 10개, 2B의 `open_ui`로 11개다.
 - CLI 대응: `ingest_spec`, `analyze_spec`, `list_features`, `show_feature`, `select_features`, `generate_mock`, `verify_mock`.
@@ -533,7 +533,7 @@ specmock/
 - Web UI 서버는 LLM으로 `ClaudeCodeAdapter`를 쓴다.
 - 상세: [2026-11-05-phase2a-mcp-design.md](2026-11-05-phase2a-mcp-design.md), 2B는 [2026-11-06-phase2b-web-ui.md](../plans/2026-11-06-phase2b-web-ui.md) 계획과 실행 기록.
 
-3단계 인터페이스 경계: 3A(다른 언어 생성)를 먼저 했다. `generate`는 언어 무관 `scaffold`(fixtures·contracts·lock·보존 판정)와 `LanguageGenerator`(`LanguageOutput`: 파일 · install · start · sourceGlobs)로 나뉜다. TS는 `TsHonoGenerator`(템플릿, 출력 바이트 동일), 그 밖의 언어는 `LlmGenerator`가 언어 프로필(Java: Maven + Javalin) + MockSpec + TS 참조 구현을 프롬프트로 claude에 보내고 임시 디렉터리에서 빌드·contract·런타임 계약(501·404)을 통과한 결과만 반영한다(기본 3회, 실패 시 exit 5). verify는 lock의 install·start만 안다. 세션 모드(`--llm session` → `--finalize`, MCP `finalize_generation`)로 대화 안에서도 생성한다. MCP 도구는 12개. 상세: [2026-11-09-phase3a-java-generator-design.md](2026-11-09-phase3a-java-generator-design.md), [계획](../plans/2026-11-09-phase3a-java-generator.md). 3B는 프록시 대신 `record` 명령이다: mockspec의 정상 contract를 `target.json`의 실제 시스템에 보내 `recorded/`에 저장하고 `drift.md`를 쓴다. `select`는 녹화를 최우선 fixture 출처 `recorded`로 쓰고, `generate`는 입력(`inputHash`)이 같으면 LLM 없이 fixture만 다시 쓴다. MCP 도구는 13개(`record_responses`). 상세: [2026-11-09-phase3b-record-design.md](2026-11-09-phase3b-record-design.md), [계획](../plans/2026-11-09-phase3b-record.md). API 키 어댑터는 남은 3단계다.
+3단계 인터페이스 경계: 3A(다른 언어 생성)를 먼저 했다. `generate`는 언어 무관 `scaffold`(fixtures·contracts·lock·보존 판정)와 `LanguageGenerator`(`LanguageOutput`: 파일 · install · start · sourceGlobs)로 나뉜다. TS는 `TsHonoGenerator`(템플릿, 출력 바이트 동일), 그 밖의 언어는 `LlmGenerator`가 언어 프로필(Java: Maven + Javalin) + MockSpec + TS 참조 구현을 프롬프트로 claude에 보내고 임시 디렉터리에서 빌드·contract·런타임 계약(501·404)을 통과한 결과만 반영한다(기본 3회, 실패 시 exit 5). verify는 lock의 install·start만 안다. 세션 모드(`--llm session` → `--finalize`, MCP `finalize_generation`)로 대화 안에서도 생성한다. MCP 도구는 12개. 상세: [2026-11-09-phase3a-java-generator-design.md](2026-11-09-phase3a-java-generator-design.md), [계획](../plans/2026-11-09-phase3a-java-generator.md). 3B는 프록시 대신 `record` 명령이다: mockspec의 정상 contract를 `target.json`의 실제 시스템에 보내 `recorded/`에 저장하고 `drift.md`를 쓴다. `select`는 녹화를 최우선 fixture 출처 `recorded`로 쓰고, `generate`는 입력(`inputHash`)이 같으면 LLM 없이 fixture만 다시 쓴다. MCP 도구는 13개(`record_responses`). 상세: [2026-11-09-phase3b-record-design.md](2026-11-09-phase3b-record-design.md), [계획](../plans/2026-11-09-phase3b-record.md). API 키 어댑터(3C)는 하지 않는다(2026-11-11 결정, §11). 3단계의 남은 후보는 3A-2(Python/Go 언어 프로필)와 시나리오 제어(§12의 1A 항목 "시나리오 제어는 3단계")다.
 
 ## 11. 주요 결정 기록
 
@@ -547,6 +547,7 @@ specmock/
 | 파일 기반 상태 | 메모리 / DB | 인터페이스 간 공유, 재개, 디버깅 |
 | 선택 표현식 + selection.json | 대화형 UI만 | 재현 가능하고 스크립트화 가능. 나중에 기능 추가가 쉬움 |
 | 코어 → CLI → MCP 순서 | MCP 우선 | CLI가 디버깅이 빠르고 end-to-end를 먼저 확인할 수 있음. MCP는 같은 코어의 얇은 껍데기 |
+| API 키 LLM 어댑터 제외 | 3C로 구현 | 사용자 환경 가정(§1.2)이 Claude Code 보유다. 구독만으로 전 단계가 동작하므로 키 어댑터는 유지 비용만 더한다. `LlmAdapter` 경계는 그대로 두어 필요해지면 추가할 수 있다 |
 
 ## 12. 구현 중 변경 (1A, 1B, 2A, 3A)
 
