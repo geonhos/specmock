@@ -2,7 +2,7 @@ import type { AdapterName, LlmAdapter } from "./adapter.js";
 import { ClaudeCodeAdapter, type ClaudeCodeOptions } from "./claudeCode.js";
 import { SessionAdapter } from "./session.js";
 
-export type { AdapterName, CompleteRequest, ExtractRequest, LlmAdapter } from "./adapter.js";
+export type { AdapterName, CompleteRequest, ExtractRequest, LlmAdapter, LlmUsage } from "./adapter.js";
 export { ClaudeCodeAdapter, type ClaudeCodeOptions } from "./claudeCode.js";
 export { SessionAdapter } from "./session.js";
 

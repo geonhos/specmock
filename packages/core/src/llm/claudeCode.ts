@@ -3,7 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { killGroup, spawnGroup } from "../util/procGroup.js";
-import type { CompleteRequest, LlmAdapter } from "./adapter.js";
+import { maskSecrets } from "../ingest/mask.js";
+import type { CompleteRequest, LlmAdapter, LlmUsage } from "./adapter.js";
 
 export interface ClaudeCodeOptions {
   command?: string;        // 기본 "claude"
@@ -14,7 +15,13 @@ export interface ClaudeCodeOptions {
   cwd?: string;            // 기본: 호출마다 만드는 빈 임시 디렉터리
 }
 
-interface ResultEnvelope { is_error?: boolean; subtype?: string; result?: unknown; structured_output?: unknown }
+interface ModelUsageEntry { inputTokens?: number; outputTokens?: number; cacheReadInputTokens?: number; cacheCreationInputTokens?: number; costBasis?: string }
+interface ResultEnvelope {
+  is_error?: boolean; subtype?: string; result?: unknown; structured_output?: unknown;
+  usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
+  total_cost_usd?: number; duration_api_ms?: number;
+  modelUsage?: Record<string, ModelUsageEntry>;
+}
 
 /**
  * 로컬 Claude Code 구독으로 추출한다. `claude --print --output-format json --json-schema <schema> --tools ""`를
@@ -30,6 +37,49 @@ export class ClaudeCodeAdapter implements LlmAdapter {
   constructor(private readonly opts: ClaudeCodeOptions = {}) {}
 
   async complete(req: CompleteRequest): Promise<unknown> {
+    if (!req.onUsage) return this.run(req, { out: "" });
+    const start = new Date();
+    const t0 = performance.now();
+    const raw = { out: "" };
+    let value: unknown;
+    try {
+      value = await this.run(req, raw);
+    } catch (e) {
+      this.report(req, start, t0, raw.out, false, e);
+      throw e;
+    }
+    this.report(req, start, t0, raw.out, true);
+    return value;
+  }
+
+  /** 사용량 레코드를 만들어 콜백에 넘긴다. 콜백 예외는 경고로만 바꾼다. */
+  private report(req: CompleteRequest, start: Date, t0: number, out: string, ok: boolean, err?: unknown): void {
+    const env = tryParse(out);
+    const u = env?.usage;
+    const n = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+    const models = Object.entries(env?.modelUsage ?? {});
+    const weight = (m: ModelUsageEntry) => (m.inputTokens ?? 0) + (m.outputTokens ?? 0) + (m.cacheReadInputTokens ?? 0) + (m.cacheCreationInputTokens ?? 0);
+    const top = models.sort((a, b) => weight(b[1]) - weight(a[1]))[0];
+    const key = { ...process.env, ...this.opts.env }.ANTHROPIC_API_KEY;
+    const usage: LlmUsage = {
+      at: start.toISOString(),
+      model: top?.[0] ?? this.opts.model ?? null,
+      inputTokens: n(u?.input_tokens),
+      outputTokens: n(u?.output_tokens),
+      cacheReadTokens: n(u?.cache_read_input_tokens),
+      cacheCreationTokens: n(u?.cache_creation_input_tokens),
+      costUsd: n(env?.total_cost_usd),
+      costBasis: top?.[1].costBasis ?? null,
+      billing: key ? "api-key" : "subscription",
+      durationMs: Math.round(performance.now() - t0),
+      apiDurationMs: n(env?.duration_api_ms),
+      ok,
+      ...(ok ? {} : { error: maskSecrets(err instanceof Error ? err.message : String(err)) }),
+    };
+    try { req.onUsage!(usage); } catch (e) { process.stderr.write(`경고: LLM 사용량 기록 콜백이 실패했습니다: ${(e as Error).message}\n`); }
+  }
+
+  private async run(req: CompleteRequest, raw: { out: string }): Promise<unknown> {
     req.signal?.throwIfAborted();
     const args = ["--print", "--output-format", "json", "--json-schema", JSON.stringify(req.schema), "--no-session-persistence"];
     if (this.opts.model) args.push("--model", this.opts.model);
@@ -54,6 +104,7 @@ export class ClaudeCodeAdapter implements LlmAdapter {
       child.stdout.on("data", (d) => { out += d; });
       child.stderr.on("data", (d) => { err += d; });
       child.on("close", (code, signal) => {
+        raw.out = out;
         req.signal?.removeEventListener("abort", onAbort);
         clearTimeout(timer);
         if (code === 0) return resolve(out);

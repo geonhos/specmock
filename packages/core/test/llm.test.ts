@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ClaudeCodeAdapter } from "../src/llm/claudeCode.js";
+import type { LlmUsage } from "../src/llm/adapter.js";
 import { createAdapter } from "../src/llm/index.js";
 import { SessionAdapter } from "../src/llm/session.js";
 
@@ -102,6 +103,85 @@ describe("ClaudeCodeAdapter", () => {
     const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-slow"), timeoutMs: 200 });
     await expect(adapter.complete({ prompt: "x", schema, timeoutMs: 60_000 })).rejects.toThrow("claude 호출 시간 초과 (200ms)");
   }, 5_000);
+});
+
+describe("ClaudeCodeAdapter onUsage", () => {
+  const collect = () => { const got: LlmUsage[] = []; return { got, onUsage: (u: LlmUsage) => { got.push(u); } }; };
+
+  it("봉투의 usage · 비용 · 시간을 onUsage로 넘긴다", async () => {
+    const { got, onUsage } = collect();
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-usage"), env: { ANTHROPIC_API_KEY: "" } });
+    const before = Date.now();
+    await adapter.complete({ prompt: "x", schema, onUsage });
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({
+      model: "claude-sonnet-4-5", inputTokens: 1842, outputTokens: 611, cacheReadTokens: 12, cacheCreationTokens: 3977,
+      costUsd: 0.0219, costBasis: "list", billing: "subscription", apiDurationMs: 8870, ok: true,
+    });
+    expect(got[0]!.error).toBeUndefined();
+    expect(Date.parse(got[0]!.at)).toBeGreaterThanOrEqual(before - 1000);
+    expect(got[0]!.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("ANTHROPIC_API_KEY가 있으면 billing은 api-key", async () => {
+    const { got, onUsage } = collect();
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-usage"), env: { ANTHROPIC_API_KEY: "sk-test" } });
+    await adapter.complete({ prompt: "x", schema, onUsage });
+    expect(got[0]!.billing).toBe("api-key");
+  });
+
+  it("usage가 없는 봉투는 토큰 필드가 null이고 실패가 아니다", async () => {
+    const { got, onUsage } = collect();
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude"), model: "sonnet" });
+    await adapter.complete({ prompt: "x", schema, onUsage });
+    expect(got[0]).toMatchObject({
+      ok: true, model: "sonnet", inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheCreationTokens: null,
+      costUsd: null, costBasis: null, apiDurationMs: null,
+    });
+    expect(typeof got[0]!.durationMs).toBe("number");
+  });
+
+  it("실패(종료 코드)도 ok:false · durationMs와 함께 기록한다", async () => {
+    const { got, onUsage } = collect();
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-fail") });
+    await expect(adapter.complete({ prompt: "x", schema, onUsage })).rejects.toThrow(/Not logged in/);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({ ok: false, inputTokens: null, model: null });
+    expect(got[0]!.error).toMatch(/Not logged in/);
+    expect(typeof got[0]!.durationMs).toBe("number");
+  });
+
+  it("is_error 봉투는 토큰을 채우고 error는 비밀을 마스킹한다", async () => {
+    const { got, onUsage } = collect();
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-usage"), env: { USAGE_FAIL: "1" } });
+    await expect(adapter.complete({ prompt: "x", schema, onUsage })).rejects.toThrow(/boom/);
+    expect(got[0]).toMatchObject({ ok: false, inputTokens: 5, outputTokens: 1, costUsd: 0.001 });
+    expect(got[0]!.error).toMatch(/boom/);
+    expect(got[0]!.error).not.toContain("abcdefghijklmnopqrstuvwxyz");
+  });
+
+  it("시간 초과와 JSON 파싱 실패도 한 번씩 기록한다", async () => {
+    const a = collect();
+    await expect(new ClaudeCodeAdapter({ command: path.join(BIN, "claude-slow"), timeoutMs: 200 }).complete({ prompt: "x", schema, onUsage: a.onUsage })).rejects.toThrow(/시간 초과/);
+    expect(a.got).toHaveLength(1);
+    expect(a.got[0]).toMatchObject({ ok: false });
+    expect(a.got[0]!.error).toMatch(/시간 초과/);
+    const b = collect();
+    await expect(new ClaudeCodeAdapter({ command: path.join(BIN, "claude-garbage") }).complete({ prompt: "x", schema, onUsage: b.onUsage })).rejects.toThrow(/JSON으로 읽을 수 없습니다/);
+    expect(b.got).toHaveLength(1);
+    expect(b.got[0]!.ok).toBe(false);
+  }, 5_000);
+
+  it("onUsage가 던져도 결과를 잃지 않고 경고만 낸다", async () => {
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-usage") });
+    const orig = process.stderr.write.bind(process.stderr);
+    const lines: string[] = [];
+    process.stderr.write = ((c: string | Uint8Array) => { lines.push(String(c)); return true; }) as typeof process.stderr.write;
+    try {
+      await expect(adapter.complete({ prompt: "x", schema, onUsage: () => { throw new Error("cb bug"); } })).resolves.toEqual({ endpoints: [] });
+    } finally { process.stderr.write = orig; }
+    expect(lines.join("")).toMatch(/경고.*cb bug/);
+  });
 });
 
 describe("SessionAdapter", () => {
