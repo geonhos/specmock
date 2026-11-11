@@ -298,12 +298,24 @@ function unifyPathVars(specFeatures: Feature[], buckets: Bucket[]): void {
     chosen.set(key, spec.get(key) ?? best);
   }
   for (const b of buckets) {
+    const ps = positions(b.path);
+    const names = ps.map((p) => chosen.get(p.key)!);
+    // 통일 이름이 같은 경로의 다른 위치 이름과 겹치면(`/users/{id}/posts/{id}`) 바뀐 위치는 원래 이름을 유지한다.
+    for (let dup = true; dup; ) {
+      dup = false;
+      for (let i = 0; i < ps.length; i++) {
+        if (names[i] !== ps[i].name && names.some((n, j) => j !== i && n === names[i])) {
+          names[i] = ps[i].name;
+          dup = true;
+        }
+      }
+    }
     let out = "";
     let last = 0;
-    for (const { key, start, end } of positions(b.path)) {
-      out += b.path.slice(last, start) + `{${chosen.get(key)}}`;
-      last = end;
-    }
+    ps.forEach((p, i) => {
+      out += b.path.slice(last, p.start) + `{${names[i]}}`;
+      last = p.end;
+    });
     b.path = out + b.path.slice(last);
   }
 }

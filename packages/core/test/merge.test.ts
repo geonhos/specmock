@@ -494,6 +494,19 @@ describe("merge", () => {
     expect(catalog.features.filter((f) => f.path.startsWith("/v1/customers")).map((f) => f.path)).toEqual(["/v1/customers/{customer}/sources/{id}", "/v1/customers/{customer}/sources/{id}"]);
   });
 
+  it("never gives two positions of one path the same variable name when unifying", async () => {
+    await writeExtracted([
+      mk({ method: "GET", path: "/users/{id}", group: "" }),
+      mk({ method: "DELETE", path: "/users/{id}", group: "" }),
+      mk({ method: "GET", path: "/users/{user_id}/posts/{id}", group: "" }),
+    ]);
+    await merge(ws, "pets");
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    const posts = catalog.features.find((f) => f.path.includes("/posts/"))!;
+    expect(posts.path).toBe("/users/{user_id}/posts/{id}");
+    expect(Object.keys(posts.request.params)).toEqual(["user_id", "id"]);
+  });
+
   it("prefers the openapi variable name for a shared prefix when unifying", async () => {
     const catalog = await mergeWithSpec(
       { "/orders/{orderId}": { get: { operationId: "getOrder", responses: { "200": { description: "ok" } } } } },
