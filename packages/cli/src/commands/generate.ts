@@ -1,6 +1,6 @@
-import { assertLanguage, finalizeGeneration, generate, prepareGeneration } from "@specmock/core";
+import { assertLanguage, DEFAULT_LLM_MAX_ATTEMPTS, finalizeGeneration, generate, prepareGeneration } from "@specmock/core";
 import type { Command } from "commander";
-import { fail, formatGenerate, parseAttempts, printJsonOr, SYSTEM_ARG_HELP, workspaceFrom } from "../context.js";
+import { collectUsage, fail, formatGenerate, formatUsageLine, parseAttempts, printJsonOr, SYSTEM_ARG_HELP, usageJson, workspaceFrom } from "../context.js";
 
 /** core는 언어 변경 거부 문구를 중립으로 쓴다. CLI에서는 옵션 이름을 덧붙인다. */
 async function withCliHint<T>(run: () => Promise<T>): Promise<T> {
@@ -59,11 +59,17 @@ export function registerGenerate(program: Command): void {
         return;
       }
 
+      const startedAt = new Date();
+      let usage: Awaited<ReturnType<typeof collectUsage>> = null;
       const report = await withCliHint(() => generate(ws, system, {
         outDir: opts.out, force: opts.force, language: opts.lang, model: opts.model, maxAttempts,
         onProgress: (e) => process.stderr.write(e.message + "\n"),
-      }));
-      printJsonOr(opts.json, report, () =>
+      })).finally(async () => {
+        // 시도를 다 써서 실패해도 합계는 보인다. TS 생성 · 재사용(skipped)은 호출이 0회라 줄이 없다.
+        usage = await collectUsage(ws, system, startedAt);
+        if (usage) process.stderr.write(formatUsageLine(usage, { used: usage.calls, max: maxAttempts ?? DEFAULT_LLM_MAX_ATTEMPTS }) + "\n");
+      });
+      printJsonOr(opts.json, { ...report, usage: usageJson(usage) }, () =>
         `${formatGenerate(report)}\n실행: ${report.launch}\n검증: specmock verify ${system}`,
       );
     });

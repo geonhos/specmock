@@ -1,6 +1,6 @@
 import { assertLanguage, formatCatalog, runPipeline, verifyFailed } from "@specmock/core";
 import type { Command } from "commander";
-import { fail, formatDiff, formatGenerate, formatMerge, formatVerify, parseAttempts, SYSTEM_ARG_HELP, workspaceFrom } from "../context.js";
+import { collectUsage, fail, formatDiff, formatGenerate, formatMerge, formatUsageLine, formatVerify, parseAttempts, SYSTEM_ARG_HELP, usageJson, workspaceFrom } from "../context.js";
 
 interface Opts { select: string; lang?: string; out?: string; verify: boolean; llm?: string; model?: string; maxAttempts?: string; refresh: boolean; json: boolean }
 
@@ -27,6 +27,8 @@ export function registerRun(program: Command): void {
       const ws = workspaceFrom(cmd);
       // --json이면 중간 stdout을 모두 막고 마지막에 JSON 하나만 낸다.
       const out = (s: string) => { if (!opts.json) process.stdout.write(s); };
+      const startedAt = new Date();
+      let usage: Awaited<ReturnType<typeof collectUsage>> = null;
       const r = await runPipeline(ws, system, origins, {
         select: opts.select, outDir: opts.out, verify: opts.verify,
         llm: opts.llm as "claude-code" | undefined, model: opts.model, refresh: opts.refresh,
@@ -47,9 +49,13 @@ export function registerRun(program: Command): void {
             out(formatVerify(s.result, s.coverageFile) + "\n");
           }
         },
+      }).finally(async () => {
+        // 중간에 실패해도 그때까지 쓴 합계는 보인다. LLM을 부르지 않았으면 줄이 없다.
+        usage = await collectUsage(ws, system, startedAt);
+        if (usage) process.stderr.write(formatUsageLine(usage) + "\n");
       });
       if (opts.json) {
-        process.stdout.write(JSON.stringify({ system, catalog: { features: r.catalog.features.length }, selected: r.selection.resolved, generate: r.generate, verify: r.verify, coverage: r.coverageFile, extract: r.extract, merge: r.merge }, null, 2) + "\n");
+        process.stdout.write(JSON.stringify({ system, catalog: { features: r.catalog.features.length }, selected: r.selection.resolved, generate: r.generate, verify: r.verify, coverage: r.coverageFile, extract: r.extract, merge: r.merge, usage: usageJson(usage) }, null, 2) + "\n");
       }
       // process.exit는 파이프로 흘러가는 stdout을 잘라먹을 수 있으므로 exitCode만 설정하고 자연 종료한다.
       if (r.extractFailed || (r.verify && verifyFailed(r.verify))) process.exitCode = 2;

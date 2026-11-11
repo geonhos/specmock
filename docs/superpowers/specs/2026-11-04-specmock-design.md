@@ -443,6 +443,7 @@ specmock run      <system> <origins...> [--select expr] [--lang ts] [--out dir] 
 
 - 모든 상태는 `./.specmock/<system>/`에 둔다. `--workspace`로 변경 가능.
 - `--json` 출력을 모든 명령에 지원하여 스킬과 2단계 Web UI가 파싱할 수 있게 한다.
+- `analyze --llm claude-code` · `generate --lang java`는 끝날 때 이번 실행분 LLM 사용량 합계를 stderr 한 줄로 보이고 `--json`에 `usage`를 싣는다. 호출별 기록은 `.specmock/<system>/llm-usage.jsonl`(설계 `2026-11-11-llm-usage-log-design.md`).
 
 ### 5.7 Claude Code 스킬 (`plugin/skills/specmock/SKILL.md`)
 
@@ -612,3 +613,4 @@ specmock/
 | **3A** 세션 모드의 `--force` 정리는 finalize에서 | 지시서를 쓰는 시점에는 새 소스가 없으므로, 새 소스가 확정되는 순간에 이전 언어 소스를 지운다 |
 | **3A** TS 라우트 정리를 `LanguageOutput.prune`으로 | 쓰지 않은 `src/routes/*.ts`를 지우는 기존 동작 유지 |
 | **3A** 세션 지시서는 `prepareGeneration`·`finalizeGeneration`으로 `generate`와 분리 | `generate`가 늘 `GenerateReport`를 돌려주게(CLI·MCP·Web 출력 단순화) |
+| **실사용 점검** LLM 사용량 기록: `LlmAdapter.complete`의 선택 콜백 `onUsage`, `.specmock/<system>/llm-usage.jsonl`, CLI 종료 합계 | `ClaudeCodeAdapter`가 응답 봉투의 토큰 · 비용을 버리고 `--no-session-persistence`라 사후 복구도 안 돼, 점검의 근거 자료를 남길 수 없었다. 반환형을 바꾸지 않아 기존 어댑터 · 테스트는 그대로 |

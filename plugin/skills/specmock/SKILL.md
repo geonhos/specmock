@@ -92,7 +92,7 @@ specmock analyze <system>
 2. 청크 파일을 **하나씩** 읽고, `prompt`의 규칙대로 `schema`에 맞는 JSON을 `.specmock/<system>/extracted/NNN.json`에 `{"endpoints": [...]}` 형태로 쓴다. 근거 인용은 원문 그대로 복사한다. 엔드포인트가 없으면 `{"endpoints": []}`. `extracted/manifest.json`은 CLI가 관리하므로 건드리지 않는다.
 3. 모든 청크가 끝나면 `specmock analyze <system> --merge`.
 
-청크가 20개를 넘으면 사용자에게 수를 알리고, 로컬 CLI 자동 추출(`specmock analyze <system> --llm claude-code [--model sonnet|opus]`)을 쓸지 묻는다. **구독으로 청크당 `claude` 호출이 1회씩 나간다**는 점을 함께 알린다. 이미 있는 추출을 버리고 다시 하려면 `--refresh`(세션 모드에서는 prepare 전에 `extracted/`의 기존 결과를 모두 지운다).
+청크가 20개를 넘으면 사용자에게 수를 알리고, 로컬 CLI 자동 추출(`specmock analyze <system> --llm claude-code [--model sonnet|opus]`)을 쓸지 묻는다. **구독으로 청크당 `claude` 호출이 1회씩 나간다**는 점을 함께 알린다. 이미 있는 추출을 버리고 다시 하려면 `--refresh`(세션 모드에서는 prepare 전에 `extracted/`의 기존 결과를 모두 지운다). `--llm claude-code`는 끝날 때 stderr에 이번 실행분 사용량 합계 한 줄(`LLM 호출 N회 · 입력 · 출력 · API 환산 $ …`)을 보이고 호출별 기록을 `.specmock/<system>/llm-usage.jsonl`에 남긴다. 비용은 API 정가 환산이라 구독이면 실제 청구가 아니다. 세션 모드의 토큰은 측정되지 않는다.
 
 **`analyze` 종료 코드 2** = 일부 청크 추출 실패(주로 `--llm claude-code` 자동 추출 중). merge는 진행되어 카탈로그는 만들어졌다. 사용자에게 "N개 청크 추출 실패, 해당 청크의 기능은 목록에 빠졌다"고 알리고, 같은 명령을 다시 실행하면 실패/미추출 청크만 다시 추출한다고 안내한다(재시도할지 묻는다). 1은 오류이므로 메시지를 전달하고 멈춘다.
 

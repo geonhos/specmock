@@ -8,6 +8,7 @@ import { prepare } from "../src/analyze/prepare.js";
 import { ingest } from "../src/ingest/index.js";
 import type { LlmAdapter } from "../src/llm/adapter.js";
 import { ClaudeCodeAdapter } from "../src/llm/claudeCode.js";
+import { readUsage } from "../src/llm/usageLog.js";
 import { Workspace } from "../src/workspace.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -25,6 +26,37 @@ afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
 function fakeAdapter(calls: string[]): LlmAdapter {
   return { name: "claude-code", async complete(req) { calls.push(req.prompt); return { endpoints: [] }; } };
 }
+
+describe("extract usage log", () => {
+  const usage = (ok: boolean) => ({ at: new Date().toISOString(), model: "m", inputTokens: 1, outputTokens: 2, cacheReadTokens: 0, cacheCreationTokens: 0, costUsd: 0.01, costBasis: "list", billing: "subscription" as const, durationMs: 5, apiDurationMs: 4, ok, ...(ok ? {} : { error: "x" }) });
+
+  it("onUsage를 부르는 어댑터면 청크마다 stage·detail이 붙은 줄이 llm-usage.jsonl에 쌓인다", async () => {
+    const adapter: LlmAdapter = { name: "claude-code", async complete(req) { req.onUsage?.(usage(true)); return { endpoints: [] }; } };
+    const r = await extract(ws, "pets", adapter);
+    const rows = await readUsage(ws.dir("pets"));
+    expect(rows).toHaveLength(r.written);
+    expect(rows.length).toBeGreaterThan(1);
+    expect(rows.every((x) => x.stage === "extract")).toBe(true);
+    expect(rows[0]!.detail).toMatch(/^chunk 000 · /);
+    expect(rows[1]!.detail).toMatch(/^chunk 001 · /);
+    expect(rows[0]).toMatchObject({ inputTokens: 1, costUsd: 0.01 });
+  });
+
+  it("실패한 호출도 기록되고 추출은 계속된다", async () => {
+    let n = 0;
+    const adapter: LlmAdapter = { name: "claude-code", async complete(req) { if (++n === 1) { req.onUsage?.(usage(false)); throw new Error("x"); } req.onUsage?.(usage(true)); return { endpoints: [] }; } };
+    const r = await extract(ws, "pets", adapter);
+    expect(r.failed).toHaveLength(1);
+    const rows = await readUsage(ws.dir("pets"));
+    expect(rows[0]).toMatchObject({ ok: false, error: "x" });
+    expect(rows.slice(1).every((x) => x.ok)).toBe(true);
+  });
+
+  it("onUsage를 부르지 않는 어댑터면 파일이 생기지 않는다", async () => {
+    await extract(ws, "pets", fakeAdapter([]));
+    expect(await readUsage(ws.dir("pets"))).toEqual([]);
+  });
+});
 
 describe("extract", () => {
   it("낡은 결과의 manifest 키는 재추출이 실패해도 디스크에서 지워진다", async () => {

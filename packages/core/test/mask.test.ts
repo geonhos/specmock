@@ -8,6 +8,12 @@ describe("maskSecrets", () => {
     expect(maskSecrets("Bearer <token>")).toBe("Bearer <token>");
   });
 
+  it("masks sk-ant- keys", () => {
+    const body = "Ab1_".repeat(6);
+    expect(maskSecrets(`key sk-ant-api03-${body} end`)).toBe("key sk-ant-*** end");
+    expect(maskSecrets("sk-ant-short")).toBe("sk-ant-short");   // 8자 미만 본문은 그대로
+  });
+
   it("masks sk_/pk_/rk_ live/test keys", () => {
     // 실제 키처럼 보이는 리터럴은 GitHub push protection에 걸리므로 런타임에 조합한다.
     const fakeBody = "Ab1".repeat(8);

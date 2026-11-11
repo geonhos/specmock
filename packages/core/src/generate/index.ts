@@ -13,6 +13,7 @@ import { assertMaxAttempts, ATTEMPT_DIR, LlmGenerator } from "./llm.js";
 import { LOCK_FILE, launchHint, readLock, writeLock, type Lock } from "./lock.js";
 import { SUPPORTED_LANGUAGES, assertLanguage, getEntry, getProfile, type LanguageProfile } from "./profiles/index.js";
 import { writeLanguageFiles, writeScaffold } from "./scaffold.js";
+import { createUsageSink } from "../llm/usageLog.js";
 import { TS_FIXED_FILES, TsHonoGenerator } from "./tsHono.js";
 
 export interface GenerateOptions {
@@ -181,7 +182,8 @@ async function generateUnlocked(ws: Workspace, system: string, opts: GenerateOpt
   const generator: LanguageGenerator = profile
     ? new LlmGenerator(profile, opts.adapter ?? new ClaudeCodeAdapter({ model: opts.model }), { maxAttempts: opts.maxAttempts })
     : new TsHonoGenerator();
-  const output = await generator.generate({ spec, outDir, existing, signal: opts.signal, onProgress: opts.onProgress });
+  const usage = createUsageSink(ws.dir(system));
+  const output = await generator.generate({ spec, outDir, existing, signal: opts.signal, onProgress: opts.onProgress, onUsage: usage.record }).finally(() => usage.flush());
 
   if (previous && !sameLanguage) await clearForLanguageChange(outDir, previous);
   const written: string[] = [];

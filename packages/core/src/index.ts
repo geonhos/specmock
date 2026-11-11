@@ -25,9 +25,10 @@ export { readLock, launchCommand, launchHint, type Lock } from "./generate/lock.
 export type { GenerateReport, GenerateProgress, LanguageOutput } from "./generate/generator.js";
 export { prepareGeneration, finalizeGeneration, readSessionMarker, REQUEST_FILE, SESSION_MARKER, type PrepareGenerationOptions, type PrepareGenerationResult, type FinalizeResult, type FinalizeReason } from "./generate/session.js";
 export { SUPPORTED_LANGUAGES, assertLanguage } from "./generate/profiles/index.js";
-export { LlmGenerator, ATTEMPT_DIR, type LlmGeneratorOptions } from "./generate/llm.js";
+export { LlmGenerator, ATTEMPT_DIR, DEFAULT_LLM_MAX_ATTEMPTS, type LlmGeneratorOptions } from "./generate/llm.js";
 export { GenerationFailedError, EnvironmentError, LlmForbiddenError } from "./generate/errors.js";
 export { forbiddenLlmAdapter } from "./llm/forbidden.js";
+export { appendUsage, createUsageSink, readUsage, readUsageSince, summarizeUsage, USAGE_FILE, type UsageRecord, type UsageSummary } from "./llm/usageLog.js";
 export { verify, verifyFailed, loadContracts, type VerifyOptions, type VerifyResult, type ContractResult } from "./verify/index.js";
 export type { RuntimeCheck, RuntimeSpec } from "./verify/runtime.js";
 export { startMock, ensureInstalled, installKey, markInstalled, type RunningMock, type StartMockOptions, type EnsureInstalledOptions } from "./verify/server.js";
@@ -36,6 +37,6 @@ export { DRIFT_FILE, RECORDED_DIR, TARGET_EXAMPLE, TARGET_FILE, isSafeFeatureId,
 export { specInputHash, featureInputHash } from "./util/specHash.js";
 export { extract, type ExtractOptions, type ExtractProgress, type ExtractResult } from "./analyze/extract.js";
 export { submitExtraction, type SubmitExtractionInput, type SubmitExtractionResult, type SubmitExtractionOptions, type SubmitError } from "./analyze/submit.js";
-export { createAdapter, ADAPTER_NAMES, ClaudeCodeAdapter, SessionAdapter, type AdapterName, type LlmAdapter, type CompleteRequest, type ExtractRequest, type ClaudeCodeOptions } from "./llm/index.js";
+export { createAdapter, ADAPTER_NAMES, ClaudeCodeAdapter, BILLING_ENV_VARS, SessionAdapter, type AdapterName, type LlmAdapter, type LlmUsage, type CompleteRequest, type ExtractRequest, type ClaudeCodeOptions } from "./llm/index.js";
 export * from "./service/index.js";
 export { withSystemLock, LockBusyError, SYSTEM_LOCK_FILE, type LockBody, type SystemLockOptions } from "./workspaceLock.js";
