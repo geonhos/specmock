@@ -23,6 +23,15 @@ describe("deriveFeatureId", () => {
   });
 });
 
+describe("deriveFeatureId siblingMethods", () => {
+  it("keeps POST on a trailing variable as create when PUT/PATCH is a sibling", () => {
+    expect(deriveFeatureId({ method: "POST", path: "/users/{id}", siblingMethods: new Set(["POST", "PUT"]) })).toBe("users.create");
+    expect(deriveFeatureId({ method: "POST", path: "/users/{id}", siblingMethods: new Set(["POST", "PATCH"]) })).toBe("users.create");
+    expect(deriveFeatureId({ method: "POST", path: "/users/{id}", siblingMethods: new Set(["POST", "GET"]) })).toBe("users.update");
+    expect(deriveFeatureId({ method: "PUT", path: "/users/{id}", siblingMethods: new Set(["POST", "PUT"]) })).toBe("users.update");
+  });
+});
+
 describe("deriveFeatureId hardening", () => {
   it("treats segments containing a template as parameters and sanitizes resources", () => {
     expect(deriveFeatureId({ method: "GET", path: "/users/{id}.json" })).toBe("users.get");

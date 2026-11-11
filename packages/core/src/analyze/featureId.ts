@@ -34,7 +34,28 @@ export function staticSegments(path: string): string[] {
     .filter((s) => s.length > 0);
 }
 
-export function deriveFeatureId(input: { method: HttpMethod; path: string; operationId?: string }): string {
+/** 경로 변수 이름을 지운 꼴(`/v1/customers/{}`). 병합 bucket 키와 같은 경로 판정에 쓴다. */
+export function pathShape(p: string): string {
+  return p.replace(/\{[^}]*\}/g, "{}");
+}
+
+/** 모양(pathShape)별로 쓰인 메서드 집합. POST의 id 동작(create/update)을 정할 때 쓴다. */
+export function methodsByShape(entries: Iterable<{ method: HttpMethod; path: string }>): Map<string, Set<HttpMethod>> {
+  const out = new Map<string, Set<HttpMethod>>();
+  for (const { method, path } of entries) {
+    const key = pathShape(path);
+    const set = out.get(key) ?? new Set<HttpMethod>();
+    set.add(method);
+    out.set(key, set);
+  }
+  return out;
+}
+
+/**
+ * `siblingMethods`는 같은 경로 모양에 있는 메서드들. PUT/PATCH가 있으면 끝이 변수인 POST도 `update`가 아니라 `create`로 남긴다
+ * (`update`는 PUT/PATCH가 차지한다). 생략하면 형제가 없는 것으로 본다.
+ */
+export function deriveFeatureId(input: { method: HttpMethod; path: string; operationId?: string; siblingMethods?: ReadonlySet<HttpMethod> }): string {
   if (input.operationId && input.operationId.trim().length > 0) {
     const id = sanitize(input.operationId.trim());
     if (hasAlnum(id)) return id;
@@ -46,7 +67,7 @@ export function deriveFeatureId(input: { method: HttpMethod; path: string; opera
   const action = (() => {
     switch (input.method) {
       case "GET": return endsWithParam ? "get" : "list";
-      case "POST": return endsWithParam ? "update" : "create";
+      case "POST": return endsWithParam && !input.siblingMethods?.has("PUT") && !input.siblingMethods?.has("PATCH") ? "update" : "create";
       case "PUT":
       case "PATCH": return "update";
       case "DELETE": return "delete";

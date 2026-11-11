@@ -16,7 +16,7 @@ import {
 import { makeAjv } from "../util/ajv.js";
 import type { Workspace } from "../workspace.js";
 import { writeCatalogWithDiff } from "./catalogWrite.js";
-import { deriveFeatureId, deriveGroup, FeatureIdRegistry } from "./featureId.js";
+import { deriveFeatureId, deriveGroup, FeatureIdRegistry, methodsByShape, pathShape } from "./featureId.js";
 import { inferSchema } from "./inferSchema.js";
 import { analyzeOpenApiDocument } from "./openapi.js";
 import { EXTRACTED_DIR, extractedFileName, pruneExtracted } from "./prepare.js";
@@ -102,17 +102,12 @@ export function normalizeVarName(name: string): string {
   return name === name.toUpperCase() && /[A-Z]/.test(name) ? name.toLowerCase() : name;
 }
 
-/** 경로 변수 이름을 지운 꼴(`/v1/customers/{}`). 병합 bucket 키에 쓴다. */
-function pathShape(p: string): string {
-  return p.replace(/\{[^}]*\}/g, "{}");
-}
-
 function pathVars(p: string): string[] {
   return [...p.matchAll(/\{([^}]+)\}/g)].map((m) => m[1]);
 }
 
 /**
- * 문서에서 흔한 표기를 OpenAPI식 경로로 맞춘다: 스킴·호스트 제거, 쿼리·프래그먼트 제거, 세그먼트 단위 `:id`·`<id>` → `{id}`, `{{ID}}` → `{id}`, 전부 대문자인 변수 이름은 소문자로, 끝 슬래시 제거.
+ * 문서에서 흔한 표기를 OpenAPI식 경로로 맞춘다: 스킴·호스트 제거, 쿼리·프래그먼트 제거, 세그먼트 단위 `:id`·`<id>` → `{id}`, `{{ID}}` → `{id}`, 전부 대문자인 변수 이름(`{CUSTOMER_ID}`)은 소문자로(camelCase `{petId}`는 유지), 끝 슬래시 제거.
  * `/resources:batchGet` 같은 세그먼트 안의 콜론은 건드리지 않는다.
  * 결과는 항상 "/"로 시작한다. 그렇지 않거나 공백이 섞여 있으면 null(호출자가 거부한다).
  */
@@ -158,7 +153,7 @@ function mergeParams(ajv: Ajv, target: Feature["request"]["params"], list: Extra
   }
 }
 
-function toFeature(ajv: Ajv, bucket: Bucket, registry: FeatureIdRegistry, groupOf: (g: string) => string): Feature {
+function toFeature(ajv: Ajv, bucket: Bucket, registry: FeatureIdRegistry, groupOf: (g: string) => string, siblings: ReadonlyMap<string, ReadonlySet<HttpMethod>>): Feature {
   const notes: string[] = [];
   const items = [...bucket.items].sort((a, b) => b.ep.confidence - a.ep.confidence);
   const primary = items[0].ep;
@@ -228,8 +223,8 @@ function toFeature(ajv: Ajv, bucket: Bucket, registry: FeatureIdRegistry, groupO
 
   const tags = primary.group ? [groupOf(primary.group)] : undefined;
   return {
-    id: registry.claim(deriveFeatureId({ method: bucket.method, path: bucket.path })),
-    group: deriveGroup({ path: bucket.path, tags }),
+    id: registry.claim(deriveFeatureId({ method: bucket.method, path: bucket.path, siblingMethods: siblings.get(pathShape(bucket.path)) })),
+    group: groupOf(deriveGroup({ path: bucket.path, tags })),
     title: primary.title || `${bucket.method} ${bucket.path}`,
     summary: items.map((i) => i.ep.summary).find((s) => s) ?? "",
     method: bucket.method,
@@ -353,15 +348,20 @@ export async function merge(ws: Workspace, system: string): Promise<MergeResult>
   }
 
   // group은 대소문자를 무시하고 묶어 대표 철자 하나로 통일한다(가장 많이 나온 철자, 동률이면 먼저 나온 것).
+  // LLM group뿐 아니라 경로에서 파생한 group과 OpenAPI 태그도 같은 규칙으로 묶는다.
   const spellings = new Map<string, Map<string, number>>();
+  const countSpelling = (raw: string): void => {
+    const g = raw.trim();
+    if (!g) return;
+    const m = spellings.get(g.toLowerCase()) ?? new Map<string, number>();
+    m.set(g, (m.get(g) ?? 0) + 1);
+    spellings.set(g.toLowerCase(), m);
+  };
+  for (const f of features) countSpelling(f.group);
   for (const key of [...buckets.keys()]) {
-    for (const { ep } of buckets.get(key)!.items) {
-      const g = ep.group.trim();
-      if (!g) continue;
-      const m = spellings.get(g.toLowerCase()) ?? new Map<string, number>();
-      m.set(g, (m.get(g) ?? 0) + 1);
-      spellings.set(g.toLowerCase(), m);
-    }
+    const bucket = buckets.get(key)!;
+    for (const { ep } of bucket.items) countSpelling(ep.group);
+    if (!bucket.items.some((i) => i.ep.group.trim())) countSpelling(deriveGroup({ path: bucket.path }));
   }
   const canonical = new Map<string, string>();
   for (const [lower, m] of spellings) {
@@ -371,12 +371,14 @@ export async function merge(ws: Workspace, system: string): Promise<MergeResult>
     canonical.set(lower, best);
   }
   const groupOf = (g: string): string => canonical.get(g.trim().toLowerCase()) ?? g;
+  for (const f of features) f.group = groupOf(f.group);
+  const siblings = methodsByShape([...features, ...[...buckets.values()]]);
 
   // 3) 버킷 → Feature. 키 순서를 고정해 id 접미사(…2, …3)가 실행마다 같게 한다. 하나가 실패해도 나머지는 계속.
   for (const key of [...buckets.keys()].sort()) {
     const bucket = buckets.get(key)!;
     try {
-      features.push(toFeature(ajv, bucket, registry, groupOf));
+      features.push(toFeature(ajv, bucket, registry, groupOf, siblings));
     } catch (e) {
       const chunk = bucket.items[0].chunk;
       reject(bucket.items.map((i) => i.ep), `기능 변환 실패 (${key}): ${(e as Error).message}`, chunk);

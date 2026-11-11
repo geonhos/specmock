@@ -328,6 +328,49 @@ describe("merge", () => {
     expect(catalog.features.find((f) => f.method === "GET" && f.path === "/v1/customers")!.id).toBe("customers.list");
   });
 
+  it("unifies a path-derived group with an LLM group spelled differently", async () => {
+    await writeExtracted([
+      mk({ method: "GET", path: "/v1/customers", group: "" }),
+      mk({ method: "POST", path: "/v1/customers", group: "Customers" }),
+      mk({ method: "GET", path: "/v1/customers/{id}", group: "Customers" }),
+    ]);
+    await merge(ws, "pets");
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    expect([...new Set(catalog.features.map((f) => f.group))]).toEqual(["Customers"]);
+  });
+
+  it("keeps POST as create when PUT or PATCH exists on the same path shape", async () => {
+    await writeExtracted([
+      mk({ method: "POST", path: "/users/{id}", group: "" }),
+      mk({ method: "PUT", path: "/users/{userId}", group: "" }),
+      mk({ method: "POST", path: "/v1/customers/{id}", group: "" }),
+    ]);
+    await merge(ws, "pets");
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    const id = (m: string, p: string) => catalog.features.find((f) => f.method === m && f.path.startsWith(p))!.id;
+    expect(id("POST", "/users")).toBe("users.create");
+    expect(id("PUT", "/users")).toBe("users.update");
+    expect(id("POST", "/v1/customers")).toBe("customers.update");
+  });
+
+  it("hides a doc-extracted endpoint behind an openapi one whose variable name differs", async () => {
+    const spec = {
+      openapi: "3.0.0", info: { title: "t", version: "1" },
+      paths: { "/pets/{petId}": { get: { operationId: "getPet", parameters: [{ name: "petId", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "ok" } } } } },
+    };
+    const specFile = path.join(dir, "var.json");
+    await writeFile(specFile, JSON.stringify(spec));
+    await ingest(ws, "var", [specFile, path.join(DOCS, "pets.md")]);
+    await prepare(ws, "var");
+    await writeFile(path.join(dir, "var", "extracted", "000.json"), JSON.stringify({ endpoints: [mk({ method: "GET", path: "/pets/{id}", group: "" })] }));
+    await merge(ws, "var");
+    const catalog = await ws.read("var", "catalog.json", CatalogSchema);
+    const gets = catalog.features.filter((f) => f.method === "GET");
+    expect(gets).toHaveLength(1);
+    expect(gets[0].path).toBe("/pets/{petId}");
+    expect(gets[0].provenance).toBe("openapi");
+  });
+
   it("merges the same endpoint whose path variable names differ", async () => {
     await writeExtracted([
       mk({ method: "POST", path: "/v1/customers/{{CUSTOMER_ID}}", confidence: 0.9, inferred: { method: true },

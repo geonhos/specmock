@@ -60,6 +60,7 @@
 | 8 | generate(런타임) | Stripe POST는 form-encoded인데 생성 mock이 JSON만 파싱: `curl -d "name=x"`는 400 `must have required property 'body'`, JSON으로 보내야 200 | `mock/stripe/src/routes/Customers.ts:13` `c.req.json().catch(() => undefined)`; 스키마에 `required:["body"]` | `content-type`이 `application/x-www-form-urlencoded`면 `c.req.parseBody()`로 읽어 같은 검증에 통과시킴. 카탈로그에 요청 content-type 기록 필요 | 중 | 기록 |
 | 9 | analyze | 중첩 객체가 얕음: `address`·`shipping`·`invoice_settings` 등이 `{"type":"object"}`뿐이고 `customers.get` 응답의 `address: {}`. update(create3) 응답 스키마는 `{"type":"object"}`에 예시 없음(출처 schema-generated) | 하위 속성이 `?query=` 링크 뒤에만 있음(사전 조사 ④), 청크 8은 응답 본문이 없는 청크로 추정 | 하위 속성 링크 추종 또는 OpenAPI(`spec3.json`) 대조(2차) | 대 | 기록 |
 | 10 | verify | verify는 실패 원인을 "404"로만 보임: 라우트가 통째로 사라진 것인지 경로 불일치인지 구분 안 됨. 종료 코드 2 | `verify`가 계약 실패를 상태 코드만 기록 | 404의 응답 본문(`unknown_path`)과 생성된 라우트 목록 대조를 coverage.md에 추가 | 소 | 기록 |
+| 11 | analyze(merge) | pathParam 이름이 자기 경로의 변수와 맞지 않으면 이름 바꾸기에서 빠져, 경로에 없는 필수 param이 남을 수 있음 | `merge.ts` `toFeature`의 `own.findIndex`가 일치하지 않으면 원래 이름을 그대로 둠(main부터 있던 동작) | 일치하는 변수가 없으면 해당 param을 버리거나 위치 기준으로 매핑 | 소 | 기록 |
 
 ## 5. 개선 과제 (우선순위)
 

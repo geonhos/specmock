@@ -1,6 +1,6 @@
 import type { OpenAPIV2, OpenAPIV3 } from "openapi-types";
 import type { Feature, HttpMethod, JsonSchema } from "../types.js";
-import { deriveFeatureId, deriveGroup, FeatureIdRegistry } from "./featureId.js";
+import { deriveFeatureId, deriveGroup, FeatureIdRegistry, methodsByShape, pathShape } from "./featureId.js";
 
 const METHODS: HttpMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
@@ -136,11 +136,12 @@ export function analyzeOpenApiDocument(doc: AnyDoc, registry: FeatureIdRegistry 
   }
   // Explicit operationIds claim their ids first so derived ids cannot steal them.
   const ids = new Map<number, string>();
+  const siblings = methodsByShape(ops.map(({ pathKey, method }) => ({ method, path: pathKey })));
   const hasExplicit = (o: AnyOperation) => typeof o.operationId === "string" && o.operationId.trim().length > 0;
   for (const explicit of [true, false]) {
     ops.forEach(({ pathKey, method, op }, i) => {
       if (hasExplicit(op) !== explicit) return;
-      ids.set(i, registry.claim(deriveFeatureId({ method, path: pathKey, operationId: op.operationId })));
+      ids.set(i, registry.claim(deriveFeatureId({ method, path: pathKey, operationId: op.operationId, siblingMethods: siblings.get(pathShape(pathKey)) })));
     });
   }
   return ops.map(({ pathKey, method, op, pathParams }, i) => {
