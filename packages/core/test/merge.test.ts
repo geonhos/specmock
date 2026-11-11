@@ -417,4 +417,27 @@ describe("merge", () => {
     expect(f.id).toBe("customers.update");
     expect(Object.keys(f.request.params)).toEqual(["id"]);
   });
+  it("unions body properties and required across items of the same bucket (higher confidence wins on type conflicts)", async () => {
+    await writeExtracted([
+      mk({ method: "POST", path: "/v1/intents", confidence: 0.85, requestBody: { type: "object", properties: { amount: { type: "integer" }, currency: { type: "string" } }, required: ["amount"] } }),
+      mk({ method: "POST", path: "/v1/intents", confidence: 0.4, requestBody: { type: "object", properties: { amount: { type: "string" }, hooks: { type: "object" }, metadata: { type: "object" } }, required: ["hooks", "ghost"] } }),
+      mk({ method: "POST", path: "/v1/intents", confidence: 0.7, requestBody: null }),
+    ]);
+    await merge(ws, "pets");
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    const body = catalog.features[0].request.body!;
+    expect(Object.keys(body.properties as object).sort()).toEqual(["amount", "currency", "hooks", "metadata"]);
+    expect((body.properties as Record<string, unknown>).amount).toEqual({ type: "integer" });
+    expect(body.required).toEqual(["amount", "hooks"]);
+  });
+
+  it("keeps a single body unchanged and ignores a non-object body when a first body exists", async () => {
+    await writeExtracted([
+      mk({ method: "POST", path: "/v1/a", confidence: 0.9, requestBody: { type: "array", items: { type: "string" } } }),
+      mk({ method: "POST", path: "/v1/a", confidence: 0.5, requestBody: { type: "object", properties: { x: { type: "string" } } } }),
+    ]);
+    await merge(ws, "pets");
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    expect(catalog.features[0].request.body).toEqual({ type: "array", items: { type: "string" } });
+  });
 });
