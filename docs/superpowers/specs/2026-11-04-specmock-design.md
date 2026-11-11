@@ -370,7 +370,7 @@ ego-browser는 셸 CLI이므로 CLI 모드에서는 core가 자식 프로세스�
 
 ### 5.2 analyze
 
-- **OpenAPI**: 결정적 변환. `paths × methods` 전부를 feature로. id는 `operationId` → 없으면 `리소스.동작` 규칙(`GET /users/{id}` → `users.get`, `GET /users` → `users.list`, `POST` → `create`, `PUT/PATCH` → `update`, `DELETE` → `delete`, 그 외는 path 마지막 세그먼트). 충돌 시 숫자 접미사. `provenance: openapi`, `confidence: 1.0`.
+- **OpenAPI**: 결정적 변환. `paths × methods` 전부를 feature로. id는 `operationId` → 없으면 `리소스.동작` 규칙(`GET /users/{id}` → `users.get`, `GET /users` → `users.list`, `POST` → `create`(operationId가 없고 경로 마지막 세그먼트가 변수면 `update`), `PUT/PATCH` → `update`, `DELETE` → `delete`, 그 외는 path 마지막 세그먼트). 충돌 시 숫자 접미사. `provenance: openapi`, `confidence: 1.0`.
 - **비구조 문서**: 세 단계.
   - `prepare`: 헤딩 기준 청크 분할(청크당 최대 6,000자, 겹침 200자). `chunks/NNN.md`를 쓰고, `analyze-request.json`에 `{ system, createdAt, prompt, schema, chunks: [{ index, file, heading, contentHash, … }], openapiFeatures }`를 기록한다. `schema`는 zod에서 만든 얇은 JSON Schema다. 프롬프트는 "이 청크에서 API 엔드포인트를 찾아라. 각 항목에 method, path, 요청/응답 스키마(알 수 있는 만큼), 샘플 응답 JSON(원문에 있으면 그대로), 근거 인용, 0~1 confidence를 적어라. 없으면 빈 배열"을 요구한다.
   - LLM 추출: 어댑터가 청크별로 호출하여 `extracted/NNN.json`을 원자적으로(.tmp → rename) 쓰고, 추출 당시 본문 해시를 `extracted/manifest.json`에 적는다(본문이 바뀐 청크만 다시 추출). 스킬 모드에서는 Claude가 직접 쓴다.
@@ -573,6 +573,9 @@ specmock/
 | 비밀값 마스킹은 패턴 3종(Bearer, `sk|pk|rk_live|test_`, `api_key:`/`password=` 류 키-값) | §6 그대로. OpenAPI의 파라미터 이름(`name: X-API-Key`)과 스키마 정의(`"password": {…}`)는 값이 아니므로 건드리지 않는다. 완전하지 않음을 README에 명시 |
 | `.specmock/<system>/generate.json`에 outDir 기록, `verify`가 `--dir` 없이 그 경로 사용 | `generate --out`을 쓴 뒤 `verify`가 기본 경로를 찾다 실패하는 흐름이 불편했다 |
 | `ingest --refresh`(원문 캐시) 미구현 | OpenAPI는 다시 읽는 비용이 작다. 캐시는 웹 수확을 넣는 1B에서 |
+| **실사용 점검**: 병합이 group을 대소문자 무시로 묶어 대표 철자(최다, 동률은 먼저 나온 것) 하나로 통일, `NameRegistry`는 소문자 기준으로 중복 판정 | LLM이 청크마다 `Customers`/`customers`를 달리 적으면 대소문자 비구분 파일시스템(macOS)에서 라우트 파일이 서로 덮어쓰였다 |
+| **실사용 점검**: 병합 bucket 키에서 경로 변수 이름을 지우고(`/v1/customers/{}`) 묶는다. 경로 입구에서 `{{ID}}`·`{ID}`·`:id` → 소문자 `{id}` 꼴로 정규화, 프롬프트에도 한 줄 | 문서 curl 예시의 `{{CUSTOMER_ID}}`와 `{id}`가 다른 경로로 취급돼 같은 기능이 둘로 나뉘었다 |
+| **실사용 점검**: operationId 없는 POST는 경로 마지막 세그먼트가 변수면 id 동작을 `update`로 | `POST /v1/customers/{id}`가 `customers.create2`로 나와 수정인지 알 수 없었다(Stripe식 관례) |
 | §4.4 카탈로그 변경 diff("새 기능 N개 / 사라진 기능 M개") 미구현 | 1A는 `catalogHash` 불일치 경고만 낸다. diff는 1B에서 |
 | §4.5 "응답 스키마 없음" 경고는 표의 샘플 배지(`—`)로만 표시 | 별도 경고 열 없이도 구분된다. 근거 불일치·path 추론 경고는 LLM 추출이 들어오는 1B에서 |
 | §7 골든 테스트(OpenAPI 샘플 3종)는 1B로 이월 | 1A는 Petstore 하나로 단위·통합·e2e를 덮는다. 인증 포함·`$ref` 중첩 샘플은 1B의 LLM 경계 테스트와 함께 추가 |

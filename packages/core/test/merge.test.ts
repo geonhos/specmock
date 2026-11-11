@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { adjustConfidence, merge, normalizePath, verifyEvidence } from "../src/analyze/merge.js";
+import { adjustConfidence, merge, normalizePath, normalizeVarName, verifyEvidence } from "../src/analyze/merge.js";
 import { prepare } from "../src/analyze/prepare.js";
 import { ingest } from "../src/ingest/index.js";
 import { CatalogDiffSchema, CatalogSchema } from "../src/types.js";
@@ -49,6 +49,14 @@ describe("normalizePath", () => {
     expect(normalizePath("/users/:id/posts/:postId")).toBe("/users/{id}/posts/{postId}");
     expect(normalizePath("/v1/resources:batchGet")).toBe("/v1/resources:batchGet");
     expect(normalizePath("/a/<id>:cancel")).toBe("/a/<id>:cancel");
+  });
+  it("normalizes variable spellings to lowercase single braces", () => {
+    expect(normalizePath("/v1/customers/{{CUSTOMER_ID}}")).toBe("/v1/customers/{customer_id}");
+    expect(normalizePath("/v1/customers/{CUSTOMER_ID}")).toBe("/v1/customers/{customer_id}");
+    expect(normalizePath("/v1/customers/:id")).toBe("/v1/customers/{id}");
+    expect(normalizePath("/v1/customers/{id}")).toBe("/v1/customers/{id}");
+    expect(normalizePath("/pets/{petId}")).toBe("/pets/{petId}");
+    expect(normalizeVarName("ID")).toBe("id");
   });
   it("returns null for paths without a leading slash or with whitespace", () => {
     expect(normalizePath("pets/bad")).toBeNull();
@@ -295,5 +303,46 @@ describe("merge", () => {
     expect(result.diff.previousAt).not.toBeNull();
     const { readdir } = await import("node:fs/promises");
     expect(await readdir(path.join(dir, "pets", "extracted"))).toEqual(["000.json"]);
+  });
+
+  const mk = (o: Record<string, unknown>) => ({
+    title: "t", summary: "", auth: "none", responses: [], evidence: [], confidence: 0.9, ...o,
+  });
+  const writeExtracted = (endpoints: unknown[]) =>
+    writeFile(path.join(dir, "pets", "extracted", "000.json"), JSON.stringify({ endpoints }));
+
+  it("unifies group spelling case-insensitively (most frequent, ties to first seen)", async () => {
+    await writeExtracted([
+      mk({ method: "GET", path: "/v1/customers", group: "customers" }),
+      mk({ method: "POST", path: "/v1/customers", group: "Customers" }),
+      mk({ method: "GET", path: "/v1/customers/{id}", group: "Customers" }),
+      mk({ method: "DELETE", path: "/v1/customers/{id}", group: "Customers" }),
+      mk({ method: "GET", path: "/v1/charges", group: "Billing" }),
+      mk({ method: "POST", path: "/v1/charges", group: "billing" }),
+    ]);
+    await merge(ws, "pets");
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    const groups = (m: string) => [...new Set(catalog.features.filter((f) => f.path.includes(m)).map((f) => f.group))];
+    expect(groups("customers")).toEqual(["Customers"]);
+    expect(groups("charges")).toEqual(["Billing"]);
+    expect(catalog.features.find((f) => f.method === "GET" && f.path === "/v1/customers")!.id).toBe("customers.list");
+  });
+
+  it("merges the same endpoint whose path variable names differ", async () => {
+    await writeExtracted([
+      mk({ method: "POST", path: "/v1/customers/{{CUSTOMER_ID}}", confidence: 0.9, inferred: { method: true },
+        pathParams: [{ name: "CUSTOMER_ID", required: true, schema: { type: "string" }, description: "" }],
+        requestBody: { type: "object", properties: { name: { type: "string" } } } }),
+      mk({ method: "POST", path: "/v1/customers/{id}", confidence: 0.9,
+        pathParams: [{ name: "id", required: true, schema: { type: "string" }, description: "" }],
+        requestBody: { type: "object", properties: { email: { type: "string" } } } }),
+    ]);
+    await merge(ws, "pets");
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    expect(catalog.features).toHaveLength(1);
+    const f = catalog.features[0];
+    expect(f.path).toBe("/v1/customers/{id}"); // 메서드가 명시된 항목이 대표
+    expect(f.id).toBe("customers.update");
+    expect(Object.keys(f.request.params)).toEqual(["id"]);
   });
 });
