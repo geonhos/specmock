@@ -14,6 +14,7 @@ export const javaProfile: LanguageProfile = {
     "소스는 패키지 specmock.<name>에 둔다. <name>은 system을 소문자로 바꾸고 [^a-z0-9]를 _로 바꾼 것이며, 숫자로 시작하면 _를 앞에 붙인다(petstore → specmock.petstore). 진입점은 그 패키지의 Main 클래스다.",
     "포트는 환경 변수 PORT(없으면 4010), 바인드 주소는 127.0.0.1이다.",
     "요청 검증은 기능별 validation 스키마({params, query, body})를 networknt(Draft 7)로 한다. path·query 값은 스키마의 type(integer·number·boolean)에 맞춰 바꾼 뒤 검증한다. 실패하면 400 {\"error\":\"validation_failed\",\"details\":[...]}.",
+    "요청 content-type이 application/x-www-form-urlencoded면 본문을 specmock.runtime.FormBody.parse로 읽고 FormBody.coerce(bodySchema, node)로 타입을 맞춘 뒤 같은 검증을 한다. FormBody.java는 제공되는 파일이니 직접 작성하거나 수정하지 마라.",
     "응답 바디는 요청마다 작업 디렉터리 기준 fixtures/<기능 id>/<status>.json을 읽어 그대로 보낸다(application/json). 204·205는 바디 없이 상태만 보낸다.",
     "GET /__specmock/health는 200 {\"ok\":true,\"system\":<system>,\"features\":<선택 기능 수>}.",
     "notMocked의 method·경로에 맞는 요청은 501 {\"error\":\"not_mocked\",\"feature\":<id>,\"hint\":\"specmock select <system> --add <id> && specmock generate <system>\"}. 그 밖의 경로는 404 {\"error\":\"unknown_path\",\"method\":<method>,\"path\":<path>}.",
@@ -24,6 +25,7 @@ export const javaProfile: LanguageProfile = {
     { path: "mvnw", mode: 0o755 },
     { path: "mvnw.cmd" },
     { path: ".mvn/wrapper/maven-wrapper.properties" },
+    { path: "src/main/java/specmock/runtime/FormBody.java" },
   ],
   install: (platform) => platform === "win32"
     ? { command: "cmd.exe", args: ["/c", "mvnw.cmd", ...MVN_ARGS] }
@@ -36,7 +38,7 @@ export const javaProfile: LanguageProfile = {
   installInputs: ["pom.xml", "src/**"],
   artifacts: ["target"],
   sourceGlobs: ["pom.xml", "src/**"],
-  protectedPaths: ["fixtures/**", "contracts/**", "specmock.lock.json", ".specmock-installed", "mvnw*", ".mvn/**", "target/**"],
+  protectedPaths: ["fixtures/**", "contracts/**", "specmock.lock.json", ".specmock-installed", "mvnw*", ".mvn/**", "target/**", "src/main/java/specmock/runtime/FormBody.java"],
   maxFiles: 200,
   requires: "JDK 17 이상과 네트워크(첫 빌드)",
   referenceFiles: ["reference/pom.xml", "reference/Main.java"],
