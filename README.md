@@ -335,7 +335,7 @@ mock/<system>/
 
 ## LLM 사용량
 
-`claude`를 자동으로 부르는 경로(`analyze --llm claude-code`, `generate --lang java`, Web UI 서버가 같은 어댑터로 부르는 호출)는 호출마다 한 줄을 `.specmock/<system>/llm-usage.jsonl`에 덧붙입니다. 성공 · 실패 · 시간 초과를 모두 기록합니다. 프롬프트와 응답 본문은 남기지 않고, 실패 메시지는 비밀값 마스킹을 거칩니다.
+`claude`를 자동으로 부르는 경로(`analyze --llm claude-code`, `generate --lang java`, `run --llm claude-code`, Web UI 서버가 같은 어댑터로 부르는 호출)는 호출마다 한 줄을 `.specmock/<system>/llm-usage.jsonl`에 덧붙입니다. 성공 · 실패 · 시간 초과를 모두 기록합니다. 프롬프트와 응답 본문은 남기지 않고, 실패 메시지는 비밀값 마스킹을 거칩니다.
 
 ```json
 {"at":"2026-11-11T06:12:03.412Z","stage":"extract","detail":"chunk 012 · Create a customer","model":"claude-sonnet-4-5","inputTokens":1842,"outputTokens":611,"cacheReadTokens":0,"cacheCreationTokens":3977,"costUsd":0.0219,"costBasis":"list","billing":"subscription","durationMs":9420,"apiDurationMs":8870,"ok":true}
@@ -346,11 +346,11 @@ mock/<system>/
 | `stage` · `detail` | `extract`(analyze 청크) 또는 `generate`(LLM 생성 시도, 예: `java attempt 2/3`) |
 | `inputTokens` · `outputTokens` · `cacheReadTokens` · `cacheCreationTokens` | `claude` 응답이 알려 준 토큰 수. 응답에 없으면 `null` |
 | `costUsd` · `costBasis` | **API 정가 환산 비용**(`costBasis: "list"`). 구독으로 쓰면 실제 청구액이 아닙니다 |
-| `billing` | 환경에 `ANTHROPIC_API_KEY`가 있으면 `api-key`(실제 API 청구), 없으면 `subscription` |
+| `billing` | 환경에 `ANTHROPIC_API_KEY` · `ANTHROPIC_AUTH_TOKEN` · `CLAUDE_CODE_USE_BEDROCK` · `CLAUDE_CODE_USE_VERTEX` 중 하나가 있으면 `api-key`, 없으면 `subscription`. 환경만 보고 추정하며 settings의 `apiKeyHelper`는 볼 수 없습니다 |
 | `durationMs` · `apiDurationMs` | 호출 전체 벽시계 시간 · `claude`가 보고한 API 시간 |
-| `ok` · `error` | 성공 여부와 실패 메시지 |
+| `ok` · `error` | 성공 여부와 실패 요약(오류 종류 + 첫 줄 200자 이내) |
 
-`analyze`와 `generate`는 끝날 때 **이번 실행분** 합계를 stderr에 한 줄로 보여 줍니다(`LLM 호출 12회(실패 0) · 입력 22,104 · 출력 7,310 · 캐시 읽기 41,200 · API 환산 $0.26 (구독: 실제 청구 아님) · 1분 52초`). `--json` 결과에는 같은 합계가 `usage` 필드로 들어가고, LLM을 부르지 않은 실행(세션 모드, TS 생성, `--merge`)은 `usage: null`입니다.
+`analyze` · `generate` · `run`은 끝날 때 **이번 실행분** 합계를 stderr에 한 줄로 보여 줍니다(`LLM 호출 12회(실패 0) · 입력 22,104 · 출력 7,310 · 캐시 읽기 41,200 · API 환산 $0.26 (API 키 미감지 → 구독으로 간주, 실제 청구 아님) · 1분 52초`). API 키를 감지하면 괄호가 `(API 키 감지 → 실제 청구)`로 바뀝니다. `--json` 결과에는 같은 합계가 `usage` 필드로 들어가고, LLM을 부르지 않은 실행(세션 모드, TS 생성, `--merge`)은 `usage: null`입니다.
 
 세션 모드(`--llm session`, MCP `analyze_spec` · `finalize_generation`)는 LLM을 사용자의 Claude Code 세션이 쓰므로 specmock이 볼 수 없습니다. **미측정**이며 파일도 생기지 않습니다. 이 파일은 `.specmock/` 아래라 위의 `.gitignore` 안내에 이미 포함됩니다.
 

@@ -12,7 +12,7 @@ specmock이 `claude`를 부를 때마다 토큰 · API 환산 비용 · 소요 �
 
 | 포함 | 제외(후속) |
 |---|---|
-| `ClaudeCodeAdapter` 경로 전부: CLI `analyze`(청크 추출), CLI `generate`(Java 등 LLM 생성 시도), Web UI 서버가 같은 어댑터로 부르는 호출 | 세션 모드(`--llm session`, MCP `analyze_spec` · `finalize_generation`): LLM을 사용자 세션이 쓰므로 specmock이 볼 수 없다. 기록 없음, 문서에 "미측정" 명시 |
+| `ClaudeCodeAdapter` 경로 전부: CLI `analyze`(청크 추출), CLI `generate`(Java 등 LLM 생성 시도), CLI `run`(둘을 합친 실행), Web UI 서버가 같은 어댑터로 부르는 호출 | 세션 모드(`--llm session`, MCP `analyze_spec` · `finalize_generation`): LLM을 사용자 세션이 쓰므로 specmock이 볼 수 없다. 기록 없음, 문서에 "미측정" 명시 |
 | 성공 · 실패 · 시간 초과 모두 기록(`ok: false`에 `error`) | Web UI 화면 표시, `specmock usage <system>` 조회 명령, `ServiceEvent`에 usage 싣기 → 데이터가 쌓인 뒤 필요하면 2안 |
 | CLI 끝 합계 한 줄(stderr) | `--json` 결과에 usage 합계 포함은 **포함**(아래 §4) — 비용이 거의 없고 스크립트 기록에 바로 쓸 수 있다 |
 
@@ -32,10 +32,10 @@ specmock이 `claude`를 부를 때마다 토큰 · API 환산 비용 · 소요 �
 | `model` | 봉투 `modelUsage`의 키(여럿이면 토큰 합이 가장 큰 것), 없으면 요청 `--model` 또는 `null` | |
 | `inputTokens` · `outputTokens` · `cacheReadTokens` · `cacheCreationTokens` | 봉투 `usage.input_tokens` · `output_tokens` · `cache_read_input_tokens` · `cache_creation_input_tokens` | 없으면 `null` |
 | `costUsd` · `costBasis` | 봉투 `total_cost_usd`, `modelUsage.*.costBasis`(보통 `"list"`) | 없으면 `null` |
-| `billing` | 어댑터 프로세스 env에 `ANTHROPIC_API_KEY`가 있으면 `"api-key"`, 없으면 `"subscription"` | 구독이면 `costUsd`는 **API 정가 환산**이며 실제 청구가 아니다 |
+| `billing` | 어댑터 프로세스 env에 `ANTHROPIC_API_KEY` · `ANTHROPIC_AUTH_TOKEN` · `CLAUDE_CODE_USE_BEDROCK` · `CLAUDE_CODE_USE_VERTEX` 중 하나라도 비어 있지 않게 있으면 `"api-key"`, 없으면 `"subscription"` | **환경 기반 추정**이다. settings의 `apiKeyHelper` 등은 볼 수 없어 구독으로 보여도 실제로는 API 청구일 수 있다. `costUsd`는 **API 정가 환산**이며 구독이면 실제 청구가 아니다 |
 | `durationMs` | 어댑터가 잰 벽시계(spawn → 종료) | 항상 있음 |
 | `apiDurationMs` | 봉투 `duration_api_ms` | 없으면 `null` |
-| `ok` · `error` | 성공 여부, 실패면 메시지(마스킹 거침) | 시간 초과 · 비정상 종료 · JSON 파싱 실패도 한 줄 |
+| `ok` · `error` | 성공 여부, 실패면 오류 종류 + 첫 줄 200자 이내 요약(마스킹 거침, 응답 본문 발췌 없음) | 시간 초과 · 비정상 종료 · JSON 파싱 실패도 한 줄 |
 
 봉투에 `usage`가 없어도(테스트 스텁, 옛 CLI) 토큰 필드는 `null`로 기록하고 실패로 취급하지 않는다.
 
@@ -51,7 +51,7 @@ CLI analyze / generate 끝: summarizeUsage(이번 실행분) → stderr 한 줄,
 ```
 
 - `LlmUsage` 타입(`llm/adapter.ts`): 위 레코드에서 `stage` · `detail`을 뺀 부분. 어댑터는 단계를 모른다.
-- `usageLog.ts`: `appendUsage(systemDir, record)`, `readUsage(systemDir)`(줄 단위 파싱, 깨진 줄은 건너뜀), `summarizeUsage(records)` → `{calls, ok, failed, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd, durationMs}`(null은 0으로 더하되 `costUsd`는 전부 null이면 null).
+- `usageLog.ts`: `appendUsage(systemDir, record)`, `readUsage(systemDir)`(줄 단위 파싱, 깨진 줄은 건너뜀), `summarizeUsage(records)` → `{calls, ok, failed, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd, costBasis, billing, durationMs}`(null은 0으로 더하되 `costUsd`는 전부 null이면 null).
 - "이번 실행분" 구분: 호출자가 실행 시작 시각을 들고 `at >= startedAt`인 줄만 합산한다(파일에 run id를 넣지 않는다 — 단순함 우선).
 - `SessionAdapter` · 테스트용 fake 어댑터는 `onUsage`를 부르지 않아도 된다(선택 콜백). 기존 fake `claude` 스텁 11개는 usage가 없으므로 토큰 `null`.
 
@@ -59,8 +59,9 @@ CLI analyze / generate 끝: summarizeUsage(이번 실행분) → stderr 한 줄,
 
 - `specmock analyze <system>`(claude-code 모드) 끝에 stderr:
   `LLM 호출 12회(실패 0) · 입력 22,104 · 출력 7,310 · 캐시 읽기 41,200 · API 환산 $0.26 (구독: 실제 청구 아님) · 1분 52초`
-  `billing`이 `api-key`면 괄호를 `(API 키 청구)`로.
+  괄호는 `billing`에 따라 `(API 키 미감지 → 구독으로 간주, 실제 청구 아님)` 또는 `(API 키 감지 → 실제 청구)`. 환경만 보고 추정하므로 단정하지 않는다.
 - `specmock generate <system> --lang java` 끝에 같은 형식(시도 수 포함: `LLM 호출 2회(시도 2/3)`).
+- `specmock run` 끝에도 같은 합계 줄(analyze + generate 합산, 실패 횟수 표기). `--json` 결과에 `usage` 추가.
 - `--json` 결과에 `usage: { calls, failed, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd, costBasis, billing, durationMs }` 추가. 호출이 0회(세션 모드, TS 생성)면 `usage: null`.
 - README "커버리지 리포트" 근처에 "LLM 사용량" 절 1개: 파일 위치, 필드 뜻, API 환산 비용의 의미, 세션 모드 미측정.
 - Web UI · MCP 변경 없음(Web 경로는 기록만 된다).
@@ -68,7 +69,7 @@ CLI analyze / generate 끝: summarizeUsage(이번 실행분) → stderr 한 줄,
 ## 5. 오류 처리
 
 - 기록 실패(디스크 · 권한)는 **경고 한 줄만** 내고 본 작업을 멈추지 않는다.
-- 봉투 파싱 실패 · 시간 초과 · 비정상 종료는 `ok: false`, `error`는 기존 오류 메시지를 `maskSecrets`로 거친 것. 토큰 필드는 봉투가 있으면 채우고 없으면 `null`.
+- 봉투 파싱 실패 · 시간 초과 · 비정상 종료는 `ok: false`, `error`는 오류 종류 + 첫 줄 200자 이내를 `maskSecrets`로 거친 것(stdout 발췌는 넣지 않는다. 사용자에게 던지는 예외 메시지는 그대로). 토큰 필드는 봉투가 있으면 채우고 없으면 `null`.
 - `onUsage` 콜백이 던지면 어댑터가 잡아 경고로 바꾼다(호출자 버그가 LLM 결과를 잃게 하지 않는다).
 - `llm-usage.jsonl`은 `.specmock/` 아래라 사용자 저장소의 `.gitignore` 안내(README 기존)에 포함된다. 레코드에 프롬프트 · 응답 본문은 넣지 않는다(비밀 노출 경로를 만들지 않는다).
 
@@ -103,5 +104,9 @@ CLI analyze / generate 끝: summarizeUsage(이번 실행분) → stderr 한 줄,
 | 호출 0회면 `usage: null` | prepare 모드 JSON도 `usage: null` | 필드 유무가 모드마다 달라지지 않게 |
 | `appendUsage` 오류 처리는 호출자 | `appendUsage`가 스스로 경고하고 던지지 않음 | 기록 실패가 본 작업을 막으면 안 됨 |
 | 비밀값 마스킹 | `maskSecrets` 패턴에 `sk-ant-…`가 없어 테스트는 `Bearer` 토큰으로 확인 | 기존 패턴을 넓히는 것은 이 작업 범위 밖 |
-| (미정) `run` 명령 | `runPipeline` 경로는 기록만 되고 합계 줄 · `--json` `usage`는 없음 | 설계 §4가 analyze · generate만 지정. 필요하면 후속 |
+| `run` 명령은 범위 밖 | `run`에도 합계 줄 · `--json` `usage` 추가(2026-11-11 리뷰 후속) | `run`이 가장 흔한 진입점인데 기록만 되고 합계가 안 보이면 빠진 느낌 |
+| `billing`은 `ANTHROPIC_API_KEY`만 | `ANTHROPIC_AUTH_TOKEN` · Bedrock · Vertex 플래그도 api-key로, 합계 줄 문구는 "감지/미감지"로 단정 회피 | 같은 API 청구 경로이고, `apiKeyHelper`는 볼 수 없어 "구독"이라 단정하면 틀릴 수 있음 |
+| `error`에 기존 예외 메시지 전체 | 오류 종류 + 첫 줄 200자 이내만, stdout 발췌 제외(stderr 첫 줄은 허용) | §5 "프롬프트 · 응답 본문은 넣지 않는다"를 지키려고. 비정상 종료 시 stdout 300자가 응답 본문일 수 있었음 |
+| 비밀값 마스킹은 `Bearer` 테스트로 확인 | `maskSecrets`에 `sk-ant-…` 패턴 추가 | 사용량 기록에 키가 새지 않게. 1B 문서의 "완전하지 않음" 문구는 유지 |
+| append는 그대로 덧붙임 | 파일 끝이 개행이 아니면 `\n`부터 씀 | 이전 쓰기가 줄 중간에서 끊겨도 새 레코드를 읽을 수 있게 |
 | (미정) Web UI | 코어를 거쳐 기록되지만 화면 표시 없음 | 범위 밖 |
