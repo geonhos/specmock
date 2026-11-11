@@ -107,6 +107,7 @@ CLI analyze / generate 끝: summarizeUsage(이번 실행분) → stderr 한 줄,
 | `run` 명령은 범위 밖 | `run`에도 합계 줄 · `--json` `usage` 추가(2026-11-11 리뷰 후속) | `run`이 가장 흔한 진입점인데 기록만 되고 합계가 안 보이면 빠진 느낌 |
 | `billing`은 `ANTHROPIC_API_KEY`만 | `ANTHROPIC_AUTH_TOKEN` · Bedrock · Vertex 플래그도 api-key로, 합계 줄 문구는 "감지/미감지"로 단정 회피 | 같은 API 청구 경로이고, `apiKeyHelper`는 볼 수 없어 "구독"이라 단정하면 틀릴 수 있음 |
 | `error`에 기존 예외 메시지 전체 | 오류 종류 + 첫 줄 200자 이내만, stdout 발췌 제외(stderr 첫 줄은 허용) | §5 "프롬프트 · 응답 본문은 넣지 않는다"를 지키려고. 비정상 종료 시 stdout 300자가 응답 본문일 수 있었음 |
+| `is_error` 봉투의 `error`는 `result` 첫 줄 | `subtype`(없으면 "is_error")만 기록. `result`는 모델이 쓴 텍스트일 수 있어 사용자에게 던지는 예외에만 남김(2026-11-11 재리뷰 후속) | §5 "응답 본문은 넣지 않는다"를 원천 차단 |
 | 비밀값 마스킹은 `Bearer` 테스트로 확인 | `maskSecrets`에 `sk-ant-…` 패턴 추가 | 사용량 기록에 키가 새지 않게. 1B 문서의 "완전하지 않음" 문구는 유지 |
 | append는 그대로 덧붙임 | 파일 끝이 개행이 아니면 `\n`부터 씀 | 이전 쓰기가 줄 중간에서 끊겨도 새 레코드를 읽을 수 있게 |
 | (미정) Web UI | 코어를 거쳐 기록되지만 화면 표시 없음 | 범위 밖 |

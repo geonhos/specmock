@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ClaudeCodeAdapter } from "../src/llm/claudeCode.js";
+import { BILLING_ENV_VARS, ClaudeCodeAdapter } from "../src/llm/claudeCode.js";
 import type { LlmUsage } from "../src/llm/adapter.js";
 import { createAdapter } from "../src/llm/index.js";
 import { SessionAdapter } from "../src/llm/session.js";
@@ -106,11 +106,13 @@ describe("ClaudeCodeAdapter", () => {
 });
 
 describe("ClaudeCodeAdapter onUsage", () => {
+  /** billing 단언이 호스트 환경(API 키, Bedrock, Vertex)에 흔들리지 않게 감지 대상을 모두 비운다. */
+  const noBilling: Record<string, string> = Object.fromEntries(BILLING_ENV_VARS.map((n) => [n, ""]));
   const collect = () => { const got: LlmUsage[] = []; return { got, onUsage: (u: LlmUsage) => { got.push(u); } }; };
 
   it("봉투의 usage · 비용 · 시간을 onUsage로 넘긴다", async () => {
     const { got, onUsage } = collect();
-    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-usage"), env: { ANTHROPIC_API_KEY: "" } });
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-usage"), env: { ...noBilling } });
     const before = Date.now();
     await adapter.complete({ prompt: "x", schema, onUsage });
     expect(got).toHaveLength(1);
@@ -125,14 +127,14 @@ describe("ClaudeCodeAdapter onUsage", () => {
 
   it("ANTHROPIC_API_KEY가 있으면 billing은 api-key", async () => {
     const { got, onUsage } = collect();
-    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-usage"), env: { ANTHROPIC_API_KEY: "sk-test" } });
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-usage"), env: { ...noBilling, ANTHROPIC_API_KEY: "sk-test" } });
     await adapter.complete({ prompt: "x", schema, onUsage });
     expect(got[0]!.billing).toBe("api-key");
   });
 
   it.each([["ANTHROPIC_AUTH_TOKEN", "tok"], ["CLAUDE_CODE_USE_BEDROCK", "1"], ["CLAUDE_CODE_USE_VERTEX", "1"]])("%s가 있으면 billing은 api-key", async (name, value) => {
     const { got, onUsage } = collect();
-    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-usage"), env: { ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "", CLAUDE_CODE_USE_BEDROCK: "", CLAUDE_CODE_USE_VERTEX: "", [name]: value } });
+    const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-usage"), env: { ...noBilling, [name]: value } });
     await adapter.complete({ prompt: "x", schema, onUsage });
     expect(got[0]!.billing).toBe("api-key");
   });
@@ -163,8 +165,8 @@ describe("ClaudeCodeAdapter onUsage", () => {
     const adapter = new ClaudeCodeAdapter({ command: path.join(BIN, "claude-usage"), env: { USAGE_FAIL: "1" } });
     await expect(adapter.complete({ prompt: "x", schema, onUsage })).rejects.toThrow(/boom/);
     expect(got[0]).toMatchObject({ ok: false, inputTokens: 5, outputTokens: 1, costUsd: 0.001 });
-    expect(got[0]!.error).toMatch(/boom/);
-    expect(got[0]!.error).not.toContain("abcdefghijklmnopqrstuvwxyz");
+    // 모델이 쓴 result 문구(boom, 토큰)는 기록에 없고 subtype만 남는다.
+    expect(got[0]!.error).toBe("claude 오류: error_during_execution");
   });
 
   it("시간 초과와 JSON 파싱 실패도 한 번씩 기록한다", async () => {

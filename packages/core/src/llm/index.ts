@@ -3,7 +3,7 @@ import { ClaudeCodeAdapter, type ClaudeCodeOptions } from "./claudeCode.js";
 import { SessionAdapter } from "./session.js";
 
 export type { AdapterName, CompleteRequest, ExtractRequest, LlmAdapter, LlmUsage } from "./adapter.js";
-export { ClaudeCodeAdapter, type ClaudeCodeOptions } from "./claudeCode.js";
+export { ClaudeCodeAdapter, BILLING_ENV_VARS, type ClaudeCodeOptions } from "./claudeCode.js";
 export { SessionAdapter } from "./session.js";
 
 export const ADAPTER_NAMES: AdapterName[] = ["session", "claude-code"];

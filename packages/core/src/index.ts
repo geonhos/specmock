@@ -37,6 +37,6 @@ export { DRIFT_FILE, RECORDED_DIR, TARGET_EXAMPLE, TARGET_FILE, isSafeFeatureId,
 export { specInputHash, featureInputHash } from "./util/specHash.js";
 export { extract, type ExtractOptions, type ExtractProgress, type ExtractResult } from "./analyze/extract.js";
 export { submitExtraction, type SubmitExtractionInput, type SubmitExtractionResult, type SubmitExtractionOptions, type SubmitError } from "./analyze/submit.js";
-export { createAdapter, ADAPTER_NAMES, ClaudeCodeAdapter, SessionAdapter, type AdapterName, type LlmAdapter, type LlmUsage, type CompleteRequest, type ExtractRequest, type ClaudeCodeOptions } from "./llm/index.js";
+export { createAdapter, ADAPTER_NAMES, ClaudeCodeAdapter, BILLING_ENV_VARS, SessionAdapter, type AdapterName, type LlmAdapter, type LlmUsage, type CompleteRequest, type ExtractRequest, type ClaudeCodeOptions } from "./llm/index.js";
 export * from "./service/index.js";
 export { withSystemLock, LockBusyError, SYSTEM_LOCK_FILE, type LockBody, type SystemLockOptions } from "./workspaceLock.js";

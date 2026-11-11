@@ -122,7 +122,8 @@ export class ClaudeCodeAdapter implements LlmAdapter {
 
     const envelope = tryParse(stdout);
     if (!envelope) throw new ClaudeCallError(`claude 출력을 JSON으로 읽을 수 없습니다: ${stdout.slice(0, 300)}`, "claude 출력을 JSON으로 읽을 수 없습니다");
-    if (envelope.is_error) throw new Error(`claude 오류: ${String(envelope.result ?? envelope.subtype)}`);
+    // 기록(error)에는 모델이 쓴 result 문구를 싣지 않고 subtype만 남긴다.
+    if (envelope.is_error) throw new ClaudeCallError(`claude 오류: ${String(envelope.result ?? envelope.subtype)}`, `claude 오류: ${envelope.subtype ?? "is_error"}`);
     if (envelope.structured_output === undefined) {
       // 구버전 CLI 호환: result 문자열이 JSON일 수 있다.
       if (typeof envelope.result === "string") { try { return JSON.parse(envelope.result); } catch { /* 아래에서 오류 */ } }
@@ -142,9 +143,12 @@ class ClaudeCallError extends Error {
   constructor(message: string, readonly logMessage: string) { super(message); }
 }
 
+/** API 과금 경로로 보는 환경 변수. 테스트는 이 전부를 비워 billing 단언을 호스트 환경에서 격리한다. */
+export const BILLING_ENV_VARS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"] as const;
+
 /** 환경에서 API 과금 경로로 보이는 신호가 있는가(settings `apiKeyHelper`는 볼 수 없다). */
 function detectsApiBilling(env: NodeJS.ProcessEnv): boolean {
-  return Boolean(env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN || env.CLAUDE_CODE_USE_BEDROCK || env.CLAUDE_CODE_USE_VERTEX);
+  return BILLING_ENV_VARS.some((name) => Boolean(env[name]));
 }
 
 const abortError = () => new DOMException("작업이 취소되었습니다", "AbortError");

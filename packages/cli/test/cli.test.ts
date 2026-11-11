@@ -7,6 +7,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { BILLING_ENV_VARS } from "@specmock/core";
 
 const run = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -91,6 +92,8 @@ describe("specmock CLI", () => {
 const PETS_MD = path.resolve(here, "..", "..", "core", "test", "fixtures", "docs", "pets.md");
 const EXTRACTED = path.resolve(here, "..", "..", "core", "test", "fixtures", "docs", "extracted");
 const FAKE_BIN = path.resolve(here, "..", "..", "core", "test", "bin");
+/** billing 단언이 호스트 환경(API 키, Bedrock, Vertex)에 흔들리지 않게 감지 대상을 모두 비운다. */
+const NO_BILLING_ENV: Record<string, string> = Object.fromEntries(BILLING_ENV_VARS.map((n) => [n, ""]));
 
 describe("Phase 1B CLI", () => {
   it("ingest --json reports inputs and the cache", async () => {
@@ -159,7 +162,7 @@ describe("Phase 1B CLI", () => {
     const bin = path.join(dir, "fakebin");
     await mkdir(bin, { recursive: true });
     await symlink(path.join(FAKE_BIN, script), path.join(bin, "claude"));
-    return { cwd: dir, env: { ...process.env, NO_COLOR: "1", PATH: `${bin}:${process.env.PATH}` } };
+    return { cwd: dir, env: { ...process.env, ...NO_BILLING_ENV, NO_COLOR: "1", PATH: `${bin}:${process.env.PATH}` } };
   };
 
   it("select reports the diff against the catalog the selection was made from", async () => {
@@ -420,7 +423,7 @@ describe("LLM 사용량 기록", () => {
     const bin = path.join(dir, "fakebin");
     await mkdir(bin, { recursive: true });
     await symlink(path.join(FAKE_BIN, script), path.join(bin, "claude"));
-    return { cwd: dir, env: { ...process.env, NO_COLOR: "1", ANTHROPIC_API_KEY: "", PATH: `${bin}:${process.env.PATH}`, ...extraEnv } };
+    return { cwd: dir, env: { ...process.env, ...NO_BILLING_ENV, NO_COLOR: "1", PATH: `${bin}:${process.env.PATH}`, ...extraEnv } };
   };
 
   it("analyze --llm claude-code: 어댑터 → extract → jsonl → stderr 합계 · --json usage까지 지난다", async () => {
