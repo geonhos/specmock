@@ -474,4 +474,44 @@ describe("merge", () => {
     const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
     expect(catalog.features.map((f) => f.id).sort()).toEqual(["payment_intents.cancel", "payment_intents.create", "payment_intents.get", "payment_intents.search"]);
   });
+  it("unifies path variable names per position across buckets (most frequent, ties to first seen)", async () => {
+    await writeExtracted([
+      mk({ method: "GET", path: "/v1/payment_intents/{id}", group: "" }),
+      mk({ method: "POST", path: "/v1/payment_intents/{id}/confirm", group: "" }),
+      mk({ method: "POST", path: "/v1/payment_intents/{payment_intent_id}/cancel", group: "" }),
+      mk({ method: "POST", path: "/v1/payment_intents/{id}/capture", group: "" }),
+      mk({ method: "POST", path: "/v1/payment_intents", group: "" }),
+      mk({ method: "GET", path: "/v1/customers/{customer}/sources/{id}", group: "" }),
+      mk({ method: "DELETE", path: "/v1/customers/{id}/sources/{source}", group: "" }),
+    ]);
+    await merge(ws, "pets");
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    const byId = (id: string) => catalog.features.find((f) => f.id === id)!;
+    expect(byId("payment_intents.cancel").path).toBe("/v1/payment_intents/{id}/cancel");
+    expect(Object.keys(byId("payment_intents.cancel").request.params)).toEqual(["id"]);
+    expect(byId("payment_intents.get").path).toBe("/v1/payment_intents/{id}");
+    // 위치별로 따로: 첫 변수 {customer}(1) vs {id}(1) 동률 → 먼저 나온 것, 둘째 변수 {id}(1) vs {source}(1) → 먼저 나온 것
+    expect(catalog.features.filter((f) => f.path.startsWith("/v1/customers")).map((f) => f.path)).toEqual(["/v1/customers/{customer}/sources/{id}", "/v1/customers/{customer}/sources/{id}"]);
+  });
+
+  it("prefers the openapi variable name for a shared prefix when unifying", async () => {
+    const catalog = await mergeWithSpec(
+      { "/orders/{orderId}": { get: { operationId: "getOrder", responses: { "200": { description: "ok" } } } } },
+      [mk({ method: "DELETE", path: "/orders/{id}", group: "" }), mk({ method: "PUT", path: "/orders/{id}", group: "" })],
+    );
+    expect(catalog.features.map((f) => f.path).sort()).toEqual(["/orders/{orderId}", "/orders/{orderId}", "/orders/{orderId}"]);
+  });
+
+  it("drops a path param that matches none of its own path variables", async () => {
+    await writeExtracted([
+      mk({ method: "GET", path: "/v1/things/{id}", group: "",
+        pathParams: [
+          { name: "id", required: true, schema: { type: "string" }, description: "" },
+          { name: "stray", required: true, schema: { type: "string" }, description: "" },
+        ] }),
+    ]);
+    await merge(ws, "pets");
+    const catalog = await ws.read("pets", "catalog.json", CatalogSchema);
+    expect(Object.keys(catalog.features[0].request.params)).toEqual(["id"]);
+  });
 });

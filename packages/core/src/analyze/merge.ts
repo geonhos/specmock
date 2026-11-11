@@ -198,8 +198,8 @@ function toFeature(ajv: Ajv, bucket: Bucket, registry: FeatureIdRegistry, groupO
     const own = pathVars(ep.path);
     const pathParams = ep.pathParams.map((pp) => {
       const i = own.findIndex((v) => v === pp.name || v === normalizeVarName(pp.name));
-      return i >= 0 && i < repVars.length ? { ...pp, name: repVars[i] } : pp;
-    });
+      return i >= 0 && i < repVars.length ? { ...pp, name: repVars[i] } : null;
+    }).filter((pp): pp is NonNullable<typeof pp> => pp !== null);
     mergeParams(ajv, request.params, pathParams, notes, "pathParams");
     mergeParams(ajv, request.query, ep.queryParams, notes, "queryParams");
     mergeParams(ajv, request.headers, ep.headers, notes, "headers");
@@ -267,6 +267,45 @@ function toFeature(ajv: Ajv, bucket: Bucket, registry: FeatureIdRegistry, groupO
     evidence,
     notes,
   };
+}
+
+/**
+ * 같은 접두 아래 경로 변수 이름을 위치별로 하나로 맞춘다(`/v1/payment_intents/{id}` 와 `.../{payment_intent_id}/cancel`).
+ * 위치 키는 그 변수까지의 경로 모양(`/v1/payment_intents/{}`). 같은 접두에 OpenAPI 기능이 있으면 그 이름이 이기고,
+ * 없으면 bucket 대표 경로의 이름 중 최다, 동률은 먼저 나온 것. 위치마다 따로 정하고, bucket의 path만 고친다.
+ */
+function unifyPathVars(specFeatures: Feature[], buckets: Bucket[]): void {
+  const positions = (p: string): { key: string; name: string; start: number; end: number }[] =>
+    [...p.matchAll(/\{([^}]+)\}/g)].map((m) => ({ key: pathShape(p.slice(0, m.index + m[0].length)), name: m[1], start: m.index, end: m.index + m[0].length }));
+  const spec = new Map<string, string>();
+  for (const f of specFeatures) {
+    const p = normalizePath(f.path) ?? f.path;
+    for (const { key, name } of positions(p)) if (!spec.has(key)) spec.set(key, name);
+  }
+  const votes = new Map<string, Map<string, number>>();
+  for (const b of buckets) {
+    for (const { key, name } of positions(b.path)) {
+      const m = votes.get(key) ?? new Map<string, number>();
+      m.set(name, (m.get(name) ?? 0) + 1);
+      votes.set(key, m);
+    }
+  }
+  const chosen = new Map<string, string>();
+  for (const [key, m] of votes) {
+    let best = "";
+    let bestN = 0;
+    for (const [name, n] of m) if (n > bestN) [best, bestN] = [name, n];
+    chosen.set(key, spec.get(key) ?? best);
+  }
+  for (const b of buckets) {
+    let out = "";
+    let last = 0;
+    for (const { key, start, end } of positions(b.path)) {
+      out += b.path.slice(last, start) + `{${chosen.get(key)}}`;
+      last = end;
+    }
+    b.path = out + b.path.slice(last);
+  }
 }
 
 /** extracted/NNN.json의 바깥 모양만 본다. 항목은 하나씩 따로 검증해 하나가 깨져도 나머지를 살린다. */
@@ -426,6 +465,8 @@ export async function merge(ws: Workspace, system: string): Promise<MergeResult>
   const siblings = methodsByShape(
     [...features, ...buckets.values()].map((e) => ({ method: e.method, path: normalizePath(e.path) ?? e.path })),
   );
+
+  unifyPathVars(features, [...buckets.values()]);
 
   // 3) 버킷 → Feature. 키 순서를 고정해 id 접미사(…2, …3)가 실행마다 같게 한다. 하나가 실패해도 나머지는 계속.
   for (const key of [...buckets.keys()].sort()) {
