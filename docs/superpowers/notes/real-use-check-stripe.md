@@ -1,7 +1,7 @@
 # 실사용 점검 기록: Stripe
 
 시작일: 2026-11-11
-상태: 3차 완료 · form-encoded 지원 반영(PR #16), 다음은 사용자 선택(15의 B안 / OpenAPI 대조 / query 대괄호 / record)
+상태: record 1단계 완료(2026-11-23), 2 · 3단계(실제 id) 대기. 앞서 3차 완료 · form-encoded 지원 반영(PR #16)
 목적: Petstore(교과서 스펙)가 아닌 **실제 문서 사이트 하나**를 실제 사용자처럼 처음부터 끝까지 써 보며 걸리는 지점을 개선 과제로 쌓고, 그 과정의 **비용(토큰 · 시간)** 을 근거 자료로 남긴다. 이 repo는 작성자의 AI 활용 이력이기도 하다(설계 §1.4).
 
 ## 0. 대상과 범위
@@ -57,6 +57,7 @@
 | 18 | 2026-11-11 16:43 | 생성 mock 기동 후 `curl` | 수 초 | LLM 없음 | - | 확인 | body 없는 `POST /v1/payment_intents/pi_123/confirm` 200 · `…/cancel` 200 · `GET /v1/payment_intents` 200 · form-encoded `POST /v1/payment_intents -d amount=1` 200(body가 선택이라 통과, §4 8행의 content-type 지원은 아직 아님) |
 | 19 | 2026-11-11 22:20 | Java 참조 재생성 실측(Petstore): `pnpm llm:check --java` | 53s(1회차, 사용량 기록은 정리되어 소실) · 47s(2회차) | 2회차: 입력 2 / 출력 5,727 / 캐시 읽기 0 / 캐시 생성 20,840 | $0.56 (API 환산, 구독 간주) | 통과, 시도 1회 | contract 통과 7 / 실패 0 / 전체 7(createPet "폼 바디 요청" 포함), runtime 실패 0, 호출 1회(실패 0). 모델은 제공된 `FormBody.java`를 작성하지 않고 참조 Main 구조를 따름. 1회차는 스크립트가 성공 시 임시 작업공간을 지워 합계를 못 남겨, 합계 출력 한 줄을 스크립트에 추가하고 한 번 더 실행(총 호출 2회). 스크립트의 JDK 감지가 `java -version`의 stderr를 읽지 못해 항상 SKIP하던 문제도 고침 |
 | 20 | 2026-11-11 22:25 | form-encoded 재확인(`feat/form-encoded-request`): `pnpm build` → `select stripe all` → `generate stripe --lang ts --force` → `verify stripe` → mock 기동(PORT 4031) 후 `curl` 4건 | 각 수 초 | LLM 0회 | $0 | 확인 | 47개 파일. verify 계약 전체 28(정상 요청 18 + 폼 바디 요청 10) · 폼 계약 10 · 통과 28 / 실패 0, runtime 실패 0. 처음엔 `select`를 다시 하지 않아 계약이 18개(폼 0)였음: 계약은 `mockspec.json`에 있어 `select`를 다시 해야 반영됨. curl: `POST /v1/payment_intents -d "amount=1000&currency=usd&automatic_payment_methods[enabled]=true"` 200 · `-d "amount=abc&currency=usd"` 400 `must be integer` · `POST /v1/customers -d "name=x&address[city]=Seoul"` 200 · JSON `{"amount":1000,"currency":"usd"}` 200(JSON 경로 유지) |
+| 21 | 2026-11-23 | record 1단계(사용자 터미널): `record stripe`(테스트 키, 환경 변수로만) | 사용자 실행, 미측정 | LLM 없음 | $0 | 종료 정상 | 요청 18 · 일치 4 · 스펙과 다름 0 · 상태 불일치 3(예상된 404) · 건너뜀 11(변경 요청) · 실패 0. LLM 0회(`llm-usage.jsonl` 54줄, 마지막 기록 2026-11-11). 녹화 파일 7개(200이 4개 · 404가 3개). 일치 4건은 목록 · 검색 응답이 항목 10개로 비어 있지 않아 실제 스키마 일치(§4 31행). `created>…` 검색 쿼리 2건 모두 200. fixture는 일치 4건만 녹화 응답으로 교체, 404 3건은 기존 추측 fixture 유지. 마스킹 확인: 키 · Bearer 값 없음(`target.json`은 `${…}` 자리표시자). `verify stripe` 계약 28 / 28 통과 |
 
 ## 4. 걸린 지점 (증상 → 원인 → 개선안 → 크기)
 
@@ -88,13 +89,18 @@
 | 24 | generate(런타임) | form 키 충돌 시 값이 사라짐(`a=1&a[b]=2` → `{a:{b:"2"}}`, `a[0]=x&a[b]=y` → `{a:["x"]}`) | 파서가 오류 없이 한쪽을 택하고 검증기가 판단하게 설계 | 충돌을 400으로 알리는 옵션 검토 | 소 | 기록 |
 | 25 | generate(런타임, Java) | Java `coerce`와 TS ajv coerceTypes 결과가 다름: integer 자리의 `1.0` · `1e3` · ` 1` · 20자리 정수는 TS 200 · Java 400, number 자리 `1f`는 Java 200 · TS 400, `0x10`은 TS 200 · Java 400, `oneOf[integer,string]`에 `5`는 TS 400 · Java 200 | Java는 `Long.parseLong` · `Double.parseDouble` 기반, TS는 ajv 규칙 | `BigDecimal` 기반 변환으로 맞추기 | 소 | 기록 |
 | 26 | generate(런타임, Java) | 비정상 입력 차이: 잘못된 `%`(`a+b%ZZ`)는 Java가 쌍을 원문대로 두고 TS는 `+`만 공백으로 바꿈, 앞자리 0 인덱스(`a[00001]`)는 Java 버림 · TS 수용, 맨 앞 `?`는 TS만 제거 | 두 파서의 디코딩 · 인덱스 판정 규칙이 따로 구현됨 | 규칙을 맞추고 동등성 테스트 표에 입력 추가 | 소 | 기록 |
+| 27 | record | `params`가 전역 하나라 `customers.get`의 `cus_…`와 `payment_intents.get`의 `pi_…`를 한 번에 줄 수 없음 | `target.json`의 `params`가 기능과 무관한 전역 map | 기능별(또는 경로 변수별) params. 우회: `--feature`로 나눠 3회 실행 | 중 | 기록 |
+| 28 | record | 검색형 query의 계약 샘플(`B0PkGq`)이 Stripe 검색 문법이 아니라 `params.query`로 덮어야 함. 덮은 뒤(`created>1000000000`)는 200 | 샘플 값이 의미 없는 임의 문자열 | 검색형 파라미터의 샘플 규칙 개선(예: 문서 예시의 query를 우선) | 소 | 기록 |
+| 29 | record | 404 3건이 "상태 불일치"로만 잡힘. 경로 변수에 샘플 값(`sample` · `B0PkGq`)이 들어간 요청은 404를 미리 알 수 있음 | 경로 변수가 샘플 값인지 판단하지 않음 | 메시지에 "경로 변수가 샘플 값" 표시, 또는 선행 list 응답에서 id를 뽑아 사용(2 · 3단계) | 중 | 기록 |
+| 30 | record | 녹화 응답이 fixture에 그대로 들어가 테스트 계정 데이터(고객 이메일 · 금액 등)가 `mock/stripe/fixtures`에 남음 | `record`가 일치 응답을 fixture로 반영함(마스킹은 키 · Bearer 값만 확인했고 응답 본문은 가리지 않음) | git 제외(`mock/`는 gitignore)에 의존 중이라 안내 문구 또는 개인정보 필드 치환 옵션 검토 | 소 | 기록 |
+| 31 | record | 빈 목록 응답은 drift 비교에 정보가 없음(빈 계정에서 record의 한계). 이번엔 목록 · 검색 4건이 항목 10개를 담아 비교가 유효했고, `payment_intents`는 `has_more`가 true인데 첫 페이지만 반영됨 | 빈 목록은 항목 스키마를 검증할 대상이 없음(이번에는 해당 없음) | 빈 목록이면 "데이터 없음(비교 생략)"으로 표시 | 소 | 기록 |
 
 ## 5. 개선 과제 (우선순위)
 
 - (가) 15의 B안 재추출 ≈$4
 - (나) C OpenAPI spec3.json 대조(9 · 15 채점)
 - (다) query 대괄호 21 + 7 · 10 · 17
-- (라) record 단계
+- (라) record 2 · 3단계(실제 id, §4 27 · 29). 1단계 완료(2026-11-23)
 
 ## 6. 비용 합계
 
@@ -105,4 +111,4 @@
 
 개발 층 비고: 3단계 머지 정리(#8) $0.38 포함. 품질 묶음(#14: 분석 1 · 구현 2 · 리뷰 2) 포함. 이 점검으로 생긴 작업: 사전 조사 · 사용량 기록(#10) · 결함 수정(#12) · 기록. form-encoded(#16: 분석 1 · 구현 4 · 리뷰 3, ≈$8.14) 포함.
 
-제품 + 개발 합계: ≈$37.31 (API 환산)
+제품 + 개발 합계: ≈$37.31 (API 환산). record 1단계(#18)는 개발 ask 1건 추가(금액 `?`), 제품 LLM 0회라 제품 비용 변화 없음.
