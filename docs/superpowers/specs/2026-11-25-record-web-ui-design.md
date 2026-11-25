@@ -103,7 +103,7 @@ const merged = { ...target.params, ...(target.features[feature.id] ?? {}) };
 ```
 
 - 값이 `${이름}` 참조만으로 이루어졌으면 `literal: false`이고 원문을 그대로 싣습니다. 그 밖의 값(직접 적은 값, 참조와 문자가 섞인 값)은 `literal: true`이고 `value`는 `"***"`입니다. 서버는 파일의 직접 적은 값을 응답에 싣지 않습니다.
-- `env`는 헤더·params·features 값에서 뽑은 `${이름}` 전체입니다. `status`는 `process`(서버 env에 있음) > `session`(4.1로 입력됨) > `missing` 순으로 정합니다.
+- `env`는 헤더·params·features 값에서 뽑은 `${이름}` 전체입니다. `status`는 `session`(4.1로 입력됨) > `process`(서버 env에 있음) > `missing` 순으로 정합니다. 실제 값도 화면 입력이 서버 env보다 우선하므로 표시와 일치합니다.
 - 기존 테스트 `api.test.ts:347`(headers·params를 싣지 않음)은 "직접 적은 값은 `***`"로 바꿉니다.
 
 ### 4.3 target 쓰기 — `PUT /api/systems/:s/target`
@@ -235,6 +235,7 @@ const merged = { ...target.params, ...(target.features[feature.id] ?? {}) };
 - 기능당 여러 응답(파라미터별 녹화), 4xx 응답의 fixture 사용(3B 비목표 유지).
 - 녹화 응답 본문의 개인정보 가림(§4 30행)은 별도 설계.
 - 원격 접속·인증(2B 비목표 유지).
+- 경로 변수 값 `..` 정규화는 기존 동작을 유지합니다.
 
 ## 11. 구현 중 변경
 
@@ -244,5 +245,7 @@ const merged = { ...target.params, ...(target.features[feature.id] ?? {}) };
 - `PUT /target`은 `ws.write` 앞에서 `TargetSchema.safeParse`로 검증하고 `InvalidRequest`로 던집니다(`ws.write`의 오류는 500이 되기 때문).
 - 모르는 기능 id는 작업 시작 전에 `mockspec.json`과 비교해 400으로 막습니다(작업 안에서 나는 오류는 400으로 매핑되지 않기 때문). `features`가 비어 있으면 검사하지 않습니다.
 - `GET /target`은 화면 호환을 위해 최상위 `baseUrl`도 함께 돌려줍니다(web PR 2에서 제거 검토).
-- apply가 `mockspec.json`을 `drift.md` 뒤에 다시 쓰므로, 작업이 끝나면 `drift.md` 시각을 현재로 맞추고 `stale.record`는 밀리초 단위로 비교합니다. 그렇지 않으면 방금 녹화가 낡은 것으로 보입니다.
+- apply가 `mockspec.json`을 `drift.md` 뒤에 다시 쓰므로, core `recordResponses`가 select가 돈 뒤 `drift.md` 시각을 현재로 맞춥니다(CLI·MCP·ui-server 공통). `stale.record`는 밀리초 단위로 비교합니다. 그렇지 않으면 방금 녹화가 낡은 것으로 보입니다.
 - 커밋은 Task 3~5를 하나로 묶었습니다(`app.ts` 변경이 서로 얽혀 있어서).
+- env 상태 표시 순서를 `session > process > missing`으로 바꿨습니다(§4.2). 실제 값이 `EnvStore.env`에서 화면 입력을 우선하기 때문입니다.
+- `PUT /target`은 헤더 이름을 HTTP token 문자로, 값 이름을 `^[A-Za-z_][A-Za-z0-9_-]*$`로 제한하고, `features` 키가 `mockspec.json`의 기능 id에 없으면 400으로 막습니다(`mockspec.json`이 없으면 대조하지 않음).

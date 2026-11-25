@@ -33,20 +33,24 @@ export function envNames(raw: RawTarget): string[] {
 
 export function envStatus(names: string[], store: EnvStore, system: string): { name: string; status: EnvStatus }[] {
   const session = new Set(store.names(system));
-  return names.map((name) => ({ name, status: process.env[name] ? "process" : session.has(name) ? "session" : "missing" }));
+  return names.map((name) => ({ name, status: session.has(name) ? "session" : process.env[name] ? "process" : "missing" }));
 }
 
-const Item = z.object({ name: z.string().min(1), value: z.string().optional(), keep: z.literal(true).optional() })
+const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+const VALUE_NAME = /^[A-Za-z_][A-Za-z0-9_-]*$/;
+const item = (re: RegExp, what: string) => z.object({ name: z.string().min(1).regex(re, `${what} 이름 형식이 올바르지 않습니다`), value: z.string().optional(), keep: z.literal(true).optional() })
   .refine((i) => i.value !== undefined || i.keep === true, "value 또는 keep이 필요합니다");
+const HeaderItem = item(HEADER_NAME, "헤더");
+const ValueItem = item(VALUE_NAME, "값");
 export const TargetPutBodySchema = z.object({
   baseUrl: z.string(),
   timeoutMs: z.number().int().positive().optional(),
-  headers: z.array(Item),
-  params: z.array(Item),
-  features: z.record(z.string(), z.array(Item)),
+  headers: z.array(HeaderItem),
+  params: z.array(ValueItem),
+  features: z.record(z.string(), z.array(ValueItem)),
 });
 
-type Items = z.infer<typeof Item>[];
+type Items = z.infer<typeof ValueItem>[];
 function pick(items: Items, prev: Record<string, string> | undefined, where: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const i of items) {

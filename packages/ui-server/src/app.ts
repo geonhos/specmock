@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import { readFile, utimes } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { analyzeSpec, assertLanguage, CatalogSchema, ClaudeCodeAdapter, findFeature, generate, ingestSpec, listFeatures, readLock, MockSpecSchema, readTarget, recordResponses, select, summarizeChunks, DRIFT_FILE, TARGET_EXAMPLE, TARGET_FILE, TargetSchema, verifyMock, Workspace } from "@specmock/core";
 import { streamSSE } from "hono/streaming";
@@ -178,6 +178,12 @@ export function createApp(opts: AppOptions) {
     const system = c.req.param("s");
     const b = await body(c, TargetPutBodySchema);
     await assertRegistered(ws, system);
+    // features 키는 mockspec의 기능 id여야 한다. mockspec.json이 아직 없으면 대조하지 않는다.
+    if (Object.keys(b.features).length > 0 && (await ws.exists(system, "mockspec.json"))) {
+      const known = new Set((await ws.read(system, "mockspec.json", MockSpecSchema)).features.map((f) => f.id));
+      const unknown = Object.keys(b.features).filter((id) => !known.has(id));
+      if (unknown.length) throw new InvalidRequest(`알 수 없는 기능 id: ${unknown.join(", ")}`);
+    }
     const next = mergePut(b, await readRawTarget(ws, system));
     await ws.write(system, TARGET_FILE, TargetSchema, next);
     return ok(c, await targetInfo(system));
@@ -192,15 +198,9 @@ export function createApp(opts: AppOptions) {
       const unknown = b.features.filter((id) => !known.has(id));
       if (unknown.length) throw new InvalidRequest(`알 수 없는 기능 id: ${unknown.join(", ")}`);
     }
-    return accepted(c, jobs.start(system, "record", async ({ signal, onEvent }) => {
-      const run = await recordResponses(ws, system, {
-        allowMutating: b.allowMutating, refresh: b.refresh, features: b.features, apply: b.apply, env: envStore.env(system), signal, onEvent,
-      });
-      // 반영(select)이 mockspec.json을 drift.md 뒤에 다시 쓴다. 방금 한 녹화가 stale로 보이지 않게 drift.md 시각을 맞춘다.
-      const now = new Date();
-      await utimes(ws.file(system, DRIFT_FILE), now, now).catch(() => undefined);
-      return run;
-    }).id);
+    return accepted(c, jobs.start(system, "record", ({ signal, onEvent }) => recordResponses(ws, system, {
+      allowMutating: b.allowMutating, refresh: b.refresh, features: b.features, apply: b.apply, env: envStore.env(system), signal, onEvent,
+    })).id);
   });
   /** 마지막 녹화 결과: drift.md 원문과 기능별 상태·시각. 녹화된 응답 본문은 싣지 않는다. */
   app.get("/api/systems/:s/record/last", async (c) => {

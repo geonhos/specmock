@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { TargetSchema } from "@specmock/core";
 import { createApp } from "../src/app.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -22,6 +23,8 @@ const FAKE_CLAUDE = path.join(REPO, "packages", "core", "test", "bin", "claude-s
 function client() {
   const { app } = createApp({ root, webDir: path.join(root, "web"), port: () => 4310, claudeCommand: FAKE_CLAUDE });
   return {
+    app,
+    put: async (p: string, b: unknown) => { const r = await app.request(`/api${p}`, { method: "PUT", headers: HOST, body: JSON.stringify(b) }); return { status: r.status, body: await r.json() }; },
     get: async (p: string) => { const r = await app.request(`/api${p}`, { headers: HOST }); return { status: r.status, body: await r.json() }; },
     post: async (p: string, b: unknown = {}) => { const r = await app.request(`/api${p}`, { method: "POST", headers: HOST, body: JSON.stringify(b) }); return { status: r.status, body: await r.json() }; },
   };
@@ -354,7 +357,7 @@ describe("record (3B)", () => {
     const c = client();
     vi.stubEnv("UI_FROM_PROCESS", "x");
     await prepare(c, { baseUrl: "https://real.example.com/v2/", headers: { Authorization: "Bearer ${UI_SECRET_TOKEN}", "X-Ref": "${UI_FROM_PROCESS}" }, params: { petId: "777" }, features: { getPet: { id: "${UI_CUS}" } } });
-    await c.post("/systems/petstore/env", { values: { UI_CUS: "cus_zzz" } });
+    await c.post("/systems/petstore/env", { values: { UI_CUS: "cus_zzz", UI_FROM_PROCESS: "typed" } });   // 화면 입력이 process보다 우선
     const r = await c.get("/systems/petstore/target");
     expect(r.body.data).toMatchObject({
       exists: true, baseUrl: "https://real.example.com/v2",
@@ -364,7 +367,7 @@ describe("record (3B)", () => {
         params: [{ name: "petId", value: "***", literal: true }],
         features: { getPet: [{ name: "id", value: "${UI_CUS}", literal: false }] },
       },
-      env: [{ name: "UI_SECRET_TOKEN", status: "missing" }, { name: "UI_FROM_PROCESS", status: "process" }, { name: "UI_CUS", status: "session" }],
+      env: [{ name: "UI_SECRET_TOKEN", status: "missing" }, { name: "UI_FROM_PROCESS", status: "session" }, { name: "UI_CUS", status: "session" }],
     });
     expect(JSON.stringify(r.body.data.target)).not.toMatch(/777|cus_zzz/);
     vi.unstubAllEnvs();
@@ -374,7 +377,7 @@ describe("record (3B)", () => {
     const c = client();
     await prepare(c, { baseUrl: "https://a.example.com", headers: { Authorization: "Bearer real-token" }, params: { q: "1" } });
     const put = async (b: unknown) => { const r = await app(c, "PUT", "/systems/petstore/target", b); return r; };
-    const r = await put({ baseUrl: "https://b.example.com", headers: [{ name: "Authorization", keep: true }, { name: "X-Id", value: "${UI_ID}" }], params: [], features: { getPet: [{ name: "petId", value: "5" }], empty: [] } });
+    const r = await put({ baseUrl: "https://b.example.com", headers: [{ name: "Authorization", keep: true }, { name: "X-Id", value: "${UI_ID}" }], params: [], features: { getPet: [{ name: "petId", value: "5" }] } });
     expect(r.status).toBe(200);
     expect(r.body.data.target.features).toEqual({ getPet: [{ name: "petId", value: "***", literal: true }] });
     const file = JSON.parse(await readFile(path.join(root, ".specmock", "petstore", "target.json"), "utf8"));
@@ -392,20 +395,69 @@ describe("record (3B)", () => {
     expect(JSON.parse(await readFile(path.join(root, ".specmock", "petstore", "target.json"), "utf8"))).toEqual({ baseUrl: "https://a.example.com" });
   });
 
+  it("PUT target: 비어 있는 기능 묶음은 파일에 쓰지 않는다", async () => {
+    const c = client();
+    await prepare(c, { baseUrl: "https://a.example.com" });
+    expect((await c.put("/systems/petstore/target", { baseUrl: "https://a.example.com", headers: [], params: [], features: { getPet: [] } })).status).toBe(200);
+    expect(JSON.parse(await readFile(path.join(root, ".specmock", "petstore", "target.json"), "utf8"))).toEqual({ baseUrl: "https://a.example.com" });
+  });
+
+  it("PUT target: 파일이 없으면 새로 만든다", async () => {
+    const c = client();
+    await prepare(c);
+    const r = await c.put("/systems/petstore/target", { baseUrl: "https://new.example.com", headers: [{ name: "Authorization", value: "Bearer ${UI_T}" }], params: [], features: {} });
+    expect(r.status).toBe(200);
+    expect(r.body.data).toMatchObject({ exists: true, target: { baseUrl: "https://new.example.com" } });
+    const file = JSON.parse(await readFile(path.join(root, ".specmock", "petstore", "target.json"), "utf8"));
+    expect(TargetSchema.safeParse(file).success).toBe(true);
+  });
+
+  it("PUT target: 헤더·값 이름 형식이 틀리면 400", async () => {
+    const c = client();
+    await prepare(c, { baseUrl: "https://a.example.com" });
+    const base = { baseUrl: "https://a.example.com", headers: [], params: [], features: {} };
+    expect((await c.put("/systems/petstore/target", { ...base, headers: [{ name: "Bad Header", value: "v" }] })).status).toBe(400);
+    expect((await c.put("/systems/petstore/target", { ...base, params: [{ name: "1bad", value: "v" }] })).status).toBe(400);
+    expect((await c.put("/systems/petstore/target", { ...base, features: { getPet: [{ name: "a b", value: "v" }] } })).status).toBe(400);
+    expect((await c.put("/systems/petstore/target", { ...base, headers: [{ name: "X-Ok_1", value: "v" }] })).status).toBe(200);
+  });
+
+  it("PUT target: 모르는 기능 id는 400(id 이름만), mockspec.json이 없으면 대조하지 않는다", async () => {
+    const c = client();
+    await prepare(c, { baseUrl: "https://a.example.com" });
+    const body = (id: string) => ({ baseUrl: "https://a.example.com", headers: [], params: [], features: { [id]: [{ name: "petId", value: "SECRET_V" }] } });
+    const bad = await c.put("/systems/petstore/target", body("customers.gte"));
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.message).toContain("알 수 없는 기능 id: customers.gte");
+    expect(JSON.stringify(bad.body)).not.toContain("SECRET_V");
+    expect((await c.put("/systems/petstore/target", body("getPet"))).status).toBe(200);
+    await rm(path.join(root, ".specmock", "petstore", "mockspec.json"));
+    expect((await c.put("/systems/petstore/target", body("anything"))).status).toBe(200);
+  });
+
   it("POST env: 이름만 돌려주고, 값은 record 결과 어디에도 남지 않는다", async () => {
     const c = client();
     const secret = "sk_live_ENVLEAK_9876";
-    await prepare(c, { baseUrl: await realSystem(), headers: { "X-Key": "${UI_ENV_KEY}" } });
+    const direct = "direct-header-LEAK-4321";
+    await prepare(c, { baseUrl: await realSystem(), headers: { "X-Key": "${UI_ENV_KEY}", "X-Direct": direct } });
     const e = await c.post("/systems/petstore/env", { values: { UI_ENV_KEY: secret } });
     expect(e.body).toEqual({ ok: true, data: { names: ["UI_ENV_KEY"] } });
     expect(JSON.stringify(e.body)).not.toContain(secret);
+    const sse = await c.app.request("/api/events", { headers: HOST });
+    const reader = sse.body!.pipeThrough(new TextDecoderStream()).getReader();
+    let stream = "";
+    const pump = (async () => { for (;;) { const { value, done } = await reader.read(); if (done) return; stream += value; if (stream.includes("event: job-done")) return; } })();
     await c.post("/systems/petstore/record");
     const j = await finished(c);
     expect(j.state).toBe("done");
+    await pump; await reader.cancel();
+    expect(stream).toContain("event: job-started");
+    expect(stream).not.toContain(secret);
+    expect(stream).not.toContain(direct);
     const dir = path.join(root, ".specmock", "petstore");
     const texts = [JSON.stringify(await c.get("/jobs")), (await c.get("/systems/petstore/record/last")).body, await readFile(path.join(dir, "drift.md"), "utf8")].map((x) => (typeof x === "string" ? x : JSON.stringify(x)));
     for (const f of await readdir(path.join(dir, "recorded"))) texts.push(await readFile(path.join(dir, "recorded", f), "utf8"));
-    for (const t of texts) expect(t).not.toContain(secret);
+    for (const t of texts) { expect(t).not.toContain(secret); expect(t).not.toContain(direct); }
   });
 
   it("POST env: 잘못된 이름은 400, GET은 405", async () => {
