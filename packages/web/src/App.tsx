@@ -6,6 +6,7 @@ import { nextScreen, Sidebar } from "./components/Sidebar";
 import { Analyze } from "./screens/Analyze";
 import { Generate } from "./screens/Generate";
 import { Verify } from "./screens/Verify";
+import { RecordScreen } from "./screens/Record";
 import { Register } from "./screens/Register";
 import { Select, type Change } from "./screens/Select";
 import { StepBar } from "./components/StepBar";
@@ -19,6 +20,7 @@ const TITLES: Record<Screen, string> = {
   select: "mock에 넣을 기능을 골라 주세요",
   generate: "mock 생성",
   verify: "mock 검증",
+  record: "실제 서버와 대조",
 };
 
 /**
@@ -102,6 +104,9 @@ export function App() {
             ) : null}
             {route.screen === "verify" && route.system ? (
               <Verify key={route.system} system={route.system} jobs={jobs} tick={tick} go={go} refreshJobs={refreshJobs} onChanged={reload} />
+            ) : null}
+            {route.screen === "record" && route.system ? (
+              <RecordScreen key={route.system} system={route.system} jobs={jobs} tick={tick} go={go} refreshJobs={refreshJobs} onChanged={reload} />
             ) : null}
           </main>
         )}

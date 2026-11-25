@@ -11,3 +11,7 @@ it("잘못된 % 인코딩은 던지지 않고 홈", () => {
   expect(parseRoute("/systems/%E0%A4%A/analyze")).toEqual({ screen: "home" });
   expect(parseRoute("/systems/%/verify")).toEqual({ screen: "home" });
 });
+
+it("/systems/stripe/record를 record 화면으로 푼다", () => {
+  expect(parseRoute("/systems/stripe/record")).toEqual({ screen: "record", system: "stripe" });
+});

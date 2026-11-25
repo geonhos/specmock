@@ -2,7 +2,6 @@ import type { Job, SystemOverview } from "@specmock/ui-server/api-types";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "../api";
 import { Notice } from "../components/Notice";
-import { RecordCard } from "../components/RecordCard";
 import { jobKindLabel } from "../format";
 import { pathFor } from "../route";
 import { useJob } from "../useJob";
@@ -140,7 +139,7 @@ export function Verify({ system, jobs, tick, go, refreshJobs }: Props) {
           </table>
         </>
       ) : null}
-      <RecordCard system={system} jobs={jobs} tick={tick} refreshJobs={refreshJobs} />
+      <p className="muted">실제 서버와 대조하려면 <button type="button" className="link" onClick={() => go(pathFor("record", system))}>⑥ 녹화로</button></p>
       {cov ? <Coverage data={cov} /> : md ? <pre className="coverage">{coverageSummary(md)}</pre> : null}
     </div>
   );
