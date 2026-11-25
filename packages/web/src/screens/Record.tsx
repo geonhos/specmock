@@ -1,16 +1,19 @@
-import type { EnvStatus, FeatureListRow, Job } from "@specmock/ui-server/api-types";
+import type { EnvStatus, FeatureListRow, Job, RecordLast } from "@specmock/ui-server/api-types";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, api, type TargetInfo } from "../api";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EnvTable, type EnvRow } from "../components/EnvTable";
 import { Notice } from "../components/Notice";
+import { isSafeMethod, RecordTable } from "../components/RecordTable";
 import { TargetForm } from "../components/TargetForm";
-import { emptyModel, modelFromInfo, refNames, toPutBody, type FormModel } from "../recordModel";
+import { emptyModel, modelFromInfo, newRow, outcomesFromJob, outcomesFromLast, refNames, toPutBody, type FormModel, type Outcome, type RecordDone } from "../recordModel";
 import { useJob } from "../useJob";
 
 interface Props { system: string; jobs: Job[]; tick: number; go: (path: string) => void; refreshJobs: () => void; onChanged: () => void }
 
 const asError = (e: unknown) => (e instanceof ApiError ? e : new ApiError(0, "failed", String(e)));
-const isSafe = (method: string) => method === "GET" || method === "HEAD";
+const isSafe = isSafeMethod;
+const COUNT_KINDS: [Outcome["kind"], string][] = [["matched", "일치"], ["drifted", "스펙과 다름"], ["mismatch", "상태 불일치"], ["skipped", "건너뜀"], ["failed", "실패"]];
 
 /** 화면 ⑥ 녹화: 실제 서버 설정(A) → 기능 선택·실행(B) → 결과(C). 이름이 Record면 TypeScript의 Record<K,V>를 가려서 RecordScreen이다. */
 export function RecordScreen({ system, jobs, refreshJobs, onChanged }: Props) {
@@ -20,12 +23,15 @@ export function RecordScreen({ system, jobs, refreshJobs, onChanged }: Props) {
   const [rows, setRows] = useState<FeatureListRow[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [apply, setApply] = useState(true);
+  const [allowMutating, setAllowMutating] = useState(false);
+  const [confirmMut, setConfirmMut] = useState(false);
+  const [lastSaved, setLastSaved] = useState<RecordLast | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [envValues, setEnvValues] = useState<Record<string, string>>({});
   const [sessionNames, setSessionNames] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
-  const { running, seen, watch } = useJob(jobs, system, "record");
+  const { last, running, seen, watch } = useJob(jobs, system, "record");
 
   const known = useMemo(() => new Set((rows ?? []).map((r) => r.id)), [rows]);
   const put = useMemo(() => toPutBody(model, known), [model, known]);
@@ -33,7 +39,7 @@ export function RecordScreen({ system, jobs, refreshJobs, onChanged }: Props) {
   useEffect(() => {
     let live = true;
     setInfo(null); setRows(null);
-    void Promise.all([api.target(system), api.features(system), api.selection(system)]).then(([t, f, sel]) => {
+    void Promise.all([api.target(system), api.features(system), api.selection(system), api.recordLast(system).catch(() => null)]).then(([t, f, sel, rl]) => {
       if (!live) return;
       const ids = new Set(sel?.resolved ?? []);
       const table = f.rows.filter((r) => ids.has(r.id));
@@ -41,7 +47,7 @@ export function RecordScreen({ system, jobs, refreshJobs, onChanged }: Props) {
       setInfo(t); setModel(m); setRows(table);
       setSnap(JSON.stringify(toPutBody(m, new Set(table.map((r) => r.id))).body));
       setSelected(new Set(table.filter((r) => isSafe(r.method)).map((r) => r.id)));
-      setFormOpen(!t.exists);
+      setLastSaved(rl); setFormOpen(!t.exists);
     }).catch((e: unknown) => { if (live) setError(asError(e)); });
     return () => { live = false; };
   }, [system]);
@@ -85,14 +91,36 @@ export function RecordScreen({ system, jobs, refreshJobs, onChanged }: Props) {
   const start = useCallback(async () => {
     setError(null);
     try {
-      const r = await api.record(system, { features: [...selected], allowMutating: false, apply });
+      const r = await api.record(system, { features: [...selected], allowMutating, apply });
       watch(r.jobId); refreshJobs();
     } catch (e) {
       const err = asError(e);
       if (err.code === "busy" && err.jobId) watch(err.jobId);
       setError(err); refreshJobs();
     }
-  }, [system, selected, apply, watch, refreshJobs]);
+  }, [system, selected, allowMutating, apply, watch, refreshJobs]);
+
+  const setMutating = (on: boolean) => {
+    setAllowMutating(on);
+    if (!on) setSelected((s) => new Set([...s].filter((id) => isSafe(rows?.find((r) => r.id === id)?.method ?? "GET"))));
+  };
+  const setValue = (id: string, name: string, value: string) => setModel((m) => {
+    const list = m.features[id] ?? [];
+    const next = list.some((r) => r.name === name)
+      ? list.map((r) => (r.name === name ? { ...r, value, keep: false, removed: false } : r))
+      : [...list, newRow(name, value)];
+    return { ...m, features: { ...m.features, [id]: next } };
+  });
+
+  const doneJob = last?.state === "done" ? (last.result as RecordDone | undefined) : undefined;
+  const outcomes = useMemo(
+    () => (doneJob ? outcomesFromJob(doneJob) : lastSaved?.exists ? outcomesFromLast(lastSaved) : new Map<string, Outcome>()),
+    [doneJob, lastSaved],
+  );
+  const counts = COUNT_KINDS.map(([k, label]) => `${label} ${[...outcomes.values()].filter((o) => o.kind === k).length}`).join(" · ");
+  const drift = doneJob ? doneJob.driftMarkdown : lastSaved?.driftMarkdown;
+  const hasResult = !!doneJob || !!lastSaved?.exists;
+  const applied = doneJob?.result.applied;
 
   const total = running?.progress?.total ?? 0;
   const done = running?.progress?.done ?? 0;
@@ -107,6 +135,20 @@ export function RecordScreen({ system, jobs, refreshJobs, onChanged }: Props) {
         {put.excluded > 0 ? <p className="muted">선택하지 않은 기능의 값 {put.excluded}개는 저장에서 제외됩니다</p> : null}
         <div className="action-row"><button type="button" className="btn-primary" disabled={busy || model.baseUrl.trim() === ""} onClick={() => void save()}>저장</button></div>
       </details>
+      <section className="record-features" aria-label="기능 표">
+        <div className="action-row">
+          <h3 className="kv-h">녹화할 기능</h3>
+          <label><input type="checkbox" checked={allowMutating} onChange={(e) => (e.target.checked ? setConfirmMut(true) : setMutating(false))} /> 변경 요청 포함</label>
+        </div>
+        {rows && rows.length === 0 ? <p className="muted">선택한 기능이 없습니다. ③ 기능 선택에서 먼저 골라 주세요.</p> : null}
+        {rows && rows.length ? (
+          <RecordTable rows={rows} selected={selected} allowMutating={allowMutating} outcomes={outcomes} values={model.features}
+            onSelect={(id, on) => setSelected((s) => { const n = new Set(s); if (on) n.add(id); else n.delete(id); return n; })} onValue={setValue} />
+        ) : null}
+      </section>
+      <ConfirmDialog open={confirmMut} title="변경 요청을 포함할까요?" confirmLabel="변경 요청 포함" onCancel={() => setConfirmMut(false)} onConfirm={() => { setConfirmMut(false); setMutating(true); }}>
+        <p>POST·PUT·PATCH·DELETE 요청은 실제 서버의 데이터를 바꿀 수 있습니다.</p>
+      </ConfirmDialog>
       <div className="ft-cta record-bar">
         <label><input type="checkbox" checked={apply} onChange={(e) => setApply(e.target.checked)} /> mock에 반영</label>
         {running ? (
@@ -123,6 +165,15 @@ export function RecordScreen({ system, jobs, refreshJobs, onChanged }: Props) {
       </div>
       {seen?.state === "failed" ? <Notice message={seen.error?.message ?? "녹화에 실패했습니다"} hint={seen.error?.hint} /> : null}
       {seen?.state === "cancelled" ? <p className="muted">녹화를 취소했습니다.</p> : null}
+      {hasResult ? (
+        <section className="result" aria-label="녹화 결과">
+          <p className="summary"><strong>{counts}</strong></p>
+          {doneJob ? <p className="muted">{applied ? `mock에 반영했습니다(선택한 기능 ${applied.selected}개${applied.generate?.written ? `, 파일 ${applied.generate.written.length}개 다시 생성` : ""})` : "mock에 반영하지 않았습니다"}</p>
+            : lastSaved?.recordedAt ? <p className="muted">마지막 녹화 {lastSaved.recordedAt}</p> : null}
+          {doneJob?.notes.length ? <ul className="cov-list">{doneJob.notes.map((n, i) => <li key={i}>{n}</li>)}</ul> : null}
+          {drift ? <details><summary>drift.md 원문</summary><pre className="drift">{drift}</pre></details> : null}
+        </section>
+      ) : null}
     </div>
   );
 }

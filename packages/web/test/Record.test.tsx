@@ -27,8 +27,13 @@ const targetInfo = (over: Record<string, unknown> = {}, features: Record<string,
   env: [{ name: "TOKEN", status: "process" }],
   ...over,
 });
-const view = () => render(<RecordScreen system="stripe" jobs={[]} tick={0} go={() => undefined} refreshJobs={() => undefined} onChanged={() => undefined} />);
-const emit = (name: string, data: unknown) => act(() => FakeEventSource.last!.emit(name, data));
+type JobT = Record<string, unknown>;
+const screenEl = (jobs: JobT[]) => <RecordScreen system="stripe" jobs={jobs as never} tick={0} go={() => undefined} refreshJobs={() => undefined} onChanged={() => undefined} />;
+const view = () => {
+  const r = render(screenEl([]));
+  return { setJobs: (jobs: JobT[]) => act(() => r.rerender(screenEl(jobs))) };
+};
+const rjob = (over: JobT = {}): JobT => ({ id: "r1", system: "stripe", kind: "record", state: "running", cancellable: true, startedAt: "t", ...over });
 
 function setup(target: unknown, rows: Row[] = [], extra: Record<string, Resp> = {}) {
   return fakeApi({
@@ -146,5 +151,110 @@ it("선택하지 않은 기능의 값은 저장 본문에서 빠지고 안내가
   expect(Object.keys(lastBody(api, `PUT ${S}/target`).features as object)).toEqual(["getPet"]);
 });
 
-// emit은 Task 9 테스트에서 쓴다.
-void emit;
+const PETS = [row("getPet", "GET", "/pets/{id}"), row("listPets", "HEAD", "/pets"), row("createPet", "POST", "/pets")];
+const checkbox = (name: string) => screen.getByRole("checkbox", { name }) as HTMLInputElement;
+
+it("기본 선택은 GET·HEAD이고 변경 요청 행은 해제된 채 비활성이다", async () => {
+  setup(targetInfo(), PETS);
+  view();
+  await vi.waitFor(() => expect(recordBtn().textContent).toBe("선택한 2개 녹화"));
+  expect(checkbox("getPet 선택").checked).toBe(true);
+  expect(checkbox("createPet 선택").checked).toBe(false);
+  expect(checkbox("createPet 선택").disabled).toBe(true);
+});
+
+it("변경 요청 포함은 확인 창을 거치고, 켜면 변경 요청 행을 고를 수 있다", async () => {
+  const api = setup(targetInfo(), PETS, { [`POST ${S}/record`]: () => ({ status: 202, body: { ok: true, data: { jobId: "r1" } } }) });
+  view();
+  await screen.findByText("getPet 설명");
+  fireEvent.click(checkbox("변경 요청 포함"));
+  fireEvent.click(screen.getByRole("button", { name: "취소" }));
+  expect(checkbox("변경 요청 포함").checked).toBe(false);
+  fireEvent.click(checkbox("변경 요청 포함"));
+  fireEvent.click(screen.getByRole("button", { name: "변경 요청 포함" }));
+  expect(checkbox("변경 요청 포함").checked).toBe(true);
+  fireEvent.click(checkbox("createPet 선택"));
+  await vi.waitFor(() => expect(recordBtn().textContent).toBe("선택한 3개 녹화"));
+  fireEvent.click(recordBtn());
+  await vi.waitFor(() => expect(api.calls).toContain(`POST ${S}/record`));
+  expect(lastBody(api, `POST ${S}/record`)).toEqual({ features: ["getPet", "listPets", "createPet"], allowMutating: true, apply: true });
+});
+
+it("녹화는 선택한 기능과 apply를 담아 POST하고 진행 바와 취소를 보인다", async () => {
+  const api = setup(targetInfo(), PETS, { [`POST ${S}/record`]: () => ({ status: 202, body: { ok: true, data: { jobId: "r1" } } }) });
+  const v = view();
+  await vi.waitFor(() => expect(recordBtn().disabled).toBe(false));
+  fireEvent.click(checkbox("listPets 선택"));
+  fireEvent.click(checkbox("mock에 반영"));
+  fireEvent.click(recordBtn());
+  await vi.waitFor(() => expect(api.calls).toContain(`POST ${S}/record`));
+  expect(lastBody(api, `POST ${S}/record`)).toEqual({ features: ["getPet"], allowMutating: false, apply: false });
+  v.setJobs([rjob({ progress: { message: "1/2", done: 1, total: 2 } })]);
+  const bar = await screen.findByRole("progressbar", { name: "녹화 진행" });
+  expect(bar.getAttribute("aria-valuenow")).toBe("1");
+  expect(bar.getAttribute("aria-valuemax")).toBe("2");
+  expect(screen.getByText("1/2")).not.toBeNull();
+  expect(recordBtn().disabled).toBe(true);
+  expect(screen.getByRole("button", { name: "취소" })).not.toBeNull();
+});
+
+it("경로 변수 입력은 features.<id>.<이름>으로 같은 PUT에 담긴다", async () => {
+  const api = setup(targetInfo(), PETS, putOk(targetInfo()));
+  view();
+  const input = await screen.findByLabelText("getPet id");
+  fireEvent.change(input, { target: { value: "p1" } });
+  expect(recordBtn().disabled).toBe(true);
+  expect(screen.getByText("설정을 먼저 저장하세요")).not.toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  await vi.waitFor(() => expect(api.calls).toContain(`PUT ${S}/target`));
+  expect((lastBody(api, `PUT ${S}/target`)).features).toEqual({ getPet: [{ name: "id", value: "p1" }] });
+});
+
+it("job-done이면 기능 표 결과와 요약·반영 줄·notes·drift 원문이 갱신된다", async () => {
+  setup(targetInfo(), PETS);
+  const v = view();
+  await screen.findByText("getPet 설명");
+  expect(screen.getAllByText("미녹화").length).toBe(3);
+  v.setJobs([rjob({ state: "done", result: {
+    result: {
+      baseUrl: "https://api.stripe.com", recorded: 3, matched: ["listPets"],
+      drifted: [{ featureId: "getPet", errors: ["body.id 없음"] }], statusMismatch: [], skipped: [{ featureId: "createPet" }], failed: [],
+      applied: { selected: 1, generate: { written: ["a", "b"] } },
+    },
+    driftMarkdown: "## 스펙과 다름\n\n- getPet GET /pets/{id} → 200. body.id 없음", notes: ["노트 하나"],
+  } })]);
+  expect(await screen.findByText("일치 1 · 스펙과 다름 1 · 상태 불일치 0 · 건너뜀 1 · 실패 0")).not.toBeNull();
+  expect(screen.getByText("일치")).not.toBeNull();
+  expect(screen.getByText("스펙과 다름")).not.toBeNull();
+  expect(screen.getByText("건너뜀(변경 요청)")).not.toBeNull();
+  expect(screen.getByText(/mock에 반영했습니다/)).not.toBeNull();
+  expect(screen.getByText("노트 하나")).not.toBeNull();
+  expect(document.querySelector("pre.drift")!.textContent).toContain("body.id 없음");
+  const more = screen.getByRole("button", { name: "이유 보기" });
+  expect(more.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(more);
+  expect(screen.getByText("body.id 없음", { selector: "li" })).not.toBeNull();
+});
+
+it("처음 열 때 GET /record/last로 지난 결과를 채운다", async () => {
+  setup(targetInfo(), PETS, { [`GET ${S}/record/last`]: ok({
+    exists: true, recordedAt: "2026-11-25T00:00:00Z", recorded: [{ featureId: "listPets", status: 200, at: "t" }, { featureId: "getPet", status: 200, at: "t" }],
+    driftMarkdown: "## 상태 불일치\n\n- getPet GET /pets/{id} → 기대 200, 실제 404. 존재하는 id를 넣으세요",
+  }) });
+  view();
+  expect(await screen.findByText("상태 불일치(기대 200, 실제 404)")).not.toBeNull();
+  expect(screen.getByText("일치")).not.toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "이유 보기" }));
+  expect(screen.getByText("존재하는 id를 넣으세요", { selector: "li" })).not.toBeNull();
+});
+
+it("409 busy면 응답의 jobId를 따라가 진행 중으로 보인다", async () => {
+  setup(targetInfo(), PETS, { [`POST ${S}/record`]: () => ({ status: 409, body: { ok: false, jobId: "r9", error: { code: "busy", message: "이미 실행 중입니다" } } }) });
+  const v = view();
+  await vi.waitFor(() => expect(recordBtn().disabled).toBe(false));
+  fireEvent.click(recordBtn());
+  await vi.waitFor(() => expect(document.querySelector("#record-why, [role=alert]")).toBeNull());
+  v.setJobs([rjob({ id: "r9", progress: { message: "x", done: 0, total: 2 } })]);
+  expect(await screen.findByRole("progressbar", { name: "녹화 진행" })).not.toBeNull();
+  expect(screen.queryByRole("alert")).toBeNull();
+});

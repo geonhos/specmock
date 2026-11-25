@@ -142,7 +142,7 @@ dialog h2 { margin: 0 0 8px; font-size: var(--fs-dialog-title); }
 .result { display: flex; flex-direction: column; gap: 8px; }
 .result p, .verify .summary { margin: 0; }
 .files { margin: 0; padding: 8px 12px; list-style: none; max-height: 240px; overflow: auto; background: var(--surface-2); border-radius: var(--radius-sm); }
-.cmd, .coverage, .record-example, .drift { margin: 0; padding: 10px 12px; background: var(--surface-2); border-radius: var(--radius-sm); font-family: var(--mono); font-size: var(--fs-num); white-space: pre-wrap; overflow-x: auto; }
+.cmd, .coverage, .drift { margin: 0; padding: 10px 12px; background: var(--surface-2); border-radius: var(--radius-sm); font-family: var(--mono); font-size: var(--fs-num); white-space: pre-wrap; overflow-x: auto; }
 .stale-note { margin: 0; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--surface-2); border-left: 3px solid var(--accent); font-weight: 600; }
 .verify { max-width: 840px; }
 .results .st { width: auto; white-space: nowrap; }
@@ -177,3 +177,7 @@ dialog h2 { margin: 0 0 8px; font-size: var(--fs-dialog-title); }
 .kv-choice { display: inline-flex; gap: 6px; margin-left: 8px; }
 .kv-choice .btn-ghost[aria-pressed="true"] { outline: 1.5px solid var(--accent); outline-offset: -1.5px; }
 .record-bar { flex-wrap: wrap; position: sticky; bottom: 0; background: var(--bg, var(--surface-1)); }
+.record-table .dim td { opacity: .5; }
+.record-table .dim td:first-child { opacity: 1; }
+.var-input { height: var(--h-input); width: 120px; padding: 0 8px; margin-right: 6px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-1); color: var(--text); font: inherit; }
+.record-features { display: flex; flex-direction: column; gap: 8px; }
