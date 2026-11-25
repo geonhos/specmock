@@ -35,7 +35,8 @@ export function RecordScreen({ system, jobs, refreshJobs, onChanged }: Props) {
   const { last, running, seen, watch } = useJob(jobs, system, "record");
 
   const known = useMemo(() => new Set((rows ?? []).map((r) => r.id)), [rows]);
-  const put = useMemo(() => toPutBody(model, known), [model, known]);
+  const savedIds = useMemo(() => new Set(Object.keys(info?.target?.features ?? {})), [info]);
+  const put = useMemo(() => toPutBody(model, known, savedIds), [model, known, savedIds]);
 
   useEffect(() => {
     let live = true;
@@ -46,7 +47,7 @@ export function RecordScreen({ system, jobs, refreshJobs, onChanged }: Props) {
       const table = f.rows.filter((r) => ids.has(r.id));
       const m = modelFromInfo(t);
       setInfo(t); setModel(m); setRows(table);
-      setSnap(JSON.stringify(toPutBody(m, new Set(table.map((r) => r.id))).body));
+      setSnap(JSON.stringify(toPutBody(m, new Set(table.map((r) => r.id)), new Set(Object.keys(t.target?.features ?? {}))).body));
       setSelected(new Set(table.filter((r) => isSafe(r.method)).map((r) => r.id)));
       setLastSaved(rl === "failed" ? null : rl); setLastFailed(rl === "failed"); setFormOpen(!t.exists);
     }).catch((e: unknown) => { if (live) setError(asError(e)); });
@@ -76,7 +77,7 @@ export function RecordScreen({ system, jobs, refreshJobs, onChanged }: Props) {
     try {
       const t = await api.putTarget(system, put.body);
       const m = modelFromInfo(t);
-      setInfo(t); setModel(m); setSnap(JSON.stringify(toPutBody(m, known).body));
+      setInfo(t); setModel(m); setSnap(JSON.stringify(toPutBody(m, known, new Set(Object.keys(t.target?.features ?? {}))).body));
       onChanged();
     } catch (e) { setError(asError(e)); } finally { setBusy(false); }
   };

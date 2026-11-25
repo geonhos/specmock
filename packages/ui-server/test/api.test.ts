@@ -393,6 +393,15 @@ describe("record (3B)", () => {
     expect(file.features).toEqual({ other: { id: "9" }, getPet: { petId: "5" } });
   });
 
+  it("PUT target: 본문 features의 빈 목록은 그 기능의 기존 값을 지운다", async () => {
+    const c = client();
+    await prepare(c, { baseUrl: "https://a.example.com", features: { other: { id: "9" }, getPet: { petId: "1" } } });
+    const r = await app(c, "PUT", "/systems/petstore/target", { baseUrl: "https://a.example.com", headers: [], params: [], features: { getPet: [] } });
+    expect(r.status).toBe(200);
+    const file = JSON.parse(await readFile(path.join(root, ".specmock", "petstore", "target.json"), "utf8"));
+    expect(file.features).toEqual({ other: { id: "9" } });
+  });
+
   it("PUT target: 없는 이름을 keep하면 400, 형식 오류도 400(값은 싣지 않는다)", async () => {
     const c = client();
     await prepare(c, { baseUrl: "https://a.example.com" });

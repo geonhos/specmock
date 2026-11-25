@@ -165,7 +165,7 @@ it("저장하지 않은 변경이 있으면 녹화가 막힌다", async () => {
 });
 
 it("선택하지 않은 기능의 값은 저장 본문에서 빠지고 파일에 남는다는 안내가 뜬다", async () => {
-  const info = targetInfo({}, { gone: [entry("id", "p1")], getPet: [entry("id", "p2")] });
+  const info = targetInfo({}, { gone: [entry("id", "p1", true)], getPet: [entry("id", "p2", true)] });
   const api = setup(info, [row("getPet", "GET", "/pets/{id}")], putOk(info));
   view();
   await screen.findByLabelText("주소");
@@ -313,18 +313,43 @@ it("선택한 기능의 값을 모두 비우면 빈 목록을 보내 파일에�
   expect(lastBody(api, `PUT ${S}/target`).features).toEqual({ getPet: [] });
 });
 
+it("제한 시간 0.5초는 500ms로 저장되고, 파일의 500ms는 다른 항목 저장을 막지 않는다", async () => {
+  const info = targetInfo();
+  info.target.timeoutMs = 500;
+  const api = setup(info, [], putOk(info));
+  view();
+  const t = (await screen.findByLabelText("제한 시간(초)")) as HTMLInputElement;
+  expect(t.value).toBe("0.5");
+  expect(screen.queryByText(/제한 시간은/)).toBeNull();
+  fireEvent.change(screen.getByLabelText("주소"), { target: { value: "https://api2.stripe.com" } });
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  await vi.waitFor(() => expect(api.calls).toContain(`PUT ${S}/target`));
+  expect(lastBody(api, `PUT ${S}/target`).timeoutMs).toBe(500);
+});
+
+it("파일에 없던 기능의 값을 입력했다 지우면 본문에 그 id가 없고 녹화가 막히지 않는다", async () => {
+  setup(targetInfo(), [row("getPet", "GET", "/pets/{id}")]);
+  view();
+  const input = await screen.findByLabelText("getPet id");
+  await vi.waitFor(() => expect(recordBtn().disabled).toBe(false));
+  fireEvent.change(input, { target: { value: "p1" } });
+  expect(recordBtn().disabled).toBe(true);
+  fireEvent.change(input, { target: { value: "" } });
+  expect(recordBtn().disabled).toBe(false);
+});
+
 it("제한 시간이 비었거나 숫자가 아니면 안내가 뜨고 저장이 막힌다", async () => {
   setup(targetInfo());
   view();
   const t = await screen.findByLabelText("제한 시간(초)");
   for (const bad of ["", "abc", "0"]) {
     fireEvent.change(t, { target: { value: bad } });
-    const hint = screen.getByText("제한 시간은 1 이상의 숫자입니다");
+    const hint = screen.getByText("제한 시간은 0보다 큰 초 단위 숫자입니다");
     expect(t.getAttribute("aria-describedby")).toBe(hint.id);
     expect((screen.getByRole("button", { name: "저장" }) as HTMLButtonElement).disabled).toBe(true);
   }
   fireEvent.change(t, { target: { value: "5" } });
-  expect(screen.queryByText("제한 시간은 1 이상의 숫자입니다")).toBeNull();
+  expect(screen.queryByText("제한 시간은 0보다 큰 초 단위 숫자입니다")).toBeNull();
   expect((screen.getByRole("button", { name: "저장" }) as HTMLButtonElement).disabled).toBe(false);
 });
 

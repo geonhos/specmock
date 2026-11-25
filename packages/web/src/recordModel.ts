@@ -38,20 +38,22 @@ const toItems = (rows: FormRow[], dropEmpty: boolean): TargetPutItem[] => rows
   .filter((r) => !r.removed && r.name.trim() !== "" && (r.keep || !dropEmpty || r.value !== ""))
   .map((r) => (r.keep ? { name: r.name.trim(), keep: true as const } : { name: r.name.trim(), value: r.value }));
 
-export const TIMEOUT_HINT = "제한 시간은 1 이상의 숫자입니다";
-/** 제한 시간(초)이 비었거나 숫자가 아니거나 1보다 작으면 false. */
-export const timeoutValid = (v: string): boolean => { const n = Number(v); return v.trim() !== "" && Number.isFinite(n) && n >= 1; };
+export const TIMEOUT_HINT = "제한 시간은 0보다 큰 초 단위 숫자입니다";
+/** 제한 시간(초)이 비었거나 숫자가 아니거나, ms로 반올림해 1 미만이면 false. 소수(0.5초)는 허용한다. */
+export const timeoutValid = (v: string): boolean => { const n = Number(v); return v.trim() !== "" && Number.isFinite(n) && n > 0 && Math.round(n * 1000) >= 1; };
 
 /**
  * 선택한 기능(`knownIds`)에 없는 기능 id의 값은 서버가 400으로 막으므로 본문에서 뺀다. 서버는 본문에 없는 id의 기존 값을 파일에 그대로 둔다.
- * `excluded`는 그렇게 파일에 남는 값의 개수다. 선택한 기능의 값을 모두 비우면 빈 목록을 보내 파일에서 지운다.
+ * `excluded`는 그렇게 파일에 남는 값의 개수다. 파일에 있던 기능(`savedIds`)의 값을 모두 비우면 빈 목록을 보내 파일에서 지운다.
+ * 파일에 없던 기능의 빈 목록은 뺀다(보내면 저장하지 않은 변경으로 보인다). `savedIds`를 생략하면 모두 보낸다.
  */
-export function toPutBody(m: FormModel, knownIds: ReadonlySet<string>): { body: TargetPutBody; excluded: number } {
+export function toPutBody(m: FormModel, knownIds: ReadonlySet<string>, savedIds?: ReadonlySet<string>): { body: TargetPutBody; excluded: number } {
   const features: TargetPutBody["features"] = {};
   let excluded = 0;
   for (const [id, rows] of Object.entries(m.features)) {
     const items = toItems(rows, true);
     if (!knownIds.has(id)) { excluded += items.length; continue; }
+    if (items.length === 0 && savedIds && !savedIds.has(id)) continue;
     features[id] = items;
   }
   const sec = Number(m.timeoutSec);
@@ -109,7 +111,11 @@ export function outcomesFromJob(d: RecordDone): Map<string, Outcome> {
   return m;
 }
 
-/** 한 번의 녹화가 걸릴 수 있는 시간의 여유. drift.md의 시각은 실행이 끝난 분(서버 로컬 시각)이고 녹화 파일은 실행 중에 쓰인다. */
+/**
+ * 한 번의 녹화가 걸릴 수 있는 시간의 여유. drift.md 시각은 실행이 끝난 분이고 녹화 파일은 실행 중에 쓰이므로,
+ * 10분을 넘는 실행에서는 이번 실행의 앞쪽 녹화가 미녹화로 보일 수 있다.
+ * 근본 해결은 core가 drift.md에 실행 시작 시각을 쓰는 것이다(후속 이슈 #27).
+ */
 const RUN_SLACK_MS = 10 * 60_000;
 const driftTime = (s: string | undefined): number => (s ? new Date(s.replace(" ", "T")).getTime() : NaN);
 

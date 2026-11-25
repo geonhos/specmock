@@ -150,7 +150,7 @@ export function createApp(opts: AppOptions) {
     await assertRegistered(ws, system);
     return ok(c, { names: envStore.set(system, b.values) });
   });
-  // target.json 값은 `${이름}` 참조만 그대로 보이고, 직접 적은 값은 "***"로 가린다(API 키·토큰이 응답·로그에 남지 않게).
+  // target.json 값은 헤더의 직접 적은 값만 "***"로 가린다(API 키·토큰이 응답·로그에 남지 않게). params·features는 원문을 돌려준다.
   const targetInfo = async (system: string) => {
     if (!(await ws.exists(system, TARGET_FILE))) return { exists: false, example: TARGET_EXAMPLE };
     try {
