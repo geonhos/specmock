@@ -29,7 +29,7 @@ export function RecordCard({ system, jobs, tick, refreshJobs }: Props) {
 
   const start = async () => {
     setError(null);
-    try { const r = await api.record(system, mutating); watch(r.jobId); refreshJobs(); } catch (e) {
+    try { const r = await api.record(system, { allowMutating: mutating }); watch(r.jobId); refreshJobs(); } catch (e) {
       const err = asError(e);
       if (err.code === "busy" && err.jobId) watch(err.jobId);
       setError(err); refreshJobs();

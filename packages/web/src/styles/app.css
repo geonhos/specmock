@@ -162,3 +162,18 @@ dialog h2 { margin: 0 0 8px; font-size: var(--fs-dialog-title); }
 .cov-bar > span { display: block; height: 100%; background: var(--accent); }
 .cov-h { margin: 0 0 4px; font-size: var(--fs-caption); color: var(--text-3); font-weight: 600; }
 .cov-list { margin: 0; padding-left: 18px; }
+
+/* ⑥ 녹화 */
+.record { max-width: 960px; }
+.target-box { background: var(--surface-1); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 14px 14px; }
+.target-box summary { cursor: pointer; font-weight: 700; padding: 6px 0; }
+.target-form { max-width: none; }
+.kv-block, .env { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.kv-h { margin: 0; font-size: var(--fs-panel-title); }
+.kv input:not([type="checkbox"]) { height: var(--h-input); padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-1); color: var(--text); font: inherit; width: 100%; }
+.kv td { padding: 4px 8px 4px 0; vertical-align: top; }
+.kv-tag { display: inline-block; margin-top: 4px; font-size: var(--fs-caption); color: var(--accent); font-weight: 600; }
+.kv-hint { display: block; margin-top: 4px; font-size: var(--fs-caption); }
+.kv-choice { display: inline-flex; gap: 6px; margin-left: 8px; }
+.kv-choice .btn-ghost[aria-pressed="true"] { outline: 1.5px solid var(--accent); outline-offset: -1.5px; }
+.record-bar { flex-wrap: wrap; position: sticky; bottom: 0; background: var(--bg, var(--surface-1)); }

@@ -6,7 +6,7 @@ import { nextScreen, Sidebar } from "./components/Sidebar";
 import { Analyze } from "./screens/Analyze";
 import { Generate } from "./screens/Generate";
 import { Verify } from "./screens/Verify";
-import { Record } from "./screens/Record";
+import { RecordScreen } from "./screens/Record";
 import { Register } from "./screens/Register";
 import { Select, type Change } from "./screens/Select";
 import { StepBar } from "./components/StepBar";
@@ -106,7 +106,7 @@ export function App() {
               <Verify key={route.system} system={route.system} jobs={jobs} tick={tick} go={go} refreshJobs={refreshJobs} onChanged={reload} />
             ) : null}
             {route.screen === "record" && route.system ? (
-              <Record key={route.system} system={route.system} jobs={jobs} tick={tick} go={go} refreshJobs={refreshJobs} onChanged={reload} />
+              <RecordScreen key={route.system} system={route.system} jobs={jobs} tick={tick} go={go} refreshJobs={refreshJobs} onChanged={reload} />
             ) : null}
           </main>
         )}
