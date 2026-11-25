@@ -29,7 +29,7 @@ export type FeatureListRow = FeatureRow & { summary: string; codes: string[] };
 export type FeatureList = { total: number; rows: FeatureListRow[]; groups: string[] };
 export type { AnalyzeSpecResult, ChunkSummary, Feature, FeatureRow, GenerateInfo, IngestSpecResult, Selection, SelectResult, SourceInput } from "@specmock/core";
 
-/** `literal`이 true면 파일에 직접 적힌 값이라 `value`는 `"***"`다. false면 `${이름}` 참조 원문이다. */
+/** `literal`이 true면 `${이름}` 참조만으로 된 값이 아니다(직접 적은 값을 포함). 헤더의 literal 값만 `value`가 `"***"`고, 공통 값·기능별 값은 원문이다. false면 `${이름}` 참조 원문이다. */
 export type TargetEntry = { name: string; value: string; literal: boolean };
 export type EnvStatus = "process" | "session" | "missing";
 export type TargetInfo = {

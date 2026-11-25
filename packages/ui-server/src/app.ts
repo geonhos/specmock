@@ -11,7 +11,7 @@ import { BusyJobError, JobManager, NotCancellableError, ShuttingDownError } from
 import { errorBody, ingestInputError, InvalidRequest, NotFound, toApiError } from "./errors.js";
 import { localOnly, methodGuard } from "./security.js";
 import { serveWeb } from "./static.js";
-import { envNames, envStatus, mergePut, readRawTarget, readRecordedSummaries, TargetPutBodySchema, toEntries } from "./targetView.js";
+import { envNames, envStatus, mergePut, readRawTarget, readRecordedSummaries, TargetPutBodySchema, toEntries, toHeaderEntries } from "./targetView.js";
 import { assertRegistered, defaultOutDir, listSystems, readSelection, systemOverview } from "./systems.js";
 import { findExecutable } from "./which.js";
 
@@ -150,7 +150,7 @@ export function createApp(opts: AppOptions) {
     await assertRegistered(ws, system);
     return ok(c, { names: envStore.set(system, b.values) });
   });
-  // target.json 값은 `${이름}` 참조만 그대로 보이고, 직접 적은 값은 "***"로 가린다(API 키·토큰이 응답·로그에 남지 않게).
+  // target.json 값은 헤더의 직접 적은 값만 "***"로 가린다(API 키·토큰이 응답·로그에 남지 않게). params·features는 원문을 돌려준다.
   const targetInfo = async (system: string) => {
     if (!(await ws.exists(system, TARGET_FILE))) return { exists: false, example: TARGET_EXAMPLE };
     try {
@@ -160,7 +160,7 @@ export function createApp(opts: AppOptions) {
         exists: true, baseUrl: t.baseUrl, example: TARGET_EXAMPLE,
         target: {
           baseUrl: t.baseUrl, timeoutMs: t.timeoutMs,
-          headers: toEntries(raw.headers), params: toEntries(raw.params),
+          headers: toHeaderEntries(raw.headers), params: toEntries(raw.params),
           features: Object.fromEntries(Object.entries(raw.features ?? {}).map(([id, m]) => [id, toEntries(m)])),
         },
         env: envStatus(envNames(raw), envStore, system),

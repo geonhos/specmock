@@ -30,6 +30,7 @@ export function RecordTable({ rows, selected, allowMutating, outcomes, values, o
           const locked = !isSafeMethod(r.method) && !allowMutating;
           const o = outcomes.get(r.id) ?? NONE;
           const vars = pathVars(r.path);
+          const others = (values[r.id] ?? []).filter((x) => !x.removed && x.name !== "" && x.value !== "" && !vars.includes(x.name));
           return (
             <Fragment key={r.id}>
               <tr className={locked ? "dim" : undefined}>
@@ -39,8 +40,9 @@ export function RecordTable({ rows, selected, allowMutating, outcomes, values, o
                 <td>
                   {vars.length ? vars.map((v) => {
                     const cur = values[r.id]?.find((x) => x.name === v);
-                    return <input key={v} className="var-input" aria-label={`${r.id} ${v}`} placeholder={cur?.keep ? "***" : v} value={cur?.keep ? "" : cur?.value ?? ""} onChange={(e) => onValue(r.id, v, e.target.value)} />;
+                    return <input key={v} className="var-input" aria-label={`${r.id} ${v}`} placeholder={v} value={cur?.value ?? ""} onChange={(e) => onValue(r.id, v, e.target.value)} />;
                   }) : <span className="text-3">—</span>}
+                  {others.length ? <div className="muted kv-hint">그 밖의 값: {others.map((x) => `${x.name}=${x.value}`).join(", ")}</div> : null}
                 </td>
                 <td className={`st ${kindClass(o.kind)}`}>
                   {o.label}

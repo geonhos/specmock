@@ -1,4 +1,4 @@
-import { hasRef, newRow, type FormModel, type FormRow } from "../recordModel";
+import { hasRef, newRow, TIMEOUT_HINT, timeoutValid, type FormModel, type FormRow } from "../recordModel";
 
 interface RowsProps { rows: FormRow[]; label: string; addLabel: string; onChange: (rows: FormRow[]) => void }
 
@@ -49,7 +49,9 @@ export function TargetForm({ model, onChange }: { model: FormModel; onChange: (m
   return (
     <div className="form target-form">
       <label className="field"><span>주소</span><input value={model.baseUrl} placeholder="https://api.example.com/v2" onChange={(e) => onChange({ ...model, baseUrl: e.target.value })} /></label>
-      <label className="field"><span>제한 시간(초)</span><input inputMode="decimal" value={model.timeoutSec} onChange={(e) => onChange({ ...model, timeoutSec: e.target.value })} /></label>
+      <label className="field"><span>제한 시간(초)</span><input inputMode="decimal" value={model.timeoutSec} aria-invalid={!timeoutValid(model.timeoutSec)} aria-describedby={timeoutValid(model.timeoutSec) ? undefined : "timeout-hint"} onChange={(e) => onChange({ ...model, timeoutSec: e.target.value })} />
+        {timeoutValid(model.timeoutSec) ? null : <span id="timeout-hint" className="muted kv-hint">{TIMEOUT_HINT}</span>}
+      </label>
       <RowsEditor rows={model.headers} label="헤더" addLabel="+ 헤더" onChange={(headers) => onChange({ ...model, headers })} />
       <RowsEditor rows={model.params} label="공통 값" addLabel="+ 값" onChange={(params) => onChange({ ...model, params })} />
     </div>
