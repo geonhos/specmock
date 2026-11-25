@@ -12,6 +12,8 @@ const REF = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 const ONLY_REFS = /^(\$\{[A-Za-z_][A-Za-z0-9_]*\})+$/;
 
 export const isRef = (v: string): boolean => ONLY_REFS.test(v);
+/** `${이름}` 참조가 하나라도 들어 있는지(앞뒤에 다른 글자가 있어도). */
+export const hasRef = (v: string): boolean => /\$\{[A-Za-z_][A-Za-z0-9_]*\}/.test(v);
 export const newRow = (name = "", value = ""): FormRow => ({ name, value, literal: false, keep: false, removed: false });
 const fromEntry = (e: TargetEntry): FormRow => ({ name: e.name, value: e.value, literal: e.literal, keep: e.literal, removed: false });
 

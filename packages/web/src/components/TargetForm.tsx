@@ -1,4 +1,4 @@
-import { isRef, newRow, type FormModel, type FormRow } from "../recordModel";
+import { hasRef, newRow, type FormModel, type FormRow } from "../recordModel";
 
 interface RowsProps { rows: FormRow[]; label: string; addLabel: string; onChange: (rows: FormRow[]) => void }
 
@@ -21,7 +21,7 @@ function RowsEditor({ rows, label, addLabel, onChange }: RowsProps) {
                     {asInput ? (
                       <>
                         <input aria-label={`${label} ${n} 값`} value={r.value} onChange={(e) => set(i, { value: e.target.value })} />
-                        {isRef(r.value) ? <span className="kv-tag">환경 변수</span> : r.value !== "" ? <span className="muted kv-hint">이 값은 파일에 그대로 남습니다. {"${이름}"} 참조를 권합니다</span> : null}
+                        {hasRef(r.value) ? <span className="kv-tag">환경 변수</span> : r.value !== "" ? <span className="muted kv-hint">이 값은 파일에 그대로 남습니다. {"${이름}"} 참조를 권합니다</span> : null}
                       </>
                     ) : <span className="mono">{r.removed ? "지움" : "***"}</span>}
                     {r.literal ? (

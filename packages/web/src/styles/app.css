@@ -181,3 +181,4 @@ dialog h2 { margin: 0 0 8px; font-size: var(--fs-dialog-title); }
 .record-table .dim td:first-child { opacity: 1; }
 .var-input { height: var(--h-input); width: 120px; padding: 0 8px; margin-right: 6px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-1); color: var(--text); font: inherit; }
 .record-features { display: flex; flex-direction: column; gap: 8px; }
+.kv .st { width: auto; white-space: nowrap; }
