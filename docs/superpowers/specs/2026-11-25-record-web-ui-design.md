@@ -239,3 +239,10 @@ const merged = { ...target.params, ...(target.features[feature.id] ?? {}) };
 ## 11. 구현 중 변경
 
 구현하면서 이 문서와 달라진 점을 여기에 적습니다.
+
+- `InvalidBodyError`는 없어 기존 `InvalidRequest`(400)를 씁니다. `Workspace`에 `readJson`·`list`가 없어 `node:fs/promises`로 읽습니다.
+- `PUT /target`은 `ws.write` 앞에서 `TargetSchema.safeParse`로 검증하고 `InvalidRequest`로 던집니다(`ws.write`의 오류는 500이 되기 때문).
+- 모르는 기능 id는 작업 시작 전에 `mockspec.json`과 비교해 400으로 막습니다(작업 안에서 나는 오류는 400으로 매핑되지 않기 때문). `features`가 비어 있으면 검사하지 않습니다.
+- `GET /target`은 화면 호환을 위해 최상위 `baseUrl`도 함께 돌려줍니다(web PR 2에서 제거 검토).
+- apply가 `mockspec.json`을 `drift.md` 뒤에 다시 쓰므로, 작업이 끝나면 `drift.md` 시각을 현재로 맞추고 `stale.record`는 밀리초 단위로 비교합니다. 그렇지 않으면 방금 녹화가 낡은 것으로 보입니다.
+- 커밋은 Task 3~5를 하나로 묶었습니다(`app.ts` 변경이 서로 얽혀 있어서).

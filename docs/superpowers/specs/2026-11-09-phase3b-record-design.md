@@ -304,3 +304,10 @@ sequenceDiagram
 | `mockspecHash` 의미 (D6) | 녹화 시점 mockspec.json 전체의 sha256 | `featureInputHash`: 그 기능 + 그 contract, fixture는 status만 | 다른 기능 선택·녹화가 바뀌어도 낡은 녹화 경고가 오탐되지 않음 |
 | 비밀 변형 마스킹 | 치환된 원문만 찾음 | `Target.secrets`에 원문·`encodeURIComponent`·form 인코딩·소문자 hex 변형을 함께 담고(4자 미만은 변형 안 함), JSON 바디는 파싱된 문자열 값에만, `RecordResult`는 `failed.reason`·`statusMismatch.hint`·`drifted.errors`에만 적용 | `fillPath`·query 표시가 값을 인코딩해 원문 일치를 피해 감. 숫자 비밀이 JSON을 깨거나 featureId가 망가지는 과잉 마스킹도 방지 |
 | 숫자·이스케이프·drift 범위 | JSON 숫자는 그대로, raw는 원문·URL·form 변형만, drift.md 전체에 `redactSecrets` | JSON 숫자 값은 `String(n)`이 비밀(4자 이상)과 정확히 일치하면 `"***"`(부분 일치는 유지). `secretVariants`에 JSON 이스케이프(`\"`·`\\`·`\/`·`\uXXXX`) 추가. drift.md는 path·errors·reason에만 출처 기반 마스킹(featureId·baseUrl·고정 문구는 원형), 패턴 기반은 전체 | `${ENV}`는 형식과 무관하게 가린다는 사용자 결정(키가 숫자만일 수 있음). 가릴 필요 없는 id는 `${ENV}` 없이 직접 적는다 |
+
+## 개정(2026-11-25)
+
+`docs/superpowers/specs/2026-11-25-record-web-ui-design.md`가 다음 세 결정을 바꿉니다.
+- :33 "Web은 실행 버튼과 결과 보기만(target 편집 없음)" → Web 화면 ⑥에서 target을 편집합니다. 키는 `${ENV}` 참조로만 파일에 남고, 값은 ui-server 메모리에만 둡니다.
+- :42 비목표 "Web에서 target.json 편집" → 목표로 바뀝니다.
+- :90 "params는 모든 기능에 공통 적용" → `features.<기능id>`가 공통 `params`보다 우선합니다.
