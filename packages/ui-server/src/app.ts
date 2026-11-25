@@ -11,7 +11,7 @@ import { BusyJobError, JobManager, NotCancellableError, ShuttingDownError } from
 import { errorBody, ingestInputError, InvalidRequest, NotFound, toApiError } from "./errors.js";
 import { localOnly, methodGuard } from "./security.js";
 import { serveWeb } from "./static.js";
-import { envNames, envStatus, mergePut, readRawTarget, readRecordedSummaries, TargetPutBodySchema, toEntries } from "./targetView.js";
+import { envNames, envStatus, mergePut, readRawTarget, readRecordedSummaries, TargetPutBodySchema, toEntries, toHeaderEntries } from "./targetView.js";
 import { assertRegistered, defaultOutDir, listSystems, readSelection, systemOverview } from "./systems.js";
 import { findExecutable } from "./which.js";
 
@@ -160,7 +160,7 @@ export function createApp(opts: AppOptions) {
         exists: true, baseUrl: t.baseUrl, example: TARGET_EXAMPLE,
         target: {
           baseUrl: t.baseUrl, timeoutMs: t.timeoutMs,
-          headers: toEntries(raw.headers), params: toEntries(raw.params),
+          headers: toHeaderEntries(raw.headers), params: toEntries(raw.params),
           features: Object.fromEntries(Object.entries(raw.features ?? {}).map(([id, m]) => [id, toEntries(m)])),
         },
         env: envStatus(envNames(raw), envStore, system),

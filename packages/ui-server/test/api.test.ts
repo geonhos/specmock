@@ -353,10 +353,10 @@ describe("record (3B)", () => {
     expect(r.body).toEqual({ ok: true, data: { exists: false, example: expect.stringContaining("https://api.example.com/v2") } });
   });
 
-  it("GET target: 참조는 그대로, 직접 적은 값은 ***로 가리고 env 상태를 싣는다", async () => {
+  it("GET target: 헤더의 직접 적은 값만 ***로 가리고 공통·기능별 값은 원문, env 상태를 싣는다", async () => {
     const c = client();
     vi.stubEnv("UI_FROM_PROCESS", "x");
-    await prepare(c, { baseUrl: "https://real.example.com/v2/", headers: { Authorization: "Bearer ${UI_SECRET_TOKEN}", "X-Ref": "${UI_FROM_PROCESS}" }, params: { petId: "777" }, features: { getPet: { id: "${UI_CUS}" } } });
+    await prepare(c, { baseUrl: "https://real.example.com/v2/", headers: { Authorization: "Bearer ${UI_SECRET_TOKEN}", "X-Ref": "${UI_FROM_PROCESS}" }, params: { petId: "777", mix: "a-${UI_CUS}" }, features: { getPet: { id: "${UI_CUS}", q: "limit=5" } } });
     await c.post("/systems/petstore/env", { values: { UI_CUS: "cus_zzz", UI_FROM_PROCESS: "typed" } });   // 화면 입력이 process보다 우선
     const r = await c.get("/systems/petstore/target");
     expect(r.body.data).toMatchObject({
@@ -364,12 +364,12 @@ describe("record (3B)", () => {
       target: {
         baseUrl: "https://real.example.com/v2", timeoutMs: 15000,
         headers: [{ name: "Authorization", value: "***", literal: true }, { name: "X-Ref", value: "${UI_FROM_PROCESS}", literal: false }],
-        params: [{ name: "petId", value: "***", literal: true }],
-        features: { getPet: [{ name: "id", value: "${UI_CUS}", literal: false }] },
+        params: [{ name: "petId", value: "777", literal: true }, { name: "mix", value: "a-${UI_CUS}", literal: true }],
+        features: { getPet: [{ name: "id", value: "${UI_CUS}", literal: false }, { name: "q", value: "limit=5", literal: true }] },
       },
       env: [{ name: "UI_SECRET_TOKEN", status: "missing" }, { name: "UI_FROM_PROCESS", status: "session" }, { name: "UI_CUS", status: "session" }],
     });
-    expect(JSON.stringify(r.body.data.target)).not.toMatch(/777|cus_zzz/);
+    expect(JSON.stringify(r.body.data.target)).not.toMatch(/cus_zzz|Bearer/);
     vi.unstubAllEnvs();
   });
 
@@ -379,9 +379,18 @@ describe("record (3B)", () => {
     const put = async (b: unknown) => { const r = await app(c, "PUT", "/systems/petstore/target", b); return r; };
     const r = await put({ baseUrl: "https://b.example.com", headers: [{ name: "Authorization", keep: true }, { name: "X-Id", value: "${UI_ID}" }], params: [], features: { getPet: [{ name: "petId", value: "5" }] } });
     expect(r.status).toBe(200);
-    expect(r.body.data.target.features).toEqual({ getPet: [{ name: "petId", value: "***", literal: true }] });
+    expect(r.body.data.target.features).toEqual({ getPet: [{ name: "petId", value: "5", literal: true }] });
     const file = JSON.parse(await readFile(path.join(root, ".specmock", "petstore", "target.json"), "utf8"));
     expect(file).toEqual({ baseUrl: "https://b.example.com", headers: { Authorization: "Bearer real-token", "X-Id": "${UI_ID}" }, features: { getPet: { petId: "5" } } });
+  });
+
+  it("PUT target: 본문에 없는 기능 id의 기존 값은 파일에 남고, 본문에 있는 id는 본문이 전부다", async () => {
+    const c = client();
+    await prepare(c, { baseUrl: "https://a.example.com", features: { other: { id: "9" }, getPet: { old: "1" } } });
+    const r = await app(c, "PUT", "/systems/petstore/target", { baseUrl: "https://a.example.com", headers: [], params: [], features: { getPet: [{ name: "petId", value: "5" }] } });
+    expect(r.status).toBe(200);
+    const file = JSON.parse(await readFile(path.join(root, ".specmock", "petstore", "target.json"), "utf8"));
+    expect(file.features).toEqual({ other: { id: "9" }, getPet: { petId: "5" } });
   });
 
   it("PUT target: 없는 이름을 keep하면 400, 형식 오류도 400(값은 싣지 않는다)", async () => {

@@ -7,7 +7,7 @@ import type { EnvStatus, TargetEntry } from "./api-types.js";
 
 export type RawTarget = z.infer<typeof TargetSchema>;
 
-/** 값이 `${이름}` 참조만으로 이루어졌는지. 이런 값만 화면에 그대로 보인다. */
+/** 값이 `${이름}` 참조만으로 이루어졌는지. 헤더는 이런 값만 화면에 그대로 보인다. */
 const ONLY_REFS = /^(?:\$\{[A-Za-z_][A-Za-z0-9_]*\})+$/;
 const ENV_REF = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 
@@ -19,10 +19,16 @@ export async function readRawTarget(ws: Workspace, system: string): Promise<RawT
   } catch { return null; }
 }
 
-export function toEntries(map: Record<string, string> | undefined): TargetEntry[] {
+/** 헤더용: 참조만으로 된 값은 원문, 그 밖의 직접 적은 값은 `***`로 가린다. */
+export function toHeaderEntries(map: Record<string, string> | undefined): TargetEntry[] {
   return Object.entries(map ?? {}).map(([name, value]) => (ONLY_REFS.test(value)
     ? { name, value, literal: false }
     : { name, value: "***", literal: true }));
+}
+
+/** 공통 값·기능별 값용: 값을 가리지 않는다(경로 id·query는 drift.md 경로에도 찍힌다). `literal`은 참조만으로 된 값이 아니라는 뜻이다. */
+export function toEntries(map: Record<string, string> | undefined): TargetEntry[] {
+  return Object.entries(map ?? {}).map(([name, value]) => ({ name, value, literal: !ONLY_REFS.test(value) }));
 }
 
 /** 헤더·공통 값·기능별 값에 쓰인 `${이름}` 전체(중복 없이, 처음 나온 순서). */
@@ -62,13 +68,17 @@ function pick(items: Items, prev: Record<string, string> | undefined, where: str
   return out;
 }
 
-/** PUT 본문과 기존 파일을 합쳐 새 파일 내용을 만든다. keep은 기존 값을 그대로 둔다. 빈 묶음은 쓰지 않는다. 형식 오류는 InvalidRequest(값은 싣지 않는다). */
+/** PUT 본문과 기존 파일을 합쳐 새 파일 내용을 만든다. keep은 기존 값을 그대로 둔다. 본문에 없는 기능 id의 값은 보존한다. 빈 묶음은 쓰지 않는다. 형식 오류는 InvalidRequest(값은 싣지 않는다). */
 export function mergePut(body: z.infer<typeof TargetPutBodySchema>, existing: RawTarget | null): RawTarget {
   const headers = pick(body.headers, existing?.headers, "헤더 ");
   const params = pick(body.params, existing?.params, "공통 값 ");
-  const features = Object.fromEntries(Object.entries(body.features)
-    .map(([fid, items]) => [fid, pick(items, existing?.features?.[fid], `${fid}.`)] as const)
-    .filter(([, m]) => Object.keys(m).length > 0));
+  // 본문에 없는 기능 id의 기존 값은 그대로 둔다. 본문에 있는 id는 본문이 전부다.
+  const features = {
+    ...Object.fromEntries(Object.entries(existing?.features ?? {}).filter(([fid]) => !Object.hasOwn(body.features, fid))),
+    ...Object.fromEntries(Object.entries(body.features)
+      .map(([fid, items]) => [fid, pick(items, existing?.features?.[fid], `${fid}.`)] as const)
+      .filter(([, m]) => Object.keys(m).length > 0)),
+  };
   const parsed = TargetSchema.safeParse({
     baseUrl: body.baseUrl,
     ...(body.timeoutMs !== undefined ? { timeoutMs: body.timeoutMs } : {}),
