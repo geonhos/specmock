@@ -21,7 +21,7 @@ const targetInfo = (over: Record<string, unknown> = {}, features: Record<string,
   exists: true, example: EXAMPLE, baseUrl: "https://api.stripe.com",
   target: {
     baseUrl: "https://api.stripe.com", timeoutMs: 20000,
-    headers: [entry("Authorization", "Bearer ${TOKEN}"), entry("X-Plain", "***", true)],
+    headers: [entry("Authorization", "***", true), entry("X-Plain", "***", true), entry("X-Ref", "${TOKEN}")],
     params: [], features,
   },
   env: [{ name: "TOKEN", status: "process" }],
@@ -77,7 +77,7 @@ it("저장은 PUT /target 본문에 헤더·공통 값·keep을 담는다", asyn
   await vi.waitFor(() => expect(api.calls).toContain(`PUT ${S}/target`));
   expect(lastBody(api, `PUT ${S}/target`)).toEqual({
     baseUrl: "https://api2.stripe.com", timeoutMs: 30000,
-    headers: [{ name: "Authorization", value: "Bearer ${TOKEN}" }, { name: "X-Plain", keep: true }],
+    headers: [{ name: "Authorization", keep: true }, { name: "X-Plain", keep: true }, { name: "X-Ref", value: "${TOKEN}" }],
     params: [{ name: "limit", value: "3" }],
     features: {},
   });
@@ -95,16 +95,41 @@ it("직접 적은 헤더 값에는 안내가 뜨고, ${이름} 값에는 환경 
   expect(screen.getByText("환경 변수")).not.toBeNull();
 });
 
+it("참조가 섞인 값은 ***·literal로 불러와 그대로 두면 keep으로 저장되고 원문은 나가지 않는다", async () => {
+  const api = setup(targetInfo(), [], putOk(targetInfo()));
+  view();
+  await screen.findByLabelText("주소");
+  expect(screen.getByRole("button", { name: "Authorization 그대로 유지" }).getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByRole("button", { name: "Authorization 그대로 유지" }).closest("tr")!.textContent).not.toContain("환경 변수");
+  expect(screen.getByLabelText("헤더 3 값").closest("td")!.textContent).toContain("환경 변수");
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  await vi.waitFor(() => expect(api.calls).toContain(`PUT ${S}/target`));
+  const body = lastBody(api, `PUT ${S}/target`);
+  expect((body.headers as { name: string }[]).find((h) => h.name === "Authorization")).toEqual({ name: "Authorization", keep: true });
+  expect(JSON.stringify(body)).not.toContain("Bearer");
+  expect(JSON.stringify(body)).not.toContain("***");
+});
+
+it("헤더 값에 Bearer ${TOKEN}을 입력하면 환경 변수 표시가 붙고 그대로 남는다는 안내는 없다", async () => {
+  setup(noTarget);
+  view();
+  fireEvent.click(await screen.findByRole("button", { name: "+ 헤더" }));
+  fireEvent.change(screen.getByLabelText("헤더 1 이름"), { target: { value: "Authorization" } });
+  fireEvent.change(screen.getByLabelText("헤더 1 값"), { target: { value: "Bearer ${TOKEN}" } });
+  expect(screen.getByText("환경 변수")).not.toBeNull();
+  expect(screen.queryByText(/파일에 그대로 남습니다/)).toBeNull();
+});
+
 it("파일에 직접 적힌 값은 ***로 보이고 지우기를 고르면 본문에서 빠진다", async () => {
   const api = setup(targetInfo(), [], putOk(targetInfo()));
   view();
   await screen.findByLabelText("주소");
-  expect(screen.getByText("***")).not.toBeNull();
+  expect(screen.getAllByText("***").length).toBe(2);
   expect(screen.getByRole("button", { name: "X-Plain 그대로 유지" }).getAttribute("aria-pressed")).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: "X-Plain 지우기" }));
   fireEvent.click(screen.getByRole("button", { name: "저장" }));
   await vi.waitFor(() => expect(api.calls).toContain(`PUT ${S}/target`));
-  expect(lastBody(api, `PUT ${S}/target`).headers).toEqual([{ name: "Authorization", value: "Bearer ${TOKEN}" }]);
+  expect(lastBody(api, `PUT ${S}/target`).headers).toEqual([{ name: "Authorization", keep: true }, { name: "X-Ref", value: "${TOKEN}" }]);
 });
 
 it("환경 변수가 미설정이면 녹화가 막히고, 이번 세션에 사용을 누르면 POST /env 뒤 설정됨으로 바뀐다", async () => {
