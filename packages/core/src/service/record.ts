@@ -1,4 +1,5 @@
 // packages/core/src/service/record.ts
+import { utimes } from "node:fs/promises";
 import path from "node:path";
 import type { GenerateReport } from "../generate/generator.js";
 import { generate } from "../generate/index.js";
@@ -43,12 +44,14 @@ export async function recordResponses(ws: Workspace, system: string, opts: Recor
   });
   const notes: string[] = [];
   let selectedCount = 0;
-  const finish = (): RecordResponsesResult => {
+  let selectDone = false;
+  const finish = async (): Promise<RecordResponsesResult> => {
+    // select가 mockspec.json을 drift.md 뒤에 다시 쓴다. 방금 한 녹화가 낡은 것으로 보이지 않게 drift.md 시각을 맞춘다(CLI·MCP·ui-server 공통).
+    if (selectDone) { const now = new Date(); await utimes(result.driftPath, now, now).catch(() => undefined); }
     const red = (t: string) => maskSecrets(redactSecrets(t, target.secrets));
     return { result, driftPath: result.driftPath, driftMarkdown, notes: notes.map(red) };
   };
   if (opts.apply !== false) {
-    let selectDone = false;
     try {
       opts.onEvent?.({ stage: "record", message: "select 다시 실행(녹화 반영)" });
       const selection = await ws.read(system, "selection.json", SelectionSchema);
@@ -80,7 +83,7 @@ export async function recordResponses(ws: Workspace, system: string, opts: Recor
         // 잠금 안 generate가 LLM 경로로 갔다(그 사이 mockspec이 바뀜). LLM은 부르지 않고 안내만 한다.
         notes.push(`${APPLY_LATER}(LLM 재생성 필요)`);
         result.applied = { selected: selectedCount, generate: null };
-        return finish();
+        return await finish();
       }
       // 프로그래밍 오류(Error가 아니거나 TypeError·RangeError)는 삼키지 않는다.
       if (!(e instanceof Error) || e instanceof TypeError || e instanceof RangeError) throw e;
@@ -89,5 +92,5 @@ export async function recordResponses(ws: Workspace, system: string, opts: Recor
       result.applied = null;
     }
   }
-  return finish();
+  return await finish();
 }
