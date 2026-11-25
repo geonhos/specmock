@@ -192,5 +192,5 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
 }
 
 export { DRIFT_FILE } from "./drift.js";
-export { readTarget, TARGET_EXAMPLE, TARGET_FILE, type Target } from "./target.js";
+export { readTarget, TARGET_EXAMPLE, TARGET_FILE, TargetSchema, type Target } from "./target.js";
 export { RECORDED_DIR, readRecorded, isSafeFeatureId } from "./recorded.js";

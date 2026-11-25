@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
@@ -197,7 +197,7 @@ describe("시스템 개요", () => {
     expect(o.catalogTotal).toBeGreaterThan(0);
     expect(o.selection.selected).toEqual([id]);
     expect((await c.get("/systems/petstore/selection")).body.data.selected).toEqual([id]);
-    expect(o.summary.stale).toEqual({ select: false, generate: false, verify: false });
+    expect(o.summary.stale).toEqual({ select: false, generate: false, verify: false, record: false });
   });
   it("mtime 비교로 stale 판정", async () => {
     const { utimes, writeFile } = await import("node:fs/promises");
@@ -215,7 +215,7 @@ describe("시스템 개요", () => {
     await utimes(path.join(dir, "generate.json"), t(-20), t(-20));
     await utimes(path.join(dir, "coverage.md"), t(-10), t(-10));
     let s = (await c.get("/systems")).body.data[0];
-    expect(s.stale).toEqual({ select: false, generate: false, verify: false });
+    expect(s.stale).toEqual({ select: false, generate: false, verify: false, record: false });
     expect(s.steps).toMatchObject({ generated: true, verified: true });
     expect((await c.get("/systems/petstore")).body.data.defaultOutDir).toBe("/tmp/elsewhere");
     await utimes(path.join(dir, "catalog.json"), t(0), t(0));
@@ -223,7 +223,7 @@ describe("시스템 개요", () => {
     await utimes(path.join(dir, "generate.json"), t(-25), t(-25));
     await utimes(path.join(dir, "coverage.md"), t(-35), t(-35));
     s = (await c.get("/systems")).body.data[0];
-    expect(s.stale).toEqual({ select: true, generate: true, verify: true });
+    expect(s.stale).toEqual({ select: true, generate: true, verify: true, record: false });
   });
   it("문서 시스템은 chunks 개수를 낸다", async () => {
     const c = client();
@@ -309,6 +309,12 @@ describe("Task 9 리뷰 수정", () => {
   });
 });
 
+async function app(_c: unknown, method: string, p: string, b: unknown) {
+  const { app: a } = createApp({ root, webDir: path.join(root, "web"), port: () => 4310, claudeCommand: FAKE_CLAUDE });
+  const r = await a.request(`/api${p}`, { method, headers: HOST, body: JSON.stringify(b) });
+  return { status: r.status, body: await r.json() };
+}
+
 describe("record (3B)", () => {
   let real: Server | undefined;
   afterEach(async () => { real?.closeAllConnections(); await new Promise<void>((r) => (real ? real.close(() => r()) : r())); real = undefined; });
@@ -344,14 +350,104 @@ describe("record (3B)", () => {
     expect(r.body).toEqual({ ok: true, data: { exists: false, example: expect.stringContaining("https://api.example.com/v2") } });
   });
 
-  it("GET target: baseUrl만 싣고 headers·params·환경변수 이름은 싣지 않는다", async () => {
+  it("GET target: 참조는 그대로, 직접 적은 값은 ***로 가리고 env 상태를 싣는다", async () => {
     const c = client();
-    await prepare(c, { baseUrl: "https://real.example.com/v2/", headers: { Authorization: "Bearer ${UI_SECRET_TOKEN}" }, params: { petId: "777" } });
+    vi.stubEnv("UI_FROM_PROCESS", "x");
+    await prepare(c, { baseUrl: "https://real.example.com/v2/", headers: { Authorization: "Bearer ${UI_SECRET_TOKEN}", "X-Ref": "${UI_FROM_PROCESS}" }, params: { petId: "777" }, features: { getPet: { id: "${UI_CUS}" } } });
+    await c.post("/systems/petstore/env", { values: { UI_CUS: "cus_zzz" } });
     const r = await c.get("/systems/petstore/target");
-    expect(r.body.data).toMatchObject({ exists: true, baseUrl: "https://real.example.com/v2" });
-    const { example: _example, ...rest } = r.body.data;   // example은 고정 예시(Authorization 문구 포함)
-    const text = JSON.stringify(rest);
-    for (const x of ["Authorization", "UI_SECRET_TOKEN", "777"]) expect(text).not.toContain(x);
+    expect(r.body.data).toMatchObject({
+      exists: true, baseUrl: "https://real.example.com/v2",
+      target: {
+        baseUrl: "https://real.example.com/v2", timeoutMs: 15000,
+        headers: [{ name: "Authorization", value: "***", literal: true }, { name: "X-Ref", value: "${UI_FROM_PROCESS}", literal: false }],
+        params: [{ name: "petId", value: "***", literal: true }],
+        features: { getPet: [{ name: "id", value: "${UI_CUS}", literal: false }] },
+      },
+      env: [{ name: "UI_SECRET_TOKEN", status: "missing" }, { name: "UI_FROM_PROCESS", status: "process" }, { name: "UI_CUS", status: "session" }],
+    });
+    expect(JSON.stringify(r.body.data.target)).not.toMatch(/777|cus_zzz/);
+    vi.unstubAllEnvs();
+  });
+
+  it("PUT target: keep은 기존 값을 그대로 두고, 빈 기능 묶음은 쓰지 않는다", async () => {
+    const c = client();
+    await prepare(c, { baseUrl: "https://a.example.com", headers: { Authorization: "Bearer real-token" }, params: { q: "1" } });
+    const put = async (b: unknown) => { const r = await app(c, "PUT", "/systems/petstore/target", b); return r; };
+    const r = await put({ baseUrl: "https://b.example.com", headers: [{ name: "Authorization", keep: true }, { name: "X-Id", value: "${UI_ID}" }], params: [], features: { getPet: [{ name: "petId", value: "5" }], empty: [] } });
+    expect(r.status).toBe(200);
+    expect(r.body.data.target.features).toEqual({ getPet: [{ name: "petId", value: "***", literal: true }] });
+    const file = JSON.parse(await readFile(path.join(root, ".specmock", "petstore", "target.json"), "utf8"));
+    expect(file).toEqual({ baseUrl: "https://b.example.com", headers: { Authorization: "Bearer real-token", "X-Id": "${UI_ID}" }, features: { getPet: { petId: "5" } } });
+  });
+
+  it("PUT target: 없는 이름을 keep하면 400, 형식 오류도 400(값은 싣지 않는다)", async () => {
+    const c = client();
+    await prepare(c, { baseUrl: "https://a.example.com" });
+    const keep = await app(c, "PUT", "/systems/petstore/target", { baseUrl: "https://a.example.com", headers: [{ name: "Nope", keep: true }], params: [], features: {} });
+    expect(keep.status).toBe(400);
+    const bad = await app(c, "PUT", "/systems/petstore/target", { baseUrl: "ftp://SECRET_VALUE", headers: [], params: [], features: {} });
+    expect(bad.status).toBe(400);
+    expect(JSON.stringify(bad.body)).not.toContain("SECRET_VALUE");
+    expect(JSON.parse(await readFile(path.join(root, ".specmock", "petstore", "target.json"), "utf8"))).toEqual({ baseUrl: "https://a.example.com" });
+  });
+
+  it("POST env: 이름만 돌려주고, 값은 record 결과 어디에도 남지 않는다", async () => {
+    const c = client();
+    const secret = "sk_live_ENVLEAK_9876";
+    await prepare(c, { baseUrl: await realSystem(), headers: { "X-Key": "${UI_ENV_KEY}" } });
+    const e = await c.post("/systems/petstore/env", { values: { UI_ENV_KEY: secret } });
+    expect(e.body).toEqual({ ok: true, data: { names: ["UI_ENV_KEY"] } });
+    expect(JSON.stringify(e.body)).not.toContain(secret);
+    await c.post("/systems/petstore/record");
+    const j = await finished(c);
+    expect(j.state).toBe("done");
+    const dir = path.join(root, ".specmock", "petstore");
+    const texts = [JSON.stringify(await c.get("/jobs")), (await c.get("/systems/petstore/record/last")).body, await readFile(path.join(dir, "drift.md"), "utf8")].map((x) => (typeof x === "string" ? x : JSON.stringify(x)));
+    for (const f of await readdir(path.join(dir, "recorded"))) texts.push(await readFile(path.join(dir, "recorded", f), "utf8"));
+    for (const t of texts) expect(t).not.toContain(secret);
+  });
+
+  it("POST env: 잘못된 이름은 400, GET은 405", async () => {
+    const c = client();
+    await prepare(c);
+    const bad = await c.post("/systems/petstore/env", { values: { "1BAD": "v" } });
+    expect(bad.status).toBe(400);
+    expect(JSON.stringify(bad.body)).not.toContain('"v"');
+    expect((await c.get("/systems/petstore/env")).status).toBe(405);
+  });
+
+  it("POST record: apply false면 applied가 null, 모르는 기능 id는 400", async () => {
+    const c = client();
+    await prepare(c, { baseUrl: await realSystem() });
+    const unknown = await c.post("/systems/petstore/record", { features: ["nope"] });
+    expect(unknown.status).toBe(400);
+    expect(unknown.body.error.message).toContain("nope");
+    const r = await c.post("/systems/petstore/record", { features: ["getPet"], apply: false });
+    expect(r.status).toBe(202);
+    const j = await finished(c);
+    expect(j.state).toBe("done");
+    expect((j.result as unknown as { result: { applied: unknown } }).result.applied).toBeNull();
+  });
+
+  it("GET record/last: drift 원문과 기능별 상태·시각, 응답 본문은 없다. steps·stale.record", async () => {
+    const c = client();
+    await prepare(c, { baseUrl: await realSystem() });
+    expect((await c.get("/systems/petstore/record/last")).body.data).toEqual({ exists: false, recorded: [] });
+    expect((await c.get("/systems")).body.data[0].steps.record).toBe(false);
+    await c.post("/systems/petstore/record");
+    await finished(c);
+    const last = (await c.get("/systems/petstore/record/last")).body.data;
+    expect(last.exists).toBe(true);
+    expect(last.driftMarkdown).toContain("# petstore 실제 시스템 대조 (");
+    expect(last.recorded).toEqual([{ featureId: "getPet", status: 200, at: expect.any(String) }]);
+    expect(JSON.stringify(last)).not.toContain("Real");   // 가짜 시스템이 돌려준 본문(name: Real)
+    const sys = (await c.get("/systems")).body.data[0];
+    expect(sys.steps.record).toBe(true);
+    expect(sys.stale.record).toBe(false);
+    const future = new Date(Date.now() + 60_000);
+    await utimes(path.join(root, ".specmock", "petstore", "mockspec.json"), future, future);
+    expect((await c.get("/systems")).body.data[0].stale.record).toBe(true);
   });
 
   it("GET target: 형식 오류는 exists true + error(필드 이름)", async () => {

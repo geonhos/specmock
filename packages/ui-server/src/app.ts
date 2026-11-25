@@ -1,14 +1,17 @@
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { readFile, utimes } from "node:fs/promises";
 import path from "node:path";
-import { analyzeSpec, assertLanguage, CatalogSchema, ClaudeCodeAdapter, findFeature, generate, ingestSpec, listFeatures, readLock, readTarget, recordResponses, select, summarizeChunks, TARGET_EXAMPLE, TARGET_FILE, verifyMock, Workspace } from "@specmock/core";
+import { analyzeSpec, assertLanguage, CatalogSchema, ClaudeCodeAdapter, findFeature, generate, ingestSpec, listFeatures, readLock, MockSpecSchema, readTarget, recordResponses, select, summarizeChunks, DRIFT_FILE, TARGET_EXAMPLE, TARGET_FILE, TargetSchema, verifyMock, Workspace } from "@specmock/core";
 import { streamSSE } from "hono/streaming";
+import { EnvStore } from "./envStore.js";
 import { EventBus, pushBounded, type BusEvent } from "./bus.js";
 import { BusyJobError, JobManager, NotCancellableError, ShuttingDownError } from "./jobs.js";
 import { errorBody, ingestInputError, InvalidRequest, NotFound, toApiError } from "./errors.js";
 import { localOnly, methodGuard } from "./security.js";
 import { serveWeb } from "./static.js";
+import { envNames, envStatus, mergePut, readRawTarget, readRecordedSummaries, TargetPutBodySchema, toEntries } from "./targetView.js";
 import { assertRegistered, defaultOutDir, listSystems, readSelection, systemOverview } from "./systems.js";
 import { findExecutable } from "./which.js";
 
@@ -16,7 +19,8 @@ const IngestBody = z.object({ system: z.string().min(1), origins: z.array(z.stri
 const ExtractBody = z.object({ refresh: z.boolean().optional() });
 const GenerateBody = z.object({ outDir: z.string().min(1).optional(), force: z.boolean().optional(), language: z.string().min(1).optional() });
 const VerifyBody = z.object({ dir: z.string().min(1).optional() });
-const RecordBody = z.object({ allowMutating: z.boolean().optional(), refresh: z.boolean().optional() });
+const RecordBody = z.object({ allowMutating: z.boolean().optional(), refresh: z.boolean().optional(), features: z.array(z.string()).optional(), apply: z.boolean().optional() });
+const EnvBody = z.object({ values: z.record(z.string(), z.string()) });
 /** GET target은 존재·형식만 본다. 모든 `${ENV}`가 값이 있는 것처럼 치환해 env 오류가 나지 않게 한다(치환 결과는 버린다). */
 const ANY_ENV: Record<string, string> = new Proxy({}, { get: () => "x" });
 const SelectionBody = z.object({ ids: z.array(z.string()) });
@@ -56,6 +60,7 @@ export function createApp(opts: AppOptions) {
   const claudeCommand = opts.claudeCommand ?? "claude";
   const bus = new EventBus();
   const jobs = new JobManager(bus);
+  const envStore = new EnvStore();
   const app = new Hono();
   app.use("*", localOnly(opts.port));
   app.use("/api/*", methodGuard);
@@ -138,25 +143,72 @@ export function createApp(opts: AppOptions) {
     const dir = resolveFromRoot(b.dir);
     return accepted(c, jobs.start(system, "verify", ({ signal, onEvent }) => verifyMock(ws, system, { dir, onEvent, signal })).id);
   });
-  // target.json의 headers·params는 응답·로그에 싣지 않는다(비밀). baseUrl만 보인다.
+  /** 화면에서 입력한 환경 변수는 서버 메모리에만 둔다. 응답은 이름만, 값은 어디에도 싣지 않는다. */
+  app.post("/api/systems/:s/env", async (c) => {
+    const system = c.req.param("s");
+    const b = await body(c, EnvBody);
+    await assertRegistered(ws, system);
+    return ok(c, { names: envStore.set(system, b.values) });
+  });
+  // target.json 값은 `${이름}` 참조만 그대로 보이고, 직접 적은 값은 "***"로 가린다(API 키·토큰이 응답·로그에 남지 않게).
+  const targetInfo = async (system: string) => {
+    if (!(await ws.exists(system, TARGET_FILE))) return { exists: false, example: TARGET_EXAMPLE };
+    try {
+      const t = await readTarget(ws, system, ANY_ENV);   // 형식 확인만(치환 결과는 버린다)
+      const raw = (await readRawTarget(ws, system))!;
+      return {
+        exists: true, baseUrl: t.baseUrl, example: TARGET_EXAMPLE,
+        target: {
+          baseUrl: t.baseUrl, timeoutMs: t.timeoutMs,
+          headers: toEntries(raw.headers), params: toEntries(raw.params),
+          features: Object.fromEntries(Object.entries(raw.features ?? {}).map(([id, m]) => [id, toEntries(m)])),
+        },
+        env: envStatus(envNames(raw), envStore, system),
+      };
+    } catch (e) {
+      return { exists: true, error: e instanceof Error ? e.message : String(e), example: TARGET_EXAMPLE };
+    }
+  };
   app.get("/api/systems/:s/target", async (c) => {
     const system = c.req.param("s");
     await assertRegistered(ws, system);
-    if (!(await ws.exists(system, TARGET_FILE))) return ok(c, { exists: false, example: TARGET_EXAMPLE });
-    try {
-      const t = await readTarget(ws, system, ANY_ENV);
-      return ok(c, { exists: true, baseUrl: t.baseUrl, example: TARGET_EXAMPLE });
-    } catch (e) {
-      return ok(c, { exists: true, error: e instanceof Error ? e.message : String(e), example: TARGET_EXAMPLE });
-    }
+    return ok(c, await targetInfo(system));
+  });
+  app.put("/api/systems/:s/target", async (c) => {
+    const system = c.req.param("s");
+    const b = await body(c, TargetPutBodySchema);
+    await assertRegistered(ws, system);
+    const next = mergePut(b, await readRawTarget(ws, system));
+    await ws.write(system, TARGET_FILE, TargetSchema, next);
+    return ok(c, await targetInfo(system));
   });
   app.post("/api/systems/:s/record", async (c) => {
     const system = c.req.param("s");
     const b = await optionalBody(c, RecordBody);
     await assertRegistered(ws, system);
-    return accepted(c, jobs.start(system, "record", ({ signal, onEvent }) => recordResponses(ws, system, {
-      allowMutating: b.allowMutating, refresh: b.refresh, signal, onEvent,
-    })).id);
+    // 모르는 기능 id는 작업을 만들기 전에 400으로 돌려준다.
+    if (b.features && b.features.length > 0) {
+      const known = new Set((await ws.read(system, "mockspec.json", MockSpecSchema)).features.map((f) => f.id));
+      const unknown = b.features.filter((id) => !known.has(id));
+      if (unknown.length) throw new InvalidRequest(`알 수 없는 기능 id: ${unknown.join(", ")}`);
+    }
+    return accepted(c, jobs.start(system, "record", async ({ signal, onEvent }) => {
+      const run = await recordResponses(ws, system, {
+        allowMutating: b.allowMutating, refresh: b.refresh, features: b.features, apply: b.apply, env: envStore.env(system), signal, onEvent,
+      });
+      // 반영(select)이 mockspec.json을 drift.md 뒤에 다시 쓴다. 방금 한 녹화가 stale로 보이지 않게 drift.md 시각을 맞춘다.
+      const now = new Date();
+      await utimes(ws.file(system, DRIFT_FILE), now, now).catch(() => undefined);
+      return run;
+    }).id);
+  });
+  /** 마지막 녹화 결과: drift.md 원문과 기능별 상태·시각. 녹화된 응답 본문은 싣지 않는다. */
+  app.get("/api/systems/:s/record/last", async (c) => {
+    const system = c.req.param("s");
+    await assertRegistered(ws, system);
+    const drift = (await ws.exists(system, DRIFT_FILE)) ? await readFile(ws.file(system, DRIFT_FILE), "utf8") : null;
+    const recordedAt = drift?.match(/\((\d{4}-\d{2}-\d{2} \d{2}:\d{2}),/)?.[1];
+    return ok(c, { exists: drift !== null, ...(drift !== null ? { driftMarkdown: drift } : {}), ...(recordedAt ? { recordedAt } : {}), recorded: await readRecordedSummaries(ws, system) });
   });
   app.get("/api/jobs", (c) => ok(c, jobs.list()));
   app.post("/api/jobs/:id/cancel", (c) => {

@@ -12,17 +12,19 @@ async function mtime(ws: Workspace, system: string, name: string): Promise<numbe
 /** 시스템 하나의 단계 요약. source.json이 없으면 등록된 시스템이 아니므로 not-found 오류(파일 없음)를 낸다. */
 export async function summarizeSystem(ws: Workspace, system: string): Promise<SystemSummary> {
   const source = await ws.read(system, "source.json", SourceSchema);
-  const [catalog, selection, generate, coverage, request] = await Promise.all(
-    ["catalog.json", "selection.json", "generate.json", "coverage.md", "analyze-request.json"].map((n) => mtime(ws, system, n)),
+  const [catalog, selection, generate, coverage, request, mockspec, drift] = await Promise.all(
+    ["catalog.json", "selection.json", "generate.json", "coverage.md", "analyze-request.json", "mockspec.json", "drift.md"].map((n) => mtime(ws, system, n)),
   );
   const summary: SystemSummary = {
     name: system,
     kind: source.inputs[0]?.kind ?? null,
-    steps: { registered: true, analyzed: catalog !== null, selected: selection !== null, generated: generate !== null, verified: coverage !== null },
+    steps: { registered: true, analyzed: catalog !== null, selected: selection !== null, generated: generate !== null, verified: coverage !== null, record: drift !== null },
     stale: {
       select: catalog !== null && selection !== null && catalog > selection,
       generate: selection !== null && generate !== null && selection > generate,
       verify: generate !== null && coverage !== null && generate > coverage,
+      // utimes로 맞춘 시각은 밀리초까지만 있어 소수부를 버리고 비교한다.
+      record: mockspec !== null && drift !== null && Math.floor(mockspec) > Math.floor(drift),
     },
   };
   if (request !== null) {
