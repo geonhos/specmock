@@ -102,9 +102,10 @@ const merged = { ...target.params, ...(target.features[feature.id] ?? {}) };
 }
 ```
 
-- 값이 `${이름}` 참조만으로 이루어졌으면 `literal: false`이고 원문을 그대로 싣습니다. 그 밖의 값(직접 적은 값, 참조와 문자가 섞인 값)은 `literal: true`이고 `value`는 `"***"`입니다. 서버는 파일의 직접 적은 값을 응답에 싣지 않습니다.
+- 값이 `${이름}` 참조만으로 이루어졌으면 `literal: false`입니다. 그 밖의 값(직접 적은 값, 참조와 문자가 섞인 값)은 `literal: true`로, "참조만으로 된 값이 아님"의 뜻입니다.
+- 가리는 것은 **헤더**의 `literal: true` 값뿐이고 `value`는 `"***"`입니다. `params`와 `features`의 값은 직접 적은 값도 원문 그대로 싣습니다. 경로 id·query는 `drift.md`의 경로에 그대로 찍히므로 가려도 보호 효과가 없고, 가리면 사용자가 넣은 id를 확인·수정할 수 없기 때문입니다. `${ENV}`에서 온 값의 마스킹(녹화·drift·이벤트)은 바뀌지 않습니다.
 - `env`는 헤더·params·features 값에서 뽑은 `${이름}` 전체입니다. `status`는 `session`(4.1로 입력됨) > `process`(서버 env에 있음) > `missing` 순으로 정합니다. 실제 값도 화면 입력이 서버 env보다 우선하므로 표시와 일치합니다.
-- 기존 테스트 `api.test.ts:347`(headers·params를 싣지 않음)은 "직접 적은 값은 `***`"로 바꿉니다.
+- 기존 테스트 `api.test.ts:347`(headers·params를 싣지 않음)은 "헤더의 직접 적은 값은 `***`, params·features는 원문"으로 바꿉니다.
 
 ### 4.3 target 쓰기 — `PUT /api/systems/:s/target`
 
@@ -122,6 +123,7 @@ const merged = { ...target.params, ...(target.features[feature.id] ?? {}) };
 
 - `keep: true`인 항목은 서버가 기존 파일의 같은 이름 값을 그대로 둡니다. 기존 파일에 그 이름이 없으면 400 `invalid`.
 - 서버는 받은 내용을 `TargetSchema`로 검증한 뒤 `ws.write`로 `target.json`을 씁니다(기존 파일 쓰기 규칙: 임시 파일 후 교체). 빈 `features` 항목(값이 없는 기능)은 쓰지 않습니다.
+- 본문의 `features`에 **없는** 기능 id의 기존 값은 파일에 그대로 둡니다(선택하지 않은 기능의 값을 화면 저장이 지우지 않습니다). 본문에 있는 id는 mockspec과 대조하고(없으면 400) 본문이 그 기능의 전부입니다. `headers`·`params`도 본문이 전부입니다. 선택하지 않은 기능의 값을 지우려면 파일을 직접 고칩니다.
 - 응답은 4.2와 같은 `TargetInfo`입니다.
 - 이 엔드포인트도 `POST_ONLY`에 넣습니다(PUT도 허용하도록 `methodGuard`를 GET·HEAD·POST·PUT으로 넓힙니다).
 
@@ -166,8 +168,8 @@ const merged = { ...target.params, ...(target.features[feature.id] ?? {}) };
 |---|---|---|
 | 주소 | `baseUrl` 텍스트 | 비면 저장 불가 |
 | 제한 시간 | 초 단위 숫자(파일에는 ms) | 기본 15 |
-| 헤더 표 | 이름·값·삭제 버튼, "+ 헤더" | 값이 `${이름}`이면 옆에 "환경 변수" 표시. 그 밖의 값은 저장 전에 안내 `이 값은 파일에 그대로 남습니다. ${이름} 참조를 권합니다`(저장은 허용). `literal: true`로 읽힌 값은 `***`로 보이고 "그대로 유지"(기본) 또는 "지우기"만 가능 |
-| 공통 값 표 | 이름·값·삭제, "+ 값" | query 등 모든 기능에 적용 |
+| 헤더 표 | 이름·값·삭제 버튼, "+ 헤더" | 값이 `${이름}`이면 옆에 "환경 변수" 표시. 그 밖의 값은 저장 전에 안내 `이 값은 파일에 그대로 남습니다. ${이름} 참조를 권합니다`(저장은 허용). `literal: true`로 읽힌 헤더 값만 `***`로 보이고 "그대로 유지"(기본)·"지우기"·"새 값 입력"을 고른다 |
+| 공통 값 표 | 이름·값·삭제, "+ 값" | query 등 모든 기능에 적용. 값은 직접 적은 것도 원문으로 보이고 항상 편집 가능 |
 | 환경 변수 표 | 이름·상태·비밀번호형 입력·"이번 세션에 사용" 버튼 | 이름은 위 값들에서 자동 추출. 상태 문구: 설정됨(서버) / 설정됨(화면 입력) / 미설정. 안내 한 줄: `입력한 값은 이 서버의 메모리에만 있고 파일·기록에 남지 않습니다. 서버를 다시 켜면 다시 입력합니다` |
 | 저장 | 버튼 → `PUT /target` | 성공하면 구역 B의 표가 새 값으로 갱신 |
 
@@ -250,9 +252,11 @@ const merged = { ...target.params, ...(target.features[feature.id] ?? {}) };
 - env 상태 표시 순서를 `session > process > missing`으로 바꿨습니다(§4.2). 실제 값이 `EnvStore.env`에서 화면 입력을 우선하기 때문입니다.
 - `PUT /target`은 헤더 이름을 HTTP token 문자로, 값 이름을 `^[A-Za-z_][A-Za-z0-9_-]*$`로 제한하고, `features` 키가 `mockspec.json`의 기능 id에 없으면 400으로 막습니다(`mockspec.json`이 없으면 대조하지 않음).
 - 화면 컴포넌트 이름은 `RecordScreen`입니다. `Record`로 두면 TypeScript의 `Record<K, V>`를 가립니다.
-- 서버가 `features` id를 mockspec(선택한 기능) 기준으로 대조하므로, 화면은 저장 본문에서 현재 기능 표에 없는 id를 뺍니다. 뺀 항목이 있으면 폼 아래에 "선택하지 않은 기능의 값 N개는 저장하면 파일에서 지워집니다"를 보입니다.
+- 서버가 `features` id를 mockspec(선택한 기능) 기준으로 대조하므로, 화면은 저장 본문에서 현재 기능 표에 없는 id를 뺍니다. 서버는 본문에 없는 id의 기존 값을 파일에 그대로 두므로(§4.3), 뺀 항목이 있으면 폼 아래에 "선택하지 않은 기능의 값 N개는 파일에 그대로 남습니다"를 보입니다.
 - 기능 표는 `GET /features` 행을 `selection.resolved`로 걸러 만듭니다. 기본 선택은 GET·HEAD입니다.
-- `Bearer ${TOKEN}`처럼 참조가 섞인 값은 서버가 `literal:true`(`***`)로 돌려줍니다. 불러온 혼합 값은 `***`만 보이고 표시는 없으며, 기본은 "그대로 유지"입니다. "환경 변수" 표시는 사용자가 방금 입력한 값에 참조가 들어 있을 때만 나옵니다.
+- `Bearer ${TOKEN}`처럼 참조가 섞인 값은 서버가 `literal:true`(`***`)로 돌려줍니다. (헤더만 해당) 불러온 헤더의 혼합 값은 `***`만 보이고 표시는 없으며, 기본은 "그대로 유지"입니다. "환경 변수" 표시는 사용자가 방금 입력한 값에 참조가 들어 있을 때만 나옵니다.
 - 결과는 job 결과가 없으면 `GET /record/last`의 `drift.md`와 `recorded/`로 복원합니다. 복원한 결과에서는 기록이 있는 기능만 일치 등으로 보이고, 나머지는 미녹화입니다.
 - ⑤ 검증의 `RecordCard`는 ⑥으로 가는 링크 한 줄로 바꾸고 파일을 지웠습니다. `GET /target`의 최상위 `baseUrl`은 호환용으로 남겨 둡니다(쓰는 곳은 없습니다).
 - "변경 요청 포함"을 켜도 변경 요청 행이 자동으로 선택되지는 않습니다. 사용자가 행마다 직접 고릅니다.
+- 가림 규칙을 헤더만으로 좁혔습니다. params·features의 직접 적은 값은 원문으로 돌려주고 화면에서 편집할 수 있습니다(이슈 [#25](https://github.com/geonhos/specmock/issues/25), [#24](https://github.com/geonhos/specmock/issues/24)의 "입력란에서 keep으로 돌아갈 길 없음"도 사라집니다).
+- `PUT /target`은 본문에 없는 기능 id의 기존 값을 보존합니다. 화면은 선택한 기능의 값을 모두 비우면 빈 목록을 보내 지웁니다(이슈 [#25](https://github.com/geonhos/specmock/issues/25), [#24](https://github.com/geonhos/specmock/issues/24)).
