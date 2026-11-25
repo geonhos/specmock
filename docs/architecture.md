@@ -76,6 +76,16 @@ flowchart LR
 
 `specmock ui`(CLI)와 `open_ui`(MCP)가 같은 `ui-server`를 띄운다. 화면 서버는 `core` 서비스 층을 그대로 호출하므로 화면에서 한 일은 CLI·대화와 같은 `.specmock/` 파일로 남는다.
 
+화면은 여섯 단계(① 등록 → ② 분석 → ③ 기능 선택 → ④ 생성 → ⑤ 검증 → ⑥ 녹화)입니다. ⑥ 녹화는 다음 엔드포인트를 씁니다.
+
+| 엔드포인트 | 역할 |
+|---|---|
+| `GET /api/systems/:s/target` | `target.json`을 읽습니다. `${이름}` 참조만으로 된 값은 그대로, 그 밖의 값은 `***`(`literal:true`)로 돌려주고 환경 변수 상태(`session`·`process`·`missing`)를 함께 줍니다. |
+| `PUT /api/systems/:s/target` | 설정을 저장합니다. 바뀌지 않은 값은 `keep`으로 표시해 기존 값을 그대로 둡니다. 선택하지 않은 기능의 id는 400입니다. |
+| `POST /api/systems/:s/env` | 환경 변수 값을 서버 메모리에만 둡니다. 파일·기록에 남지 않고 서버를 끄면 사라집니다. |
+| `GET /api/systems/:s/record/last` | 마지막 녹화 결과(`drift.md`와 `recorded/`)를 읽습니다. |
+| `POST /api/systems/:s/record` | 본문 `{features, allowMutating, apply}`로 녹화 작업을 시작합니다. 진행은 SSE로 받습니다. |
+
 ### 화면의 데이터 흐름
 
 ```mermaid
