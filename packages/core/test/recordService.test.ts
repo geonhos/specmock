@@ -1,6 +1,6 @@
 // packages/core/test/recordService.test.ts
 import { readFileSync, writeFileSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -102,6 +102,13 @@ describe("recordResponses", () => {
     expect(await fixture()).toEqual(before);
     expect(await calls()).toBe(1);
   }, 60_000);
+
+  it("apply 뒤 drift.md 시각이 mockspec.json보다 이르지 않다(stale 오탐 방지)", async () => {
+    await recordResponses(ws, SYS);
+    const m = (await stat(ws.file(SYS, "mockspec.json"))).mtimeMs;
+    const d = (await stat(ws.file(SYS, "drift.md"))).mtimeMs;
+    expect(Math.floor(d)).toBeGreaterThanOrEqual(Math.floor(m));
+  });
 
   it("apply: false면 select도 하지 않는다", async () => {
     const before = await specNow();

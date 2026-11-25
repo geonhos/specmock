@@ -361,8 +361,15 @@ mock/<system>/
 실제 시스템이 있으면 정상 요청을 보내 응답을 fixture로 씁니다. `.specmock/<system>/target.json`을 직접 만듭니다.
 
 ```json
-{ "baseUrl": "https://api.example.com/v2", "headers": { "Authorization": "Bearer ${PETS_TOKEN}" }, "params": { "petId": "123" } }
+{
+  "baseUrl": "https://api.example.com/v2",
+  "headers": { "Authorization": "Bearer ${PETS_TOKEN}" },
+  "params": { "petId": "123" },
+  "features": { "customers.get": { "id": "${CUSTOMER_ID}" } }
+}
 ```
+
+- `params`는 모든 기능에 공통으로 적용하고, `features.<기능id>`는 그 기능에만 적용합니다. 같은 이름이면 `features`의 값이 이깁니다. `features`의 값에도 `${ENV}`를 쓸 수 있고 같은 규칙으로 가립니다. `features`가 든 파일은 이전 버전의 specmock에서 형식 오류로 거부됩니다.
 
 - 비밀 값은 `${환경변수}`로만 적습니다. 값은 실행한 셸의 환경변수에서 읽습니다(`headers`와 `params` 모두). `${ENV}`로 넣은 값은 형식과 무관하게(숫자 포함) 녹화 파일·drift·이벤트·결과·응답 바디에서 `***`로 가립니다(URL 인코딩·form 인코딩·JSON 이스케이프 변형 포함, 4자 미만 값은 제외). 가릴 필요 없는 id 등은 `${ENV}` 없이 값을 직접 적으세요 — 직접 적은 값은 가리지 않습니다. 서버가 받은 값을 한 번 더 인코딩해 되돌려 주는 경우(`%25…`)와 JSON 객체 **키**에 들어간 값은 가리지 않습니다(값만 가림). 녹화 파일에는 target에서 온 헤더의 이름만 남고 값은 전부 `***`입니다. `${ENV}`는 query·header에 쓰기를 권하지만 path 파라미터에도 쓸 수 있습니다. 그래도 이 파일은 커밋하지 마세요(`.specmock/`를 `.gitignore`에 두세요).
 - `specmock record <system>`은 GET·HEAD만 보냅니다. 생성·삭제 요청까지 보내려면 `--allow-mutating`(실제 데이터가 바뀝니다). `--feature <id>`로 일부만, `--refresh`로 대상 기능(이번에 보낸 것)의 기존 녹화를 버리고 다시 녹화(건너뛴 변경 요청 기능의 녹화는 유지, 중단되면 모두 유지), `--no-apply`로 mock 반영 없이 녹화만 합니다.

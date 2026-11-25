@@ -17,16 +17,18 @@ export function localOnly(port: () => number): MiddlewareHandler {
   };
 }
 
-const ALLOWED_METHODS = new Set(["GET", "HEAD", "POST"]);
-const POST_ONLY = /^\/api\/(?:systems\/[^/]+\/(?:analyze|extract|generate|verify|record)|jobs\/[^/]+\/cancel)\/?$/;
+const POST_ONLY = /^\/api\/(?:systems\/[^/]+\/(?:analyze|extract|generate|verify|record|env)|jobs\/[^/]+\/cancel)\/?$/;
+const TARGET_PATH = /^\/api\/systems\/[^/]+\/target\/?$/;
 
-/** 이 API는 GET·POST만 쓴다. PUT·PATCH·DELETE 등과, POST 전용 경로의 GET은 405. */
+/** 이 API는 GET·POST와 `target`의 PUT만 쓴다. 그 밖의 메서드, POST 전용 경로의 GET, `target`의 POST는 405. */
 export const methodGuard: MiddlewareHandler = async (c, next) => {
   const m = c.req.method;
-  const postOnlyViolation = (m === "GET" || m === "HEAD") && POST_ONLY.test(c.req.path);
-  if (!ALLOWED_METHODS.has(m) || postOnlyViolation) {
-    const allow = POST_ONLY.test(c.req.path) ? "POST" : "GET, POST";
-    return c.json(errorBody("invalid", `허용하지 않는 메서드예요: ${m} ${c.req.path}`), 405, { allow });
-  }
+  const readOnly = m === "GET" || m === "HEAD";
+  const path = c.req.path;
+  let allow: string | null = null;
+  if (POST_ONLY.test(path)) { if (m !== "POST") allow = "POST"; }
+  else if (TARGET_PATH.test(path)) { if (!readOnly && m !== "PUT") allow = "GET, PUT"; }
+  else if (!readOnly && m !== "POST") allow = "GET, POST";
+  if (allow !== null) return c.json(errorBody("invalid", `허용하지 않는 메서드예요: ${m} ${path}`), 405, { allow });
   await next();
 };

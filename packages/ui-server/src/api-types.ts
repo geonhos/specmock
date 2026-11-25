@@ -5,8 +5,8 @@ export type ApiOk<T> = { ok: true; data: T };
 export type ApiErr = ApiErrorBody;
 export type EnvInfo = { root: string; claude: boolean };
 
-export type StepFlags = { registered: boolean; analyzed: boolean; selected: boolean; generated: boolean; verified: boolean };
-export type StaleFlags = { select: boolean; generate: boolean; verify: boolean };
+export type StepFlags = { registered: boolean; analyzed: boolean; selected: boolean; generated: boolean; verified: boolean; record: boolean };
+export type StaleFlags = { select: boolean; generate: boolean; verify: boolean; record: boolean };
 export type SystemSummary = {
   name: string;
   kind: SourceInput["kind"] | null;
@@ -28,6 +28,45 @@ export type SystemOverview = {
 export type FeatureListRow = FeatureRow & { summary: string; codes: string[] };
 export type FeatureList = { total: number; rows: FeatureListRow[]; groups: string[] };
 export type { AnalyzeSpecResult, ChunkSummary, Feature, FeatureRow, GenerateInfo, IngestSpecResult, Selection, SelectResult, SourceInput } from "@specmock/core";
+
+/** `literal`이 true면 파일에 직접 적힌 값이라 `value`는 `"***"`다. false면 `${이름}` 참조 원문이다. */
+export type TargetEntry = { name: string; value: string; literal: boolean };
+export type EnvStatus = "process" | "session" | "missing";
+export type TargetInfo = {
+  exists: boolean;
+  example: string;
+  /** 파일이 있지만 형식 오류. */
+  error?: string;
+  /** 기존 화면 호환용(PR 2에서 새 화면이 `target.baseUrl`을 쓰면 제거). */
+  baseUrl?: string;
+  target?: {
+    baseUrl: string;
+    timeoutMs: number;
+    headers: TargetEntry[];
+    params: TargetEntry[];
+    features: Record<string, TargetEntry[]>;
+  };
+  env?: { name: string; status: EnvStatus }[];
+};
+/** `keep: true`면 기존 파일의 같은 이름 값을 그대로 둔다(값을 보내지 않는다). */
+export type TargetPutItem = { name: string; value?: string; keep?: true };
+export type TargetPutBody = {
+  baseUrl: string;
+  timeoutMs?: number;
+  headers: TargetPutItem[];
+  params: TargetPutItem[];
+  features: Record<string, TargetPutItem[]>;
+};
+export type EnvPutBody = { values: Record<string, string> };
+export type EnvPutResult = { names: string[] };
+export type RecordBody = { allowMutating?: boolean; refresh?: boolean; features?: string[]; apply?: boolean };
+/** GET /record/last. 녹화된 응답 본문은 싣지 않는다. */
+export type RecordLast = {
+  exists: boolean;
+  driftMarkdown?: string;
+  recordedAt?: string;
+  recorded: { featureId: string; status: number; at: string }[];
+};
 
 export type JobKind = "extract" | "generate" | "verify" | "record";
 export type Job = {

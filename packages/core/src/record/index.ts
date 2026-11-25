@@ -116,7 +116,10 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
     opts.signal?.throwIfAborted();
     const featureId = c.featureId;
     const method = c.request.method;
-    const { path: p, query } = applyParams(byId.get(featureId), c, target.params);
+    const feature = byId.get(featureId);
+    const merged = { ...target.params, ...(target.features[featureId] ?? {}) };
+    const { path: p, query } = applyParams(feature, c, merged);
+    const unresolved = feature ? [...feature.path.matchAll(/\{([^}]+)\}/g)].map((m) => m[1]).filter((n) => !Object.hasOwn(merged, n)) : [];
     const shown = red(display(p, query));
     opts.onEvent?.({ stage: "record", message: `${featureId} ${method} ${shown}`, done: i + 1, total: targets.length });
     const base = { featureId, method, path: shown };
@@ -159,7 +162,7 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
     result.recorded.push(featureId);
 
     if (!statusMatch) {
-      const hint = statusHint(r.status);
+      const hint = statusHint(r.status, { unresolved });
       result.statusMismatch.push({ featureId, expected: c.expect.status, actual: r.status, ...(hint ? { hint } : {}) });
       entries.push({ ...base, kind: "statusMismatch", expected: c.expect.status, actual: r.status, ...(hint ? { hint } : {}) });
     } else if (r.kind === "truncated" || r.kind === "raw") {
@@ -189,5 +192,5 @@ export async function record(ws: Workspace, system: string, spec: MockSpec, targ
 }
 
 export { DRIFT_FILE } from "./drift.js";
-export { readTarget, TARGET_EXAMPLE, TARGET_FILE, type Target } from "./target.js";
+export { readTarget, TARGET_EXAMPLE, TARGET_FILE, TargetSchema, type Target } from "./target.js";
 export { RECORDED_DIR, readRecorded, isSafeFeatureId } from "./recorded.js";

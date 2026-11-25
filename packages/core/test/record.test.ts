@@ -40,7 +40,7 @@ function ok(q: FakeReq): FakeRes {
   if (q.path === "/store/inventory") return { status: 200, body: { available: 3 } };
   return { status: 404 };
 }
-const target = (url: string, over: Partial<Target> = {}): Target => ({ file: "target.json", baseUrl: `${url}/v2`, headers: { Authorization: "Bearer secret-token-123456", "X-Tenant": "dev" }, params: {}, timeoutMs: 2000, secrets: [], ...over });
+const target = (url: string, over: Partial<Target> = {}): Target => ({ file: "target.json", baseUrl: `${url}/v2`, headers: { Authorization: "Bearer secret-token-123456", "X-Tenant": "dev" }, params: {}, features: {}, timeoutMs: 2000, secrets: [], ...over });
 const strip = (handler: (q: FakeReq) => FakeRes) => (q: FakeReq) => handler({ ...q, path: q.path.replace(/^\/v2/, "") });
 
 /** getPet의 정상 요청 path에 `?`를 넣어 보낼 수 없게 만든 mockspec. */
@@ -91,7 +91,7 @@ describe("record", () => {
   it("404 힌트와 1MB 초과(truncated)", async () => {
     t = await startFakeTarget(strip((q) => (q.path === "/pets" ? { status: 404 } : q.path.startsWith("/pets/") ? { status: 200, body: { id: 1, name: "x".repeat(1_100_000) } } : ok(q))));
     const { result } = await record(ws, SYS, spec, target(t.url));
-    expect(result.statusMismatch[0]).toMatchObject({ featureId: "listPets", actual: 404, hint: "`target.json`의 `params`로 실제 값을 지정하세요" });
+    expect(result.statusMismatch[0]).toMatchObject({ featureId: "listPets", actual: 404, hint: "`target.json`의 기능별 값 또는 params를 확인하세요" });
     expect(result.failed[0].featureId).toBe("getPet");
     expect(result.failed[0].reason).toMatch(/^응답이 1MB를 넘어 저장하지 않았습니다\(\d+바이트\)$/);
     const rec = await ws.read(SYS, "recorded/getPet.json", RecordedSchema);
@@ -255,6 +255,19 @@ describe("record", () => {
     const noSchema: MockSpec = { ...spec, contracts: spec.contracts.map((c) => (c.featureId === "listPets" && c.name === "정상 요청" ? { ...c, expect: { ...c.expect, schema: null } } : c)) };
     r = await record(ws, SYS, noSchema, target(t.url), { features: ["listPets"] });
     expect(r.result.matched).toEqual(["listPets"]);
+  });
+  it("features 값이 params보다 우선해 경로를 채우고, 샘플 id 404는 안내가 갈린다", async () => {
+    t = await startFakeTarget(strip((q) => (q.path === "/pets/cus_1" ? { status: 200, body: PET } : { status: 404 })));
+    let r = await record(ws, SYS, spec, target(t.url, { params: { petId: "common" }, features: { getPet: { petId: "cus_1" } } }), { features: ["getPet"] });
+    expect(t.requests.map((q) => q.path)).toEqual(["/v2/pets/cus_1"]);
+    expect(r.result.matched).toEqual(["getPet"]);
+    // 다른 기능의 features는 getPet에 적용되지 않는다 → 공통 params 사용
+    r = await record(ws, SYS, spec, target(t.url, { params: { petId: "common" }, features: { other: { petId: "cus_1" } } }), { features: ["getPet"] });
+    expect(t.requests.at(-1)?.path).toBe("/v2/pets/common");
+    expect(r.result.statusMismatch[0].hint).toContain("기능별 값 또는 params");
+    // 아무 값도 없으면 샘플 값 → 변수 이름을 넣은 안내
+    r = await record(ws, SYS, spec, target(t.url), { features: ["getPet"] });
+    expect(r.result.statusMismatch[0].hint).toBe("경로 변수 {petId}에 샘플 값이 쓰였습니다. 기능별 값(features)에 실제 id를 넣으세요");
   });
   it("출처 기반 마스킹: target 헤더는 이름과 무관하게 전부 ***, contract 헤더는 유지", async () => {
     t = await startFakeTarget(strip(ok));

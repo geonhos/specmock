@@ -47,8 +47,13 @@ describe("renderDrift", () => {
   it("statusHint", () => {
     expect(statusHint(401)).toBe("인증 헤더를 확인하세요");
     expect(statusHint(403)).toBe("인증 헤더를 확인하세요");
-    expect(statusHint(404)).toBe("`target.json`의 `params`로 실제 값을 지정하세요");
+    expect(statusHint(404)).toBe("`target.json`의 기능별 값 또는 params를 확인하세요");
     expect(statusHint(500)).toBeUndefined();
+  });
+  it("statusHint 404: 샘플 값으로 채운 경로 변수가 있으면 features 안내", () => {
+    expect(statusHint(404, { unresolved: ["id"] })).toBe("경로 변수 {id}에 샘플 값이 쓰였습니다. 기능별 값(features)에 실제 id를 넣으세요");
+    expect(statusHint(404, { unresolved: ["a", "b"] })).toContain("{a}, {b}");
+    expect(statusHint(404, { unresolved: [] })).toBe("`target.json`의 기능별 값 또는 params를 확인하세요");
   });
 });
 

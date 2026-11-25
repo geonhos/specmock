@@ -13,6 +13,7 @@ export const TARGET_EXAMPLE = JSON.stringify({
   baseUrl: "https://api.example.com/v2",
   headers: { Authorization: "Bearer ${PETS_TOKEN}" },
   params: { petId: "123" },
+  features: { "customers.get": { id: "cus_실제값" } },
   timeoutMs: 15000,
 }, null, 2);
 
@@ -26,6 +27,8 @@ export const TargetSchema = z.strictObject({
   baseUrl: z.string().refine(checkBaseUrl, "http(s) URL이어야 하고 query·#·계정 정보를 넣을 수 없습니다"),
   headers: z.record(z.string(), z.string()).optional(),
   params: z.record(z.string(), z.string()).optional(),
+  /** 기능 id별 값. 같은 이름이면 공통 `params`보다 우선한다. */
+  features: z.record(z.string(), z.record(z.string(), z.string())).optional(),
   timeoutMs: z.number().int().positive().optional(),
 });
 
@@ -37,6 +40,8 @@ export interface Target {
   headers: Record<string, string>;
   /** `${ENV}` 치환을 마친 값. */
   params: Record<string, string>;
+  /** 기능 id별 값. `${ENV}` 치환을 마친 값. */
+  features: Record<string, Record<string, string>>;
   timeoutMs: number;
   /** `${ENV}`로 치환된 모든 값(빈 문자열 제외)과 그 URL·form 인코딩 변형. 출처 기반 마스킹에 쓴다. 화면·로그·파일에 싣지 않는다. */
   secrets: string[];
@@ -104,7 +109,8 @@ export async function readTarget(ws: Workspace, system: string, env: Record<stri
   const found = new Set<string>();
   const headers = Object.fromEntries(Object.entries(t.headers ?? {}).map(([k, v]) => [k, substituteCollect(v, env, found)]));
   const params = Object.fromEntries(Object.entries(t.params ?? {}).map(([k, v]) => [k, substituteCollect(v, env, found)]));
-  return { file, baseUrl: t.baseUrl.replace(/\/+$/, ""), headers, params, timeoutMs: t.timeoutMs ?? DEFAULT_TIMEOUT_MS, secrets: [...found] };
+  const features = Object.fromEntries(Object.entries(t.features ?? {}).map(([id, m]) => [id, Object.fromEntries(Object.entries(m).map(([k, v]) => [k, substituteCollect(v, env, found)]))]));
+  return { file, baseUrl: t.baseUrl.replace(/\/+$/, ""), headers, params, features, timeoutMs: t.timeoutMs ?? DEFAULT_TIMEOUT_MS, secrets: [...found] };
 }
 
 /** params를 contract에 적용한 경로·쿼리. 쿼리는 contract에 있거나 feature에 선언된 이름만 덮어쓴다. */

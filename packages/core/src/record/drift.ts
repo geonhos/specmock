@@ -12,9 +12,13 @@ export type DriftEntry =
 
 export const DRIFT_FILE = "drift.md";
 
-export function statusHint(status: number): string | undefined {
+/** ctx.unresolved: 경로 변수 중 target 값이 없어 샘플 값으로 채운 이름. */
+export function statusHint(status: number, ctx: { unresolved: string[] } = { unresolved: [] }): string | undefined {
   if (status === 401 || status === 403) return "인증 헤더를 확인하세요";
-  if (status === 404) return "`target.json`의 `params`로 실제 값을 지정하세요";
+  if (status === 404) {
+    if (ctx.unresolved.length > 0) return `경로 변수 ${ctx.unresolved.map((n) => `{${n}}`).join(", ")}에 샘플 값이 쓰였습니다. 기능별 값(features)에 실제 id를 넣으세요`;
+    return "`target.json`의 기능별 값 또는 params를 확인하세요";
+  }
   return undefined;
 }
 

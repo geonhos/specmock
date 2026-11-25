@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { applyParams, readTarget, substituteEnv, TARGET_EXAMPLE, TARGET_FILE } from "../src/record/target.js";
+import { applyParams, readTarget, substituteEnv, TARGET_EXAMPLE, TARGET_FILE, TargetSchema } from "../src/record/target.js";
 import { fillPath } from "../src/select/contracts.js";
 import type { Contract, Feature } from "../src/types.js";
 import { Workspace } from "../src/workspace.js";
@@ -40,7 +40,7 @@ describe("readTarget", () => {
   it("baseUrl 끝 /를 지우고 헤더 env를 치환하며 기본 timeout 15000", async () => {
     await put(JSON.stringify({ baseUrl: "https://api.example.com/v2/", headers: { Authorization: "Bearer ${T}" }, params: { petId: "123" } }));
     const t = await readTarget(ws, "pets", { T: "tok" });
-    expect(t).toEqual({ file: ws.file("pets", TARGET_FILE), baseUrl: "https://api.example.com/v2", headers: { Authorization: "Bearer tok" }, params: { petId: "123" }, timeoutMs: 15000, secrets: ["tok"] });
+    expect(t).toEqual({ file: ws.file("pets", TARGET_FILE), baseUrl: "https://api.example.com/v2", headers: { Authorization: "Bearer tok" }, params: { petId: "123" }, features: {}, timeoutMs: 15000, secrets: ["tok"] });
   });
 
   it("params의 ${ENV}도 치환하고, 치환된 값만 secrets에 모은다(빈 값 제외)", async () => {
@@ -48,6 +48,31 @@ describe("readTarget", () => {
     const t = await readTarget(ws, "pets", { SIG: "sig-1", KEY: "abc" });
     expect(t.params).toEqual({ apiKey: "k-abc", petId: "7" });
     expect(t.secrets.sort()).toEqual(["abc", "sig-1"]);
+  });
+
+  it("features를 읽고 ${ENV}를 치환하며 치환된 값을 secrets에 넣는다", async () => {
+    await put(JSON.stringify({ baseUrl: "https://x", headers: { Authorization: "Bearer ${T}" }, params: { query: "q" }, features: { "customers.get": { id: "${CUS}" }, "pi.get": { id: "pi_1" } } }));
+    const t = await readTarget(ws, "pets", { T: "abcd1234", CUS: "cus_9999" });
+    expect(t.features).toEqual({ "customers.get": { id: "cus_9999" }, "pi.get": { id: "pi_1" } });
+    expect(t.secrets).toContain("cus_9999");
+    expect(t.secrets).toContain("abcd1234");
+    expect(t.secrets).not.toContain("pi_1");
+  });
+
+  it("features가 없으면 빈 객체", async () => {
+    await put(JSON.stringify({ baseUrl: "https://x" }));
+    expect((await readTarget(ws, "pets", {})).features).toEqual({});
+  });
+
+  it("features의 값이 문자열이 아니면 형식 오류(필드 이름만)", async () => {
+    await put(JSON.stringify({ baseUrl: "https://x", features: { a: { id: 1 } } }));
+    const err = (await readTarget(ws, "pets", {}).catch((e: Error) => e)) as Error;
+    expect(err.message).toContain("features.a.id");
+  });
+
+  it("TARGET_EXAMPLE은 features 예시를 담고 스키마를 통과한다", () => {
+    const parsed = TargetSchema.parse(JSON.parse(TARGET_EXAMPLE));
+    expect(parsed.features).toEqual({ "customers.get": { id: "cus_실제값" } });
   });
 
   it("파일이 없으면 예시 JSON을 담은 오류", async () => {
