@@ -164,12 +164,12 @@ it("저장하지 않은 변경이 있으면 녹화가 막힌다", async () => {
   expect(screen.getByText("설정을 먼저 저장하세요")).not.toBeNull();
 });
 
-it("선택하지 않은 기능의 값은 저장 본문에서 빠지고 안내가 뜬다", async () => {
+it("선택하지 않은 기능의 값은 저장 본문에서 빠지고 파일에 남는다는 안내가 뜬다", async () => {
   const info = targetInfo({}, { gone: [entry("id", "p1")], getPet: [entry("id", "p2")] });
   const api = setup(info, [row("getPet", "GET", "/pets/{id}")], putOk(info));
   view();
   await screen.findByLabelText("주소");
-  expect(screen.getByText("선택하지 않은 기능의 값 1개는 저장하면 파일에서 지워집니다")).not.toBeNull();
+  expect(screen.getByText("선택하지 않은 기능의 값 1개는 파일에 그대로 남습니다")).not.toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "저장" }));
   await vi.waitFor(() => expect(api.calls).toContain(`PUT ${S}/target`));
   expect((lastBody(api, `PUT ${S}/target`).features as Record<string, unknown>).gone).toBeUndefined();
@@ -282,4 +282,68 @@ it("409 busy면 응답의 jobId를 따라가 진행 중으로 보인다", async 
   v.setJobs([rjob({ id: "r9", progress: { message: "x", done: 0, total: 2 } })]);
   expect(await screen.findByRole("progressbar", { name: "녹화 진행" })).not.toBeNull();
   expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("공통 값·기능별 값은 직접 적은 값도 원문으로 보이고 편집할 수 있다(그대로 유지 버튼은 헤더에만)", async () => {
+  const info = targetInfo({}, { getPet: [entry("id", "p2", true), entry("q", "limit=5", true)] });
+  info.target.params = [entry("acct", "acct_1", true)] as never;
+  const api = setup(info, [row("getPet", "GET", "/pets/{id}")], putOk(info));
+  view();
+  fireEvent.click((await screen.findByText("대상 서버 설정")));
+  expect((screen.getByLabelText("공통 값 1 값") as HTMLInputElement).value).toBe("acct_1");
+  expect((screen.getByLabelText("getPet id") as HTMLInputElement).value).toBe("p2");
+  expect(screen.queryByRole("button", { name: "acct 그대로 유지" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "id 새 값 입력" })).toBeNull();
+  expect(screen.getByText("그 밖의 값: q=limit=5")).not.toBeNull();
+  fireEvent.change(screen.getByLabelText("getPet id"), { target: { value: "p3" } });
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  await vi.waitFor(() => expect(api.calls).toContain(`PUT ${S}/target`));
+  const body = lastBody(api, `PUT ${S}/target`);
+  expect(body.params).toEqual([{ name: "acct", value: "acct_1" }]);
+  expect(body.features).toEqual({ getPet: [{ name: "id", value: "p3" }, { name: "q", value: "limit=5" }] });
+});
+
+it("선택한 기능의 값을 모두 비우면 빈 목록을 보내 파일에서 지운다", async () => {
+  const info = targetInfo({}, { getPet: [entry("id", "p2", true)] });
+  const api = setup(info, [row("getPet", "GET", "/pets/{id}")], putOk(info));
+  view();
+  fireEvent.change(await screen.findByLabelText("getPet id"), { target: { value: "" } });
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  await vi.waitFor(() => expect(api.calls).toContain(`PUT ${S}/target`));
+  expect(lastBody(api, `PUT ${S}/target`).features).toEqual({ getPet: [] });
+});
+
+it("제한 시간이 비었거나 숫자가 아니면 안내가 뜨고 저장이 막힌다", async () => {
+  setup(targetInfo());
+  view();
+  const t = await screen.findByLabelText("제한 시간(초)");
+  for (const bad of ["", "abc", "0"]) {
+    fireEvent.change(t, { target: { value: bad } });
+    const hint = screen.getByText("제한 시간은 1 이상의 숫자입니다");
+    expect(t.getAttribute("aria-describedby")).toBe(hint.id);
+    expect((screen.getByRole("button", { name: "저장" }) as HTMLButtonElement).disabled).toBe(true);
+  }
+  fireEvent.change(t, { target: { value: "5" } });
+  expect(screen.queryByText("제한 시간은 1 이상의 숫자입니다")).toBeNull();
+  expect((screen.getByRole("button", { name: "저장" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("drift.md 시각보다 한참 오래된 녹화 파일은 일치가 아니라 미녹화로 보인다", async () => {
+  const d = new Date(2026, 10, 25, 12, 30);
+  const stamp = "2026-11-25 12:30";
+  setup(targetInfo(), [row("getPet", "GET", "/pets/{id}"), row("listPets", "GET", "/pets")], { [`GET ${S}/record/last`]: ok({
+    exists: true, recordedAt: stamp, driftMarkdown: "# x\n",
+    recorded: [{ featureId: "listPets", status: 200, at: new Date(d.getTime() - 60_000).toISOString() }, { featureId: "getPet", status: 200, at: new Date(d.getTime() - 3 * 86_400_000).toISOString() }],
+  }) });
+  view();
+  expect(await screen.findByText("일치")).not.toBeNull();
+  expect(screen.getAllByText("일치").length).toBe(1);
+  expect(screen.getAllByText("미녹화").length).toBe(1);
+});
+
+it("GET /record/last가 실패하면 안내를 보이고 녹화는 할 수 있다", async () => {
+  setup(targetInfo(), PETS, { [`GET ${S}/record/last`]: () => ({ status: 500, body: { ok: false, error: { code: "failed", message: "x" } } }) });
+  view();
+  expect(await screen.findByText("지난 결과를 불러오지 못했습니다")).not.toBeNull();
+  await vi.waitFor(() => expect(recordBtn().disabled).toBe(false));
 });

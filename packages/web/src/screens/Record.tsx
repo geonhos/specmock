@@ -6,7 +6,7 @@ import { EnvTable, type EnvRow } from "../components/EnvTable";
 import { Notice } from "../components/Notice";
 import { isSafeMethod, RecordTable } from "../components/RecordTable";
 import { TargetForm } from "../components/TargetForm";
-import { emptyModel, modelFromInfo, newRow, outcomesFromJob, outcomesFromLast, refNames, toPutBody, type FormModel, type Outcome, type RecordDone } from "../recordModel";
+import { emptyModel, modelFromInfo, newRow, outcomesFromJob, outcomesFromLast, refNames, timeoutValid, toPutBody, type FormModel, type Outcome, type RecordDone } from "../recordModel";
 import { useJob } from "../useJob";
 
 interface Props { system: string; jobs: Job[]; tick: number; go: (path: string) => void; refreshJobs: () => void; onChanged: () => void }
@@ -26,6 +26,7 @@ export function RecordScreen({ system, jobs, refreshJobs, onChanged }: Props) {
   const [allowMutating, setAllowMutating] = useState(false);
   const [confirmMut, setConfirmMut] = useState(false);
   const [lastSaved, setLastSaved] = useState<RecordLast | null>(null);
+  const [lastFailed, setLastFailed] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [envValues, setEnvValues] = useState<Record<string, string>>({});
   const [sessionNames, setSessionNames] = useState<Set<string>>(new Set());
@@ -39,7 +40,7 @@ export function RecordScreen({ system, jobs, refreshJobs, onChanged }: Props) {
   useEffect(() => {
     let live = true;
     setInfo(null); setRows(null);
-    void Promise.all([api.target(system), api.features(system), api.selection(system), api.recordLast(system).catch(() => null)]).then(([t, f, sel, rl]) => {
+    void Promise.all([api.target(system), api.features(system), api.selection(system), api.recordLast(system).catch(() => "failed" as const)]).then(([t, f, sel, rl]) => {
       if (!live) return;
       const ids = new Set(sel?.resolved ?? []);
       const table = f.rows.filter((r) => ids.has(r.id));
@@ -47,7 +48,7 @@ export function RecordScreen({ system, jobs, refreshJobs, onChanged }: Props) {
       setInfo(t); setModel(m); setRows(table);
       setSnap(JSON.stringify(toPutBody(m, new Set(table.map((r) => r.id))).body));
       setSelected(new Set(table.filter((r) => isSafe(r.method)).map((r) => r.id)));
-      setLastSaved(rl); setFormOpen(!t.exists);
+      setLastSaved(rl === "failed" ? null : rl); setLastFailed(rl === "failed"); setFormOpen(!t.exists);
     }).catch((e: unknown) => { if (live) setError(asError(e)); });
     return () => { live = false; };
   }, [system]);
@@ -132,8 +133,8 @@ export function RecordScreen({ system, jobs, refreshJobs, onChanged }: Props) {
         <summary>대상 서버 설정</summary>
         <TargetForm model={model} onChange={setModel} />
         <EnvTable rows={envRows} values={envValues} busy={busy} onValue={(n, v) => setEnvValues((x) => ({ ...x, [n]: v }))} onUse={(n) => void useEnv(n)} />
-        {put.excluded > 0 ? <p className="muted">선택하지 않은 기능의 값 {put.excluded}개는 저장하면 파일에서 지워집니다</p> : null}
-        <div className="action-row"><button type="button" className="btn-primary" disabled={busy || model.baseUrl.trim() === ""} onClick={() => void save()}>저장</button></div>
+        {put.excluded > 0 ? <p className="muted">선택하지 않은 기능의 값 {put.excluded}개는 파일에 그대로 남습니다</p> : null}
+        <div className="action-row"><button type="button" className="btn-primary" disabled={busy || model.baseUrl.trim() === "" || !timeoutValid(model.timeoutSec)} onClick={() => void save()}>저장</button></div>
       </details>
       <section className="record-features" aria-label="기능 표">
         <div className="action-row">
@@ -165,6 +166,7 @@ export function RecordScreen({ system, jobs, refreshJobs, onChanged }: Props) {
       </div>
       {seen?.state === "failed" ? <Notice message={seen.error?.message ?? "녹화에 실패했습니다"} hint={seen.error?.hint} /> : null}
       {seen?.state === "cancelled" ? <p className="muted">녹화를 취소했습니다.</p> : null}
+      {lastFailed && !doneJob ? <p className="muted" role="status">지난 결과를 불러오지 못했습니다</p> : null}
       {hasResult ? (
         <section className="result" aria-label="녹화 결과">
           <p className="summary"><strong>{counts}</strong></p>
