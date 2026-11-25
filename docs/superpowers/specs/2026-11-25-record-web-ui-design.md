@@ -250,9 +250,9 @@ const merged = { ...target.params, ...(target.features[feature.id] ?? {}) };
 - env 상태 표시 순서를 `session > process > missing`으로 바꿨습니다(§4.2). 실제 값이 `EnvStore.env`에서 화면 입력을 우선하기 때문입니다.
 - `PUT /target`은 헤더 이름을 HTTP token 문자로, 값 이름을 `^[A-Za-z_][A-Za-z0-9_-]*$`로 제한하고, `features` 키가 `mockspec.json`의 기능 id에 없으면 400으로 막습니다(`mockspec.json`이 없으면 대조하지 않음).
 - 화면 컴포넌트 이름은 `RecordScreen`입니다. `Record`로 두면 TypeScript의 `Record<K, V>`를 가립니다.
-- 서버가 `features` id를 mockspec(선택한 기능) 기준으로 대조하므로, 화면은 저장 본문에서 현재 기능 표에 없는 id를 뺍니다. 뺀 항목이 있으면 폼 아래에 "선택하지 않은 기능의 값 N개는 저장에서 제외됩니다"를 보입니다.
+- 서버가 `features` id를 mockspec(선택한 기능) 기준으로 대조하므로, 화면은 저장 본문에서 현재 기능 표에 없는 id를 뺍니다. 뺀 항목이 있으면 폼 아래에 "선택하지 않은 기능의 값 N개는 저장하면 파일에서 지워집니다"를 보입니다.
 - 기능 표는 `GET /features` 행을 `selection.resolved`로 걸러 만듭니다. 기본 선택은 GET·HEAD입니다.
-- `Bearer ${TOKEN}`처럼 참조가 섞인 값은 서버가 `literal:true`(`***`)로 돌려줍니다. 폼은 값에 참조가 있으면 "환경 변수" 표시를 붙이고, 기본은 "그대로 유지"입니다.
+- `Bearer ${TOKEN}`처럼 참조가 섞인 값은 서버가 `literal:true`(`***`)로 돌려줍니다. 불러온 혼합 값은 `***`만 보이고 표시는 없으며, 기본은 "그대로 유지"입니다. "환경 변수" 표시는 사용자가 방금 입력한 값에 참조가 들어 있을 때만 나옵니다.
 - 결과는 job 결과가 없으면 `GET /record/last`의 `drift.md`와 `recorded/`로 복원합니다. 복원한 결과에서는 기록이 있는 기능만 일치 등으로 보이고, 나머지는 미녹화입니다.
 - ⑤ 검증의 `RecordCard`는 ⑥으로 가는 링크 한 줄로 바꾸고 파일을 지웠습니다. `GET /target`의 최상위 `baseUrl`은 호환용으로 남겨 둡니다(쓰는 곳은 없습니다).
 - "변경 요청 포함"을 켜도 변경 요청 행이 자동으로 선택되지는 않습니다. 사용자가 행마다 직접 고릅니다.

@@ -169,7 +169,7 @@ it("선택하지 않은 기능의 값은 저장 본문에서 빠지고 안내가
   const api = setup(info, [row("getPet", "GET", "/pets/{id}")], putOk(info));
   view();
   await screen.findByLabelText("주소");
-  expect(screen.getByText("선택하지 않은 기능의 값 1개는 저장에서 제외됩니다")).not.toBeNull();
+  expect(screen.getByText("선택하지 않은 기능의 값 1개는 저장하면 파일에서 지워집니다")).not.toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "저장" }));
   await vi.waitFor(() => expect(api.calls).toContain(`PUT ${S}/target`));
   expect((lastBody(api, `PUT ${S}/target`).features as Record<string, unknown>).gone).toBeUndefined();

@@ -132,7 +132,7 @@ export function RecordScreen({ system, jobs, refreshJobs, onChanged }: Props) {
         <summary>대상 서버 설정</summary>
         <TargetForm model={model} onChange={setModel} />
         <EnvTable rows={envRows} values={envValues} busy={busy} onValue={(n, v) => setEnvValues((x) => ({ ...x, [n]: v }))} onUse={(n) => void useEnv(n)} />
-        {put.excluded > 0 ? <p className="muted">선택하지 않은 기능의 값 {put.excluded}개는 저장에서 제외됩니다</p> : null}
+        {put.excluded > 0 ? <p className="muted">선택하지 않은 기능의 값 {put.excluded}개는 저장하면 파일에서 지워집니다</p> : null}
         <div className="action-row"><button type="button" className="btn-primary" disabled={busy || model.baseUrl.trim() === ""} onClick={() => void save()}>저장</button></div>
       </details>
       <section className="record-features" aria-label="기능 표">
