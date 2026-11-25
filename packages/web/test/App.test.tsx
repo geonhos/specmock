@@ -18,13 +18,13 @@ const base = () => ({
   "GET /api/systems/petstore": () => ({ body: { ok: true, data: { summary: systems[0], source: [], analyze: "catalog", catalogTotal: 3, selection: null, generate: null, coverage: null, defaultOutDir: "/r/mock/petstore" } } }),
 });
 
-it("사이드바에 시스템 목록과 + 스펙 등록, 상단에 단계 5개", async () => {
+it("사이드바에 시스템 목록과 + 스펙 등록, 상단에 단계 6개", async () => {
   fakeApi(base());
   render(<App />);
   const nav = await screen.findByRole("navigation", { name: "시스템" });
   expect(within(nav).getByRole("link", { name: /petstore/ })).toBeTruthy();
   expect(within(nav).getByRole("link", { name: "+ 스펙 등록" })).toBeTruthy();
-  for (const s of ["① 등록", "② 분석", "③ 기능 선택", "④ 생성", "⑤ 검증"]) expect(screen.getByText(s)).toBeTruthy();
+  for (const s of ["① 등록", "② 분석", "③ 기능 선택", "④ 생성", "⑤ 검증", "⑥ 녹화"]) expect(screen.getByText(s)).toBeTruthy();
 });
 
 it("첫 시스템의 다음 단계로 이동하고, 완료한 단계는 버튼·못 가는 단계는 aria-disabled, stale은 보조 글자", async () => {
@@ -103,4 +103,21 @@ it("SSE가 영구히 끊겨 포기하면 새로고침 안내", async () => {
     expect(alert.textContent).toContain("서버와 연결이 끊겼어요");
     expect(alert.textContent).toContain("새로고침해 주세요");
   } finally { vi.useRealTimers(); }
+});
+
+it("StepBar는 generate 완료면 ⑥ 녹화에 갈 수 있고, stale.record면 다시 실행 필요를 보인다", async () => {
+  const done = { ...systems[0]!, steps: { registered: true, analyzed: true, selected: true, generated: true, verified: false, record: false }, stale: { record: true } };
+  fakeApi({ ...base(), "GET /api/systems": () => ({ body: { ok: true, data: [done] } }) , "GET /api/systems/petstore": () => ({ body: { ok: true, data: { summary: done, source: [], analyze: "catalog", catalogTotal: 3, selection: null, generate: null, coverage: null, defaultOutDir: "/r" } } }) });
+  render(<App />);
+  await screen.findByRole("heading", { name: /mock 검증/ });
+  const bar = screen.getByRole("list", { name: "단계" });
+  expect(within(bar).getByText("⑥ 녹화").closest("button")).toBeTruthy();
+  expect(within(bar).getByText("다시 실행 필요")).toBeTruthy();
+});
+
+it("generate 전에는 ⑥ 녹화에 갈 수 없다", async () => {
+  fakeApi(base());
+  render(<App />);
+  await screen.findByRole("heading", { name: /생성/ });
+  expect(screen.getByText("⑥ 녹화").closest("[aria-disabled='true']")).toBeTruthy();
 });

@@ -8,7 +8,7 @@ export function nextScreen(s: SystemSummary): Screen {
   return "verify";
 }
 
-const DOTS: (keyof SystemSummary["steps"])[] = ["registered", "analyzed", "selected", "generated", "verified"];
+const DOTS: (keyof SystemSummary["steps"])[] = ["registered", "analyzed", "selected", "generated", "verified", "record"];
 
 export function Sidebar({ systems, current, go }: { systems: SystemSummary[]; current?: string; go: (path: string) => void }) {
   const link = (to: string) => (e: React.MouseEvent) => {

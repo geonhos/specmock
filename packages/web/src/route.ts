@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 
-export type Screen = "home" | "new" | "analyze" | "select" | "generate" | "verify";
+export type Screen = "home" | "new" | "analyze" | "select" | "generate" | "verify" | "record";
 export interface Route { screen: Screen; system?: string }
 
-export const STEP_SCREENS = ["new", "analyze", "select", "generate", "verify"] as const;
+export const STEP_SCREENS = ["new", "analyze", "select", "generate", "verify", "record"] as const;
 
 export function parseRoute(pathname: string): Route {
   if (pathname === "/new") return { screen: "new" };
-  const m = /^\/systems\/([^/]+)\/(analyze|select|generate|verify)$/.exec(pathname);
+  const m = /^\/systems\/([^/]+)\/(analyze|select|generate|verify|record)$/.exec(pathname);
   if (m) {
     try { return { screen: m[2] as Screen, system: decodeURIComponent(m[1]!) }; } catch { /* 잘못된 % 인코딩 */ }
   }
