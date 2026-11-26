@@ -41,7 +41,7 @@ specmock은 로컬에서 도는 개인 업무 도우미입니다. 호스팅, 공
 - 서비스 이름으로 스펙을 찾는 등록부가 없습니다. `ingest`는 origins가 비면 오류를 냅니다(`ingest/index.ts:136`).
 - 실제 GitHub 스펙(1,281 기능)을 지금의 처리 흐름으로 돌려 측정했습니다. ingest는 4.09초, `source.json`은 56.8 MB, `catalog.json`은 37.3 MB이고 실패는 없었습니다. 이 스펙은 `links`와 `security`를 선언하지 않습니다. 상세는 `docs/superpowers/notes/flow-simulator-github-measure.md`에 있습니다.
 - 계약의 요청 본문은 선택 필드를 모두 채웁니다(`select/fixtures.ts:21`). 실제 GitHub POST가 422를 받을 가능성이 있습니다(추정).
-- `Feature`는 응답 헤더, `requestBody.required`, 요청 예시, OpenAPI `links`를 버립니다(`analyze/openapi.ts:105-124`).
+- `Feature`는 요청 예시와 OpenAPI `links`를 버립니다(`analyze/openapi.ts:105-124`). 응답 헤더와 `requestBody.required`는 Task 2(이슈 #31)부터 보존합니다.
 - 인증 헤더와 실제 서버 주소는 `target.json`의 자유 항목이라 GitHub에 그대로 맞습니다(`record/target.ts:26-33`).
 - record 실행기는 값을 전달하지 않고, 정리하지 않으며, 첫 네트워크 오류에서 실행 전체를 버립니다(`record/index.ts:103-161`).
 - mock은 한 구간짜리 경로 변수만 처리합니다(`generate/tsHono.ts:34-35`).
@@ -111,7 +111,7 @@ GitHub 스펙 측정을 마쳤습니다. 결과는 `docs/superpowers/notes/flow-
 - 추론을 다시 돌려도 근거가 "Claude Code"이거나 "사용자"인 입력은 지우지 않습니다.
 - "만드는 자원"은 정리와 삭제 범위 제한이 씁니다.
 - 서비스 공통 값은 결정 13을 따릅니다. 흐름이 만들지 않는 값(GitHub의 `owner`)만 `target.json`의 `params`에 한 번 두고, 모든 흐름이 씁니다.
-- 연결 하나를 채우면 같은 만든 단계를 가리키는 다른 빈 자리도 함께 채웁니다.
+- 앞 단계 연결을 그 자리를 만드는 단계로 채우면, 다른 단계의 같은 이름 빈 자리도 함께 채웁니다.
 
 ### 추론 규칙
 
@@ -147,9 +147,9 @@ GitHub 스펙 측정을 마쳤습니다. 결과는 `docs/superpowers/notes/flow-
 
 - 켜짐(기본): 실제 서버 실행에서 GET이 아닌 단계를 보내지 않고 "안전장치로 건너뜀"으로 표시합니다. 그 단계의 응답이 필요한 뒤 단계도 함께 건너뜁니다. mock 실행은 모든 단계를 보냅니다.
 - 꺼짐: 실제 서버에도 모든 단계를 보냅니다.
-- DELETE는 경로 값이 이번 실행에서 성공한 만드는 단계에서 왔을 때만 보냅니다. 그렇지 않으면 안전장치가 꺼져 있어도 실행기가 거부합니다.
+- DELETE는 마지막 경로 값이 이번 실행에서 성공한 만드는 단계에서 왔을 때만 보냅니다. 그렇지 않으면 안전장치가 꺼져 있어도 실행기가 거부합니다.
 - 토글 상태는 ui-server 메모리에만 둡니다. ui-server를 다시 시작하거나 서비스를 바꾸면 켜짐으로 돌아갑니다.
-- 실행 요청마다 서버가 판정합니다. 화면을 거치지 않은 호출(MCP)도 같은 규칙을 따릅니다.
+- 실행 요청마다 서버가 판정합니다. 실행 경로를 부르는 호출자는 누구든 같은 규칙을 따릅니다.
 - 확인 창은 두지 않습니다.
 
 ### 정리
