@@ -20,6 +20,7 @@ export { resolveSelection } from "./select/expression.js";
 export { harvest, isEgoBrowserAvailable, type HarvestOptions } from "./harvest/index.js";
 export { buildHarvestScript } from "./harvest/script.js";
 export { select, type SelectOptions, type SelectResult } from "./select/index.js";
+export { requiredBodyFields, type RequiredBodyField } from "./select/requiredBody.js";
 export { generate, defaultMockDir, type GenerateOptions } from "./generate/index.js";
 export { readLock, launchCommand, launchHint, type Lock } from "./generate/lock.js";
 export type { GenerateReport, GenerateProgress, LanguageOutput } from "./generate/generator.js";
