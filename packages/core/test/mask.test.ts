@@ -43,6 +43,13 @@ describe("maskSecrets", () => {
     const scheme = '{"ApiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-API-Key"}}';
     expect(maskSecrets(scheme)).toBe(scheme);
   });
+  it("masks GitHub classic and fine-grained tokens", () => {
+    const classic = "ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8";
+    const fine = "github_pat_" + "11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ";
+    expect(maskSecrets(`token ${classic} end`)).toBe("token ghp_*** end");
+    expect(maskSecrets(`{"t":"${fine}"}`)).toBe(`{"t":"github_pat_***"}`);
+    expect(maskSecrets("ghp_short")).toBe("ghp_short");
+  });
 });
 
 describe("maskSecrets query", () => {
