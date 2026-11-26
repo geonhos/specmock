@@ -114,7 +114,8 @@
               }
             }
           }
-        }
+        },
+        "bodyRequired": true
       },
       "responses": {
         "201": {

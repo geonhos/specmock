@@ -11,14 +11,16 @@ export const ExampleSchema = z.object({
   body: z.unknown(),
 });
 
-export const ResponseSchema = z.object({
-  schema: JsonSchema.nullable(),
-  examples: z.array(ExampleSchema),
-});
-
 export const ParamSchema = z.object({
   schema: JsonSchema.nullable(),
   required: z.boolean(),
+});
+
+export const ResponseSchema = z.object({
+  schema: JsonSchema.nullable(),
+  examples: z.array(ExampleSchema),
+  /** OpenAPI 응답 헤더. 선언이 없으면 키를 두지 않는다(옛 catalog·문서 추출과 같은 모양). */
+  headers: z.record(z.string(), ParamSchema).optional(),
 });
 
 export const FeatureSchema = z.object({
@@ -33,6 +35,8 @@ export const FeatureSchema = z.object({
     query: z.record(z.string(), ParamSchema),
     headers: z.record(z.string(), ParamSchema),
     body: JsonSchema.nullable(),
+    /** OpenAPI `requestBody.required`(v2는 `in: body`의 required). 선언이 있을 때만 둔다. TS mock은 계속 `isBodyRequired`를 쓴다. */
+    bodyRequired: z.boolean().optional(),
   }),
   responses: z.record(z.string(), ResponseSchema),
   auth: z.enum(["bearer", "apiKey", "basic", "none", "unknown"]),

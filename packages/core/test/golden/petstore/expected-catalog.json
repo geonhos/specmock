@@ -80,7 +80,8 @@
               "type": "string"
             }
           }
-        }
+        },
+        "bodyRequired": true
       },
       "responses": {
         "201": {
