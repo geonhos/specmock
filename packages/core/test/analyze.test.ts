@@ -117,3 +117,36 @@ describe("analyzeOpenApiDocument (edge cases)", () => {
     expect(all.size).toBe(first.length + second.length);
   });
 });
+
+describe("analyzeOpenApiDocument keeps requestBody.required and response headers", () => {
+  const doc = {
+    openapi: "3.0.3", info: { title: "t", version: "1" },
+    paths: {
+      "/items": {
+        post: {
+          operationId: "createItem",
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["name"], properties: { name: { type: "string" } } } } } },
+          responses: { "201": { description: "ok", headers: { Location: { required: true, schema: { type: "string" } } }, content: { "application/json": { schema: { type: "object" } } } } },
+        },
+        get: { operationId: "listItems", responses: { "200": { description: "ok", content: { "application/json": { schema: { type: "array" } } } } } },
+      },
+    },
+  } as const;
+
+  it("sets bodyRequired from requestBody.required and keeps headers", () => {
+    const features = analyzeOpenApiDocument(doc as never);
+    const create = features.find((f) => f.method === "POST");
+    const list = features.find((f) => f.method === "GET");
+    expect(create!.request.bodyRequired).toBe(true);
+    expect(create!.responses["201"]!.headers).toEqual({ Location: { schema: { type: "string" }, required: true } });
+    expect(list!.request.bodyRequired).toBeUndefined();
+    expect(list!.responses["200"]!.headers).toBeUndefined();
+  });
+
+  it("v2 in:body param required → bodyRequired", () => {
+    const v2 = { swagger: "2.0", info: { title: "t", version: "1" }, paths: { "/x": { post: { operationId: "px", parameters: [{ in: "body", name: "b", required: true, schema: { type: "object" } }], responses: { "200": { description: "ok", headers: { "X-Rate": { type: "integer" } } } } } } } };
+    const [f] = analyzeOpenApiDocument(v2 as never);
+    expect(f!.request.bodyRequired).toBe(true);
+    expect(f!.responses["200"]!.headers).toEqual({ "X-Rate": { schema: { type: "integer" }, required: false } });
+  });
+});

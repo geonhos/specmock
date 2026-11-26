@@ -84,7 +84,10 @@ function buildRequest(doc: AnyDoc, pathParams: AnyParam[], op: AnyOperation): Fe
     if (p.in === "path") request.params[p.name] = { ...entry, required: true };
     else if (p.in === "query") request.query[p.name] = entry;
     else if (p.in === "header") request.headers[p.name] = entry;
-    else if (p.in === "body") request.body = stripSchema((p as OpenAPIV2.InBodyParameterObject).schema);
+    else if (p.in === "body") {
+      request.body = stripSchema((p as OpenAPIV2.InBodyParameterObject).schema);
+      if (p.required !== undefined) request.bodyRequired = Boolean(p.required);
+    }
   }
   const formData = merged.filter((p) => p.in === "formData") as OpenAPIV2.GeneralParameterObject[];
   if (formData.length > 0 && request.body === null) {
@@ -98,8 +101,17 @@ function buildRequest(doc: AnyDoc, pathParams: AnyParam[], op: AnyOperation): Fe
     const body = (op as OpenAPIV3.OperationObject).requestBody as OpenAPIV3.RequestBodyObject | undefined;
     const media = jsonContent(body?.content);
     if (media?.schema) request.body = stripSchema(media.schema);
+    if (body && body.required !== undefined) request.bodyRequired = body.required;
   }
   return request;
+}
+
+function responseHeaders(doc: AnyDoc, raw: unknown): Feature["responses"][string]["headers"] {
+  const hs = (raw as { headers?: Record<string, Record<string, unknown>> }).headers;
+  if (!hs || Object.keys(hs).length === 0) return undefined;
+  return Object.fromEntries(Object.entries(hs).map(([name, h]) => [name, isV3(doc)
+    ? { schema: stripSchema(h.schema as never), required: h.required === true }
+    : { schema: v2ParamSchema(h as never), required: false }]));
 }
 
 function buildResponses(doc: AnyDoc, op: AnyOperation): Feature["responses"] {
@@ -110,14 +122,16 @@ function buildResponses(doc: AnyDoc, op: AnyOperation): Feature["responses"] {
       const res = resRaw as OpenAPIV3.ResponseObject;
       const media = jsonContent(res.content);
       const schema = stripSchema(media?.schema);
-      out[status] = { schema, examples: collectExamples(media, schema) };
+      const headers = responseHeaders(doc, res);
+      out[status] = { schema, examples: collectExamples(media, schema), ...(headers ? { headers } : {}) };
     } else {
       const res = resRaw as OpenAPIV2.ResponseObject;
       const schema = stripSchema(res.schema);
       const examples: Feature["responses"][string]["examples"] = [];
       const ex = res.examples as Record<string, unknown> | undefined;
       if (ex) for (const v of Object.values(ex)) examples.push({ source: "spec-example", body: v });
-      out[status] = { schema, examples };
+      const headers = responseHeaders(doc, res);
+      out[status] = { schema, examples, ...(headers ? { headers } : {}) };
     }
   }
   return out;
