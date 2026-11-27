@@ -29,11 +29,12 @@ beforeEach(async () => { root = await mkdtemp(path.join(os.tmpdir(), "specmock-f
 afterEach(async () => { await api?.close(); await rm(root, { recursive: true, force: true }); });
 
 const feature = (id: string, method: string, p: string) => ({ id, group: "g", title: "", summary: "", method, path: p, request: { params: {}, query: {}, headers: {}, body: method === "POST" ? { type: "object" } : null }, responses: {}, auth: "none", provenance: "openapi", confidence: 1, hasExample: false, evidence: [], notes: [], fixtures: [{ status: 200, body: { id: 1 }, source: "empty" }] });
-const spec = MockSpecSchema.parse({ system: "s", baseUrl: "http://x", notMocked: [], assumptions: [], features: [feature("t_create", "POST", "/tickets"), feature("t_get", "GET", "/tickets/{id}")],
-  contracts: [{ featureId: "t_create", name: "ok", request: { method: "POST", path: "/tickets", headers: {}, query: {}, body: {} }, expect: { status: 201, schema: null } }, { featureId: "t_get", name: "ok", request: { method: "GET", path: "/tickets/1", headers: {}, query: {}, body: null }, expect: { status: 200, schema: null } }] });
+const spec = MockSpecSchema.parse({ system: "s", baseUrl: "http://x", notMocked: [], assumptions: [], features: [feature("t_create", "POST", "/tickets"), feature("t_get", "GET", "/tickets/{id}"), feature("t_list", "GET", "/tickets")],
+  contracts: [{ featureId: "t_create", name: "ok", request: { method: "POST", path: "/tickets", headers: {}, query: {}, body: {} }, expect: { status: 201, schema: null } }, { featureId: "t_get", name: "ok", request: { method: "GET", path: "/tickets/1", headers: {}, query: {}, body: null }, expect: { status: 200, schema: null } }, { featureId: "t_list", name: "ok", request: { method: "GET", path: "/tickets", headers: {}, query: {}, body: null }, expect: { status: 200, schema: null } }] });
 const flows = { system: "s", catalogHash: "h", inferredAt: "t", notes: [], flows: [{ id: "tickets", name: "ticket", resource: "ticket", steps: [
   { id: "create_ticket", featureId: "t_create", role: "main" as const, creates: "ticket", inputs: [] },
-  { id: "get_ticket", featureId: "t_get", role: "main" as const, inputs: [{ slot: "path.id", source: { kind: "step" as const, step: "create_ticket", field: "id" }, basis: "rule" as const }] }] }] };
+  { id: "get_ticket", featureId: "t_get", role: "main" as const, inputs: [{ slot: "path.id", source: { kind: "step" as const, step: "create_ticket", field: "id" }, basis: "rule" as const }] },
+  { id: "list_tickets", featureId: "t_list", role: "main" as const, inputs: [] }] }] };
 
 async function setup(handler: Parameters<typeof startFakeTarget>[0], launch?: boolean) {
   api = await startFakeTarget(handler);
@@ -56,7 +57,8 @@ describe("flow run route", () => {
     const job = await c.run({ targets: ["real"] });
     expect(job).toMatchObject({ kind: "flow", state: "done", cancellable: true });
     expect(job.result).toMatchObject({ runs: [{ target: "real", safety: true }], notRun: [] });
-    expect(methods().every((m) => m === "GET")).toBe(true);
+    expect(methods()).toContain("GET"); // 독립 GET 단계(list_tickets)는 실제로 보낸다
+    expect(methods().filter((m) => m !== "GET")).toEqual([]);
   });
 
   it("safety off: the real run sends POST too; the body cannot override the server's switch", async () => {
@@ -66,6 +68,14 @@ describe("flow run route", () => {
     const job = await c.run({ targets: ["real"], safety: true, cleanup: false });
     expect(job.result).toMatchObject({ runs: [{ safety: false, cleanup: false }] });
     expect(methods()).toContain("POST");
+  });
+
+  it("safety on: a body with safety:false cannot make the real run send a non-GET", async () => {
+    const c = await setup(() => ({ status: 200, body: { id: 1 } }));
+    const job = await c.run({ targets: ["real"], safety: false });
+    expect(job.result).toMatchObject({ runs: [{ safety: true }] });
+    expect(methods()).toContain("GET");
+    expect(methods().filter((m) => m !== "GET")).toEqual([]);
   });
 
   it("mock target uses the launcher and stops it; safety does not apply to mock", async () => {
@@ -110,6 +120,14 @@ describe("flow run route", () => {
     await writeFile(path.join(root, ".specmock", "s", "target.json"), JSON.stringify({ baseUrl: "" }));
     expect(await c.req("POST", "/systems/s/flows/tickets/run", { targets: ["real"] })).toMatchObject({ status: 409, body: { error: { message: expect.stringContaining("mock 실행은 할 수 있어요") } } });
     expect(api.requests).toHaveLength(0);
+  });
+
+  it("run: a flowDetail error that is not 'unknown flow' is not mapped to 404", async () => {
+    const c = await setup(() => ({ status: 200, body: {} }));
+    await writeFile(path.join(root, ".specmock", "s", "flows.json"), "{ not json");
+    const r = await c.req("POST", "/systems/s/flows/tickets/run", { targets: ["mock"] });
+    expect(r.status).not.toBe(404);
+    expect(r.status).toBeGreaterThanOrEqual(400);
   });
 
   it("other routes: POST-only guard and error responses", async () => {

@@ -11,7 +11,7 @@ const GITHUB = path.join(REPO, "packages", "core", "test", "fixtures", "flow", "
 const HOST = { host: "127.0.0.1:4310", "content-type": "application/json" };
 let root: string;
 beforeEach(async () => { root = await mkdtemp(path.join(os.tmpdir(), "specmock-flows-")); });
-afterEach(async () => { await rm(root, { recursive: true, force: true }); });
+afterEach(async () => { vi.unstubAllEnvs(); await rm(root, { recursive: true, force: true }); });
 function client() {
   const { app } = createApp({ root, webDir: path.join(root, "web"), port: () => 4310 });
   const req = async (method: string, p: string, b?: unknown) => { const r = await app.request(`/api${p}`, { method, headers: HOST, ...(b === undefined ? {} : { body: JSON.stringify(b) }) }); return { status: r.status, body: await r.json() }; };
@@ -67,9 +67,10 @@ describe("flow routes", () => {
   });
 
   it("run: real without token/baseUrl is 409, missing features 409, mock-only is accepted", async () => {
+    vi.stubEnv("SPECMOCK_TEST_UNSET_TOKEN", ""); // 셸에 값이 있어도 비어 있는 것으로 본다
     const c = await registered();
     await c.post("/systems/gh/flows/infer");
-    await c.put("/systems/gh/target", { baseUrl: "https://api.github.com", headers: [{ name: "Authorization", value: "Bearer ${GITHUB_TOKEN}" }], params: [], features: {} });
+    await c.put("/systems/gh/target", { baseUrl: "https://api.github.com", headers: [{ name: "Authorization", value: "Bearer ${SPECMOCK_TEST_UNSET_TOKEN}" }], params: [], features: {} });
     const real = await c.post("/systems/gh/flows/issues/run", { targets: ["real"] });
     expect(real).toMatchObject({ status: 409, body: { error: { message: expect.stringContaining("mock 실행은 할 수 있어요") } } });
     expect((await c.post("/systems/gh/flows/issues/run", { targets: [] })).status).toBe(400);

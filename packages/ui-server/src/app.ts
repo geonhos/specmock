@@ -274,7 +274,10 @@ export function createApp(opts: AppOptions) {
     const flowId = c.req.param("id");
     const b = await body(c, FlowRunBody);
     await assertRegistered(ws, system);
-    const detail = await flowDetail(ws, system, flowId).catch((e: Error) => { throw new NotFound(e.message); });
+    const detail = await flowDetail(ws, system, flowId).catch((e: unknown) => {
+      if (e instanceof Error && /^알 수 없는 흐름/.test(e.message)) throw new NotFound(e.message);
+      throw e;
+    });
     if (detail.missingFeatures.length > 0) return c.json(errorBody("failed", `기능 없음: ${detail.missingFeatures.join(", ")}`, "기능 선택이 바뀌었어요. 흐름을 다시 추론하세요."), 409);
     const env = envStore.env(system);
     if (b.targets.includes("real")) {
