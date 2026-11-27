@@ -27,7 +27,7 @@ it("list shows empty-input count; chart shows '입력 필요', edge names before
   const list = await screen.findByRole("navigation", { name: "흐름" });
   expect(within(list).getByRole("button", { name: /issue 다루기.*빈 연결 1/ })).toBeTruthy();
   expect(await screen.findByText("입력 필요")).toBeTruthy();
-  expect(screen.getByText("number")).toBeTruthy(); // 실행 전: 연결 이름
+  expect(screen.getByText("number")).toBeTruthy(); // before a run: the edge shows the field name
   expect(screen.getAllByText(STATE_LABEL.pending).length).toBeGreaterThan(0);
   fireEvent.click(screen.getByRole("button", { name: /create_issue/ }));
   expect(screen.getByText("Claude Code")).toBeTruthy();

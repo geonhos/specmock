@@ -1,5 +1,5 @@
 /* App layout. Astryx supplies component styles; these rules only place things.
-   Everything sits in `@layer app` so it never beats the theme by accident (see tokens.css). */
+   A named layer declared after Astryx's layers, so it overrides the theme; no unlayered CSS is used (see tokens.css). */
 @layer app {
 
 .app { display: grid; grid-template-rows: 48px minmax(0, 1fr); height: 100vh; background: var(--color-background-body); color: var(--color-text-primary); font-family: var(--font-family-body); font-size: 14px; }
