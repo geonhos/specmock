@@ -94,4 +94,12 @@ describe("flow routes", () => {
     const issues = (await c.get("/systems/gh/features?group=issues")).body.data;
     expect(issues.rows.map((r: { group: string }) => r.group)).toEqual(["issues", "issues", "issues", "issues"]);
   });
+
+  it("inputs on an unknown flow → 404, like GET (#45)", async () => {
+    const c = await registered();
+    await c.post("/systems/gh/flows/infer");
+    const r = await c.post("/systems/gh/flows/nope/inputs", { stepId: "create_issue", slot: "body.title", source: { kind: "empty" } });
+    expect(r).toMatchObject({ status: 404, body: { ok: false } });
+    expect((await c.get("/systems/gh/flows/nope")).status).toBe(404);
+  });
 });
