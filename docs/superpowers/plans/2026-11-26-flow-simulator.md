@@ -507,7 +507,7 @@ import YAML from "yaml";
 import { analyzeOpenApiDocument } from "../src/analyze/openapi.js";
 import { inferFlows, linkField, mergeFlows, parseResourcePath, responseProperties, singular } from "../src/flow/infer.js";
 import { dereferenceOpenApi } from "../src/ingest/openapi.js";
-import type { FlowsFile } from "../src/flow/types.js";
+import { FLOW_ID, FlowsFileSchema, type FlowsFile } from "../src/flow/types.js";
 import type { Feature } from "../src/types.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -635,6 +635,49 @@ describe("inferFlows", () => {
   });
 });
 
+const asFile = (flows: ReturnType<typeof inferFlows>["flows"]) => ({ system: "s", catalogHash: "h", inferredAt: "t", notes: [], flows });
+
+describe("inferFlows ids from raw path segments", () => {
+  it("keeps the file valid for segments with . : @ { }", () => {
+    const cases: Feature[][] = [
+      [feat("POST", "/chat.postMessage", { ts: { type: "string" } })],
+      [feat("POST", "/v1/{name}:cancel", { id: { type: "string" } })],
+      [feat("POST", "/a/x.y", { id: { type: "string" } }), feat("POST", "/b/x.y", { id: { type: "string" } })],
+    ];
+    for (const features of cases) {
+      const { flows } = inferFlows(features);
+      expect(flows.length).toBeGreaterThan(0);
+      expect(FlowsFileSchema.safeParse(asFile(flows)).success).toBe(true);
+    }
+  });
+  it("gives distinct ids when different segments sanitize to the same id", () => {
+    const { flows } = inferFlows([feat("POST", "/a/x.y", { id: { type: "string" } }), feat("POST", "/b/x_y", { id: { type: "string" } }), feat("POST", "/c/x:y", { id: { type: "string" } })]);
+    const ids = flows.map((f) => f.id);
+    expect(ids).toEqual(["x_y", "x_y_2", "x_y_3"]);
+    for (const f of flows) expect(f.steps.map((s) => s.id)).toEqual(["create_x_y"]);
+    expect(flows.map((f) => f.resource)).toEqual(["x.y", "x_y", "x:y"]); // 사람이 읽는 이름은 그대로
+  });
+  it("makes step ids unique within a flow after sanitizing", () => {
+    const { flows } = inferFlows([
+      feat("POST", "/a/{a_id}/x.y", { id: { type: "string" } }), feat("POST", "/a", { id: { type: "string" } }),
+      feat("POST", "/a/{a_id}/x_y", { id: { type: "string" } }),
+    ]);
+    for (const f of flows) expect(new Set(f.steps.map((s) => s.id)).size).toBe(f.steps.length);
+    expect(FlowsFileSchema.safeParse(asFile(flows)).success).toBe(true);
+  });
+  it("every flow id and step id matches FLOW_ID for odd paths", () => {
+    const paths = ["/chat.postMessage", "/v1/{name}:cancel", "/@me/items", "/x.y/{id}/z.w", "/a%20b", "/{p}/ä", "/m/{id}:verb"];
+    for (const p of paths) {
+      const { flows } = inferFlows([feat("POST", p, { id: { type: "string" } }), feat("GET", `${p === "/m/{id}:verb" ? "/m" : p}/{id}`), feat("DELETE", `${p === "/m/{id}:verb" ? "/m" : p}/{id}`)]);
+      for (const f of flows) {
+        expect(f.id).toMatch(FLOW_ID);
+        for (const s of f.steps) expect(s.id).toMatch(FLOW_ID);
+      }
+      expect(FlowsFileSchema.safeParse(asFile(flows)).success).toBe(true);
+    }
+  });
+});
+
 describe("mergeFlows (re-inference keeps claude/user inputs)", () => {
   it("keeps claude and user inputs by flow+step+slot, replaces rule inputs", () => {
     const next = inferFlows([feat("POST", "/tickets", { id: { type: "integer" } }, { type: "object", required: ["title"], properties: { title: { type: "string" } } })]);
@@ -643,6 +686,17 @@ describe("mergeFlows (re-inference keeps claude/user inputs)", () => {
     expect(merged[0]!.steps[0]!.inputs).toEqual([{ slot: "body.title", source: { kind: "user", value: "hello" }, basis: "user" }]);
     const fromRule: FlowsFile = { ...prev, flows: [{ ...prev.flows[0]!, steps: [{ ...prev.flows[0]!.steps[0]!, inputs: [{ slot: "body.title", source: { kind: "fixed", value: "old" }, basis: "rule" }] }] }] };
     expect(mergeFlows(fromRule, next.flows)[0]!.steps[0]!.inputs[0]!.source).toEqual({ kind: "empty" });
+  });
+  it("keeps Claude Code (basis claude) inputs and refreshes rule inputs", () => {
+    const next = inferFlows([feat("POST", "/tickets", { id: { type: "integer" } }, { type: "object", required: ["title", "body"], properties: { title: { type: "string" }, body: { type: "string" } } })]);
+    const step = next.flows[0]!.steps[0]!;
+    const prev: FlowsFile = { system: "s", catalogHash: "h", inferredAt: "t", notes: [], flows: [{ ...next.flows[0]!, steps: [{ ...step, inputs: [
+      { slot: "body.title", source: { kind: "fixed", value: "from claude" }, basis: "claude" },
+      { slot: "body.body", source: { kind: "fixed", value: "stale" }, basis: "rule" },
+    ] }] }] };
+    const inputs = mergeFlows(prev, next.flows)[0]!.steps[0]!.inputs;
+    expect(inputs.find((i) => i.slot === "body.title")).toEqual({ slot: "body.title", source: { kind: "fixed", value: "from claude" }, basis: "claude" });
+    expect(inputs.find((i) => i.slot === "body.body")).toEqual({ slot: "body.body", source: { kind: "empty" }, basis: "rule" });
   });
 });
 ```
@@ -662,6 +716,8 @@ export interface ResourcePath { resource: string; kind: "list" | "item"; params:
 const isParam = (s: string) => /^\{[^}]+\}$/.test(s);
 /** 흐름 id로 쓰지 않는 이름(ui-server 경로 `/flows/infer`와 겹침). */
 const RESERVED_IDS = new Set(["infer"]);
+/** 경로 구간을 흐름·단계 id(`FLOW_ID`)로 바꾼다. 허용 밖 문자는 `_`. 사람이 읽는 이름은 건드리지 않는다. */
+const idPart = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, "_");
 
 /** R1. 끝의 `{변수}`를 떼고 남은 마지막 고정 구간이 자원이다. 변수만 있는 경로는 null. */
 export function parseResourcePath(p: string): ResourcePath | null {
@@ -820,18 +876,19 @@ export function inferFlows(features: Feature[]): InferResult {
       steps.push({ id, featureId: feature.id, role, inputs: stepInputs(feature, creators), ...(creates ? { creates } : {}) });
       if (creates) creators.set(creates, { stepId: id, feature });
     };
-    for (const p of chain) if (p.create) add(`create_${p.s}`, p.create, "prep", p.s);
-    add(`create_${g.s}`, g.create, "main", g.s);
-    if (g.get) add(`get_${g.s}`, g.get, "main");
+    for (const p of chain) if (p.create) add(`create_${idPart(p.s)}`, p.create, "prep", p.s);
+    add(`create_${idPart(g.s)}`, g.create, "main", g.s);
+    if (g.get) add(`get_${idPart(g.s)}`, g.get, "main");
     const updates = [...g.updates].sort((a, b) => (a.method === b.method ? 0 : a.method === "PATCH" ? -1 : 1));
-    for (const u of updates) add(`update_${g.s}`, u, "main");
+    for (const u of updates) add(`update_${idPart(g.s)}`, u, "main");
     const parentDel = [...chain].reverse().find((p) => p.del && p.create); // 지우면 자식도 사라지는 가장 가까운 상위
-    if (g.del) add(`delete_${g.s}`, g.del, "cleanup");
+    if (g.del) add(`delete_${idPart(g.s)}`, g.del, "cleanup");
     else if (parentDel) notes.push(`${g.s}: 삭제 기능이 없어 상위 자원 ${parentDel.s}을(를) 지울 때 함께 지워진다고 봅니다. 상위 삭제가 실패하거나 정리를 끄면 "남은 자원"으로 알립니다.`);
     else notes.push(`${g.s}: 삭제 기능이 없어 실행 뒤 "남은 자원"으로 알립니다.`);
-    for (const p of [...chain].reverse()) if (p.del && p.create) add(`delete_${p.s}`, p.del, "cleanup");
-    let id = g.resource.replace(/[^A-Za-z0-9_-]/g, "_");
-    for (let n = 2; usedIds.has(id); n++) id = `${g.resource}_${n}`;
+    for (const p of [...chain].reverse()) if (p.del && p.create) add(`delete_${idPart(p.s)}`, p.del, "cleanup");
+    const base = idPart(g.resource);
+    let id = base;
+    for (let n = 2; usedIds.has(id); n++) id = `${base}_${n}`;
     usedIds.add(id);
     flows.push({ id, name: `${g.s} 다루기`, resource: g.s, steps });
   }
@@ -925,6 +982,21 @@ describe("flow store", () => {
     const manual = setInput(file, "issues", "get_issue", "path.repo", { kind: "user", value: "other" }, "user");
     expect(inputOf(setInput(manual, "issues", "create_issue", "path.repo", link, "claude"), "get_issue", "path.repo")!.source).toEqual({ kind: "user", value: "other" });
     expect(inputOf(setInput(file, "issues", "create_issue", "path.repo", { kind: "user", value: "x" }, "user"), "get_issue", "path.repo")!.source).toEqual(empty);
+  });
+  it("propagation needs the same creating step: same slot name with another createdBy stays empty", () => {
+    const nested: Flow = { id: "cards", name: "card 다루기", resource: "card", steps: [
+      { id: "create_project", featureId: "p_create", role: "prep", creates: "project", inputs: [] },
+      { id: "get_project", featureId: "p_get", role: "prep", inputs: [{ slot: "path.id", source: empty, basis: "rule", createdBy: "create_project" }] },
+      { id: "create_card", featureId: "c_create", role: "main", creates: "card", inputs: [] },
+      { id: "get_card", featureId: "c_get", role: "main", inputs: [{ slot: "path.id", source: empty, basis: "rule", createdBy: "create_card" }] },
+      { id: "update_card", featureId: "c_update", role: "main", inputs: [{ slot: "path.id", source: empty, basis: "rule", createdBy: "create_card" }] },
+    ] };
+    const f: FlowsFile = { ...file, flows: [nested] };
+    const link = { kind: "step", step: "create_card", field: "id" } as const;
+    const next = setInput(f, "cards", "get_card", "path.id", link, "user");
+    const at = (id: string) => next.flows[0]!.steps.find((s) => s.id === id)!.inputs[0]!;
+    expect(at("update_card").source).toEqual(link);
+    expect(at("get_project").source).toEqual(empty);
   });
   it("missingFeatures lists feature ids absent from the selection", () => {
     expect(missingFeatures(flow, new Set(["issues_create"]))).toEqual(["repos_create", "issues_get"]);

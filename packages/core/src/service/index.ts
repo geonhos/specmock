@@ -6,3 +6,4 @@ export { findFeature, listFeatures, type FeatureRow, type ListFeaturesResult } f
 export { resolveMockDir, verifyMock, type VerifyMockResult } from "./verify.js";
 export { runPipeline, type RunPipelineOptions, type RunPipelineResult, type RunStage } from "./run.js";
 export { recordResponses, APPLY_FAILED, APPLY_LATER, PRESERVED_NOTE, type RecordResponsesOptions, type RecordResponsesResult } from "./record.js";
+export { inferFlowsForSystem } from "./flow.js";
