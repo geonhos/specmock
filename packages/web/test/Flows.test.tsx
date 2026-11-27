@@ -69,18 +69,22 @@ it("fill an empty input with a user value → POST inputs with source user", asy
   expect(api.bodies[api.calls.indexOf("POST /api/systems/gh/flows/issues/inputs")]).toEqual({ stepId: "create_issue", slot: "body.title", source: { kind: "user", value: "hello" } });
 });
 
-it("pick an earlier step's response field as the source", async () => {
-  const api = fakeApi({ ...routes(), "POST /api/systems/gh/flows/issues/inputs": ok({ flow, empty: [], missingFeatures: [], runs: { mock: null, real: null } }) });
+it("switch a user-valued input to an earlier step's response field and save the new source", async () => {
+  // c's slot starts as a user value with no createdBy, so nothing is preselected; "b" is not the default step.
+  const three: FlowDetail["flow"] = { ...flow, steps: [step("a", "prep"), step("b", "main"),
+    step("c", "main", [{ slot: "body.owner", source: { kind: "user", value: "x" }, basis: "user" }])] };
+  const detail = { flow: three, empty: [], missingFeatures: [], runs: { mock: null, real: null } };
+  const api = fakeApi({ ...routes(detail), "POST /api/systems/gh/flows/issues/inputs": ok(detail) });
   mount();
-  fireEvent.click(await screen.findByRole("button", { name: /get_issue/ }));
-  fireEvent.click(screen.getByRole("combobox", { name: "path.issue_number 출처" }));
+  fireEvent.click(await screen.findByRole("button", { name: /f_c/ }));
+  fireEvent.click(screen.getByRole("combobox", { name: "body.owner 출처" }));
   fireEvent.click(await screen.findByRole("option", { name: "앞 단계 응답" }));
-  fireEvent.click(screen.getByRole("combobox", { name: "path.issue_number 앞 단계" }));
-  fireEvent.click(await screen.findByRole("option", { name: "create_issue" }));
-  fireEvent.change(screen.getByLabelText("path.issue_number 응답 필드"), { target: { value: "id" } });
-  fireEvent.click(screen.getByRole("button", { name: "path.issue_number 저장" }));
+  fireEvent.click(screen.getByRole("combobox", { name: "body.owner 앞 단계" }));
+  fireEvent.click(await screen.findByRole("option", { name: "b" }));
+  fireEvent.change(screen.getByLabelText("body.owner 응답 필드"), { target: { value: "id" } });
+  fireEvent.click(screen.getByRole("button", { name: "body.owner 저장" }));
   await vi.waitFor(() => expect(api.calls).toContain("POST /api/systems/gh/flows/issues/inputs"));
-  expect(api.bodies.at(-1)).toEqual({ stepId: "get_issue", slot: "path.issue_number", source: { kind: "step", step: "create_issue", field: "id" } });
+  expect(api.bodies.at(-1)).toEqual({ stepId: "c", slot: "body.owner", source: { kind: "step", step: "b", field: "id" } });
 });
 
 it("run with empty inputs is allowed; targets and cleanup go to the run route", async () => {
@@ -117,13 +121,19 @@ it("leftovers list shows URL and id; missing features block the run", async () =
 const flowJob = (state: Job["state"], result?: unknown): Job => ({ id: "j1", system: "gh", kind: "flow", state, cancellable: true, startedAt: "a", ...(result === undefined ? {} : { result }) });
 
 it("safety is read per service: switching service shows that service's value (#45, decision 11)", async () => {
-  const api = fakeApi({ ...routes({}, false),
-    "GET /api/systems/gl/flows": ok({ inferredAt: "t", notes: [], flows: [] }),
+  const glFlow = { ...flow, id: "glissues" };
+  const api = fakeApi({ ...routes({}, false), // gh: safety off
+    "GET /api/systems/gl/flows": ok({ inferredAt: "t", notes: [], flows: [{ id: "glissues", name: "issue 다루기", resource: "issue", steps: 2, empty: 0, missingFeatures: [], last: { mock: null, real: null } }] }),
+    "GET /api/systems/gl/flows/glissues": ok({ flow: glFlow, empty: [], missingFeatures: [], runs: { mock: null, real: null } }),
     "GET /api/systems/gl/safety": ok({ on: true }) });
   const { rerender } = render(<Flows system="gh" jobs={[]} tick={0} refreshJobs={() => {}} />);
   expect(((await screen.findByRole("switch", { name: "안전장치" })) as HTMLInputElement).checked).toBe(false);
   rerender(<Flows system="gl" jobs={[]} tick={0} refreshJobs={() => {}} />);
   await vi.waitFor(() => expect(api.calls).toContain("GET /api/systems/gl/safety"));
+  await vi.waitFor(() => expect(((screen.getByRole("switch", { name: "안전장치" })) as HTMLInputElement).checked).toBe(true));
+  // Back to gh: false again. A Flows that ignored the response would show the initial true here.
+  rerender(<Flows system="gh" jobs={[]} tick={0} refreshJobs={() => {}} />);
+  await vi.waitFor(() => expect(((screen.getByRole("switch", { name: "안전장치" })) as HTMLInputElement).checked).toBe(false));
 });
 
 it("a running flow job shows 실행 취소, which posts the job cancel", async () => {
