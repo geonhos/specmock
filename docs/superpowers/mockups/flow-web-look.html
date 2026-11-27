@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="ko" data-look="a">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>흐름 화면 모양 시안</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+KR:wght@400;500;700&family=Figtree:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+/* 모양 A: 맑은 파랑 (밝은 바탕) */
+:root{
+  --bg:#f6f7fa; --panel:#ffffff; --sunk:#eceef4; --line:#d5d9e3; --fg:#1b2030; --dim:#5d6578;
+  --accent:#2f5fd0; --on-accent:#ffffff;
+  --ok:#1f8a5b; --diff:#b06a00; --bad:#c23a3a; --skip:#6b4fc0; --need:#0b7285; --clean:#52606d; --left:#a8327e;
+  --sans:"IBM Plex Sans KR",-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --r:8px; --soft:14%;
+}
+/* 모양 B: 어두운 작업대 */
+:root[data-look="b"]{
+  --bg:#0f1216; --panel:#171b21; --sunk:#1f242c; --line:#2e3540; --fg:#e4e8ee; --dim:#8f99a8;
+  --accent:#4fd1b5; --on-accent:#0f1216;
+  --ok:#5fd08a; --diff:#f0b455; --bad:#ff8080; --skip:#b39dff; --need:#5cc8e8; --clean:#9aa7b5; --left:#f08ac6;
+  --sans:"Pretendard",-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  --r:6px; --soft:18%; color-scheme:dark;
+}
+/* 모양 C: 따뜻한 종이 */
+:root[data-look="c"]{
+  --bg:#f7f3ec; --panel:#fffdf8; --sunk:#efe9dd; --line:#dcd3c2; --fg:#2a2520; --dim:#6f665a;
+  --accent:#b4502a; --on-accent:#fffdf8;
+  --ok:#3d7a3a; --diff:#a86a00; --bad:#b3362e; --skip:#6a4a9c; --need:#1f6f8b; --clean:#5f6259; --left:#9c2f6b;
+  --sans:"Noto Sans KR",-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --r:3px; --soft:12%;
+}
+/* 모양 D: Astryx neutral 기준 (meta/astryx packages/themes/neutral 의 값)
+   글꼴 Figtree, 바탕 14px, 강조는 검정에 가까운 회색, 모서리 0.625rem.
+   info #0074e2, success #198100, warning #ffce2f, error #c9303a 는 Astryx 값.
+   회색 단계는 neutral ramp 의 밝기 번호에서 어림한 값. 건너뜀·남은 자원 색은 Astryx 에 없어 따로 정함. */
+:root[data-look="d"]{
+  --bg:#f2f2f2; --panel:#ffffff; --sunk:#f2f2f2; --line:rgba(0,0,0,.14); --fg:#000000; --dim:#474747;
+  --accent:#1a1a1a; --on-accent:#ffffff;
+  --ok:#198100; --diff:#8a6500; --bad:#c9303a; --skip:#6b4fc0; --need:#0074e2; --clean:#5c5c5c; --left:#a8327e;
+  --sans:"Figtree","Pretendard",-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --mono:ui-monospace,"SF Mono",Monaco,Consolas,monospace;
+  --r:10px; --soft:10%;
+}
+:root[data-look="d"] body{font-size:14px}
+:root[data-look="d"] .scroll{border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.05),0 2px 8px rgba(0,0,0,.10)}
+:root[data-look="d"] .hl{background:color-mix(in srgb,#ffce2f 45%,var(--sunk));color:#000}
+:root[data-look="d"] .fl.sel{background:#d4d4d4;box-shadow:none}
+:root[data-look="d"] .method{color:var(--need)}
+:root[data-look="d"] .pass{color:var(--dim)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:15px;line-height:1.6;padding:0 16px 64px}
+.wrap{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:36px}
+h1{font-size:24px;font-weight:600;margin:0}
+h2{font-size:18px;font-weight:600;margin:0}
+p{margin:0;max-width:70ch}
+.dim{color:var(--dim)}
+.mono{font-family:var(--mono);font-size:12.5px}
+section{display:flex;flex-direction:column;gap:12px}
+
+/* 시안 전환 줄 (시안 페이지 전용, 제품에는 없음) */
+.switch{position:sticky;top:0;z-index:5;background:var(--bg);padding:14px 0 12px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.switch button{font:500 13px var(--sans);padding:6px 14px;border-radius:var(--r);border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer}
+.switch button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+
+table{border-collapse:collapse;font-size:13.5px}
+th,td{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}
+th{background:var(--sunk);font-weight:600}
+
+/* 상태 표지: 색 + 기호 + 글자 */
+.pill{display:inline-flex;align-items:center;gap:4px;font:500 12px var(--sans);padding:1px 9px;border-radius:999px;white-space:nowrap;
+  color:var(--c);background:color-mix(in srgb,var(--c) var(--soft),var(--panel));border:1px solid color-mix(in srgb,var(--c) 35%,var(--panel))}
+.s-idle{--c:var(--dim)} .s-ok{--c:var(--ok)} .s-diff{--c:var(--diff)} .s-bad{--c:var(--bad)}
+.s-skip{--c:var(--skip)} .s-need{--c:var(--need)} .s-clean{--c:var(--clean)} .s-left{--c:var(--left)}
+.legend{display:flex;gap:8px;flex-wrap:wrap}
+
+/* 근거 표지 */
+.why{font:500 11px var(--mono);padding:0 6px;border-radius:3px;border:1px solid var(--line);color:var(--dim);background:var(--panel);white-space:nowrap}
+.why.cc{color:var(--skip);border-color:color-mix(in srgb,var(--skip) 40%,var(--panel))}
+.why.me{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 40%,var(--panel))}
+
+/* 화면 틀 */
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--panel)}
+.frame{min-width:940px;font-size:13.5px}
+.bar{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--sunk)}
+.bar b{font-weight:600;font-size:15px}
+.bar.off{background:color-mix(in srgb,var(--bad) 20%,var(--panel));border-bottom-color:var(--bad)}
+.bar .warnmsg{display:none;color:var(--bad);font-weight:500;font-size:12.5px}
+.bar.off .warnmsg{display:inline}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;font-size:12.5px}
+.seg span{padding:4px 12px;background:var(--panel);color:var(--dim)}
+.seg .on{background:var(--accent);color:var(--on-accent)}
+.btn{font:500 13px var(--sans);padding:5px 14px;border-radius:var(--r);background:var(--accent);color:var(--on-accent);border:0}
+.btn.ghost{background:var(--panel);color:var(--fg);border:1px solid var(--line)}
+.sp{margin-left:auto}
+.tog{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer;background:none;border:0;color:var(--fg);font-family:var(--sans);padding:0}
+.tog i{width:32px;height:18px;border-radius:9px;background:var(--ok);position:relative;flex:none}
+.tog i::after{content:"";position:absolute;top:2px;left:16px;width:14px;height:14px;border-radius:50%;background:var(--panel)}
+.tog.is-off i{background:var(--dim)} .tog.is-off i::after{left:2px}
+.tog.safety.is-off i{background:var(--bad)}
+
+.body{display:grid;grid-template-columns:230px 1fr}
+.side{border-right:1px solid var(--line);padding:12px}
+.lab{font-size:11.5px;letter-spacing:.05em;color:var(--dim);margin-bottom:8px}
+.fl{padding:8px 10px;border-radius:var(--r);display:flex;flex-direction:column;gap:4px}
+.fl.sel{background:color-mix(in srgb,var(--accent) 12%,var(--panel));box-shadow:inset 3px 0 0 var(--accent)}
+.fl .row{display:flex;gap:6px;flex-wrap:wrap}
+
+.tl{padding:16px 18px}
+.node{display:grid;grid-template-columns:30px 1fr;gap:12px}
+.rail{display:flex;flex-direction:column;align-items:center}
+.rail i{flex:1;width:2px;background:var(--line)}
+.n{flex:none;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--c,var(--line));color:var(--c,var(--dim));display:grid;place-items:center;font:500 12px var(--mono);background:var(--panel)}
+.card{border:1px solid var(--line);border-radius:var(--r);padding:9px 12px;display:flex;flex-direction:column;gap:10px;background:var(--panel)}
+.card.open{border-color:var(--accent)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.role{font-size:11.5px;color:var(--dim);border:1px solid var(--line);border-radius:3px;padding:0 6px}
+.method{font:500 12px var(--mono);color:var(--accent)}
+.pass{font:12.5px var(--mono);color:var(--accent);padding:5px 0 7px 2px;display:flex;gap:8px;align-items:center}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+pre{margin:0;font:12.5px/1.55 var(--mono);background:var(--sunk);padding:10px;border-radius:var(--r);white-space:pre-wrap;overflow-wrap:anywhere}
+.hl{background:color-mix(in srgb,var(--diff) 22%,var(--sunk));color:var(--diff)}
+.sub{font-size:11.5px;color:var(--dim);margin-bottom:4px}
+.in{display:grid;grid-template-columns:150px 1fr auto;gap:8px;align-items:center;font-size:12.5px}
+.in+.in{margin-top:6px}
+.field{font:12.5px var(--mono);padding:4px 8px;border:1px solid var(--line);border-radius:var(--r);background:var(--panel);color:var(--fg);min-width:0}
+.field.empty{border-color:var(--need);border-style:dashed;color:var(--dim)}
+.link{color:var(--accent);font-size:12.5px;text-decoration:underline}
+.leftover{border-top:1px solid var(--line);padding:12px 18px;background:color-mix(in srgb,var(--left) 6%,var(--panel))}
+
+/* 등록 화면 */
+.reg{padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.form{display:flex;flex-direction:column;gap:10px}
+.form label{display:flex;flex-direction:column;gap:3px;font-size:12.5px;color:var(--dim)}
+.form .field{font-size:13px;padding:6px 9px}
+.grp{display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--line);border-radius:var(--r);margin-bottom:6px}
+.grp .cnt{margin-left:auto;color:var(--dim);font-size:12.5px}
+.feat{padding:4px 10px 4px 30px;display:flex;gap:8px;align-items:center}
+.chk{width:14px;height:14px;border:1.5px solid var(--line);border-radius:3px;flex:none;display:grid;place-items:center;font-size:10px;line-height:1}
+.chk.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="switch">
+    <span class="dim" style="font-size:13px">모양 고르기</span>
+    <button data-look="a" aria-pressed="true">A · 맑은 파랑</button>
+    <button data-look="b" aria-pressed="false">B · 어두운 작업대</button>
+    <button data-look="c" aria-pressed="false">C · 따뜻한 종이</button>
+    <button data-look="d" aria-pressed="false">D · Astryx neutral</button>
+    <span class="dim" style="font-size:12.5px">이 줄은 시안 페이지에만 있습니다. 제품 화면에는 없습니다.</span>
+  </div>
+
+  <header style="display:flex;flex-direction:column;gap:8px">
+    <h1>흐름 화면의 색·글꼴·세부 모양 시안</h1>
+    <p class="dim">배치는 시안 B(순서도가 곧 실행 화면)로 이미 정했습니다. 이 페이지는 색, 글꼴, 세부 모양만 정합니다. 위쪽 단추로 모양 3개를 바꿔 보십시오. 값은 모두 예시입니다.</p>
+  </header>
+
+  <section>
+    <h2>모양 3개 비교</h2>
+    <table>
+      <tr><th></th><th>A · 맑은 파랑</th><th>B · 어두운 작업대</th><th>C · 따뜻한 종이</th></tr>
+      <tr><th>바탕</th><td>밝은 회색, 흰 판</td><td>어두운 남회색</td><td>미색, 종이 느낌</td></tr>
+      <tr><th>강조 색</th><td>파랑</td><td>청록</td><td>벽돌색</td></tr>
+      <tr><th>본문 글꼴</th><td>IBM Plex Sans KR</td><td>Pretendard</td><td>Noto Sans KR</td></tr>
+      <tr><th>코드 글꼴</th><td>IBM Plex Mono</td><td>JetBrains Mono</td><td>IBM Plex Mono</td></tr>
+      <tr><th>모서리</th><td>8px</td><td>6px</td><td>3px</td></tr>
+      <tr><th>얻는 것</th><td>지난 시안과 같아 익숙합니다. 상태 색이 흰 바탕에서 잘 구분됩니다.</td><td>코드 편집기 옆에 두기 편합니다. 긴 응답 본문을 오래 봐도 눈이 덜 피곤합니다.</td><td>글이 많은 화면에서 읽기 편합니다. 다른 개발 도구와 구분됩니다.</td></tr>
+      <tr><th>치르는 것</th><td>흔한 모양입니다.</td><td>차이 표시(노랑)와 실패(빨강)의 옅은 바탕이 밝은 모양보다 덜 눈에 띕니다.</td><td>강조 색(벽돌색)과 실패 색(빨강)이 가깝습니다. 기호와 글자로 구분해야 합니다.</td></tr>
+    </table>
+    <table>
+      <tr><th colspan="2">D · Astryx neutral (Meta의 Astryx 디자인 시스템, neutral 주제 기준)</th></tr>
+      <tr><th>바탕</th><td>옅은 회색, 흰 판, 옅은 그림자</td></tr>
+      <tr><th>강조 색</th><td>검정에 가까운 회색. 색은 상태 표지에만 씁니다.</td></tr>
+      <tr><th>본문 글꼴</th><td>Figtree 14px. Figtree에 한글이 없어 한글은 Pretendard 또는 시스템 글꼴로 나옵니다.</td></tr>
+      <tr><th>코드 글꼴</th><td>시스템 고정폭 글꼴(SF Mono)</td></tr>
+      <tr><th>모서리</th><td>10px, 화면 틀 12px</td></tr>
+      <tr><th>얻는 것</th><td>색이 적어 상태 표지가 가장 눈에 띕니다. 나중에 Astryx 구성 요소를 도입해도 모양이 이어집니다.</td></tr>
+      <tr><th>치르는 것</th><td>Astryx의 상태 색은 4개(info, success, warning, error)입니다. "안전장치로 건너뜀"과 "남은 자원"의 색은 따로 정했습니다. 회색 단계는 Astryx 소스의 밝기 번호에서 어림한 값입니다.</td></tr>
+    </table>
+    <p class="dim">1차는 색 주제 설정을 만들지 않습니다(설계 4절). 고른 모양 하나만 구현합니다.</p>
+  </section>
+
+  <section>
+    <h2>단계의 상태 8종</h2>
+    <p class="dim">색, 기호, 글자를 함께 씁니다. 색을 구분하지 못해도 기호와 글자로 읽힙니다.</p>
+    <div class="legend">
+      <span class="pill s-idle">○ 실행 전</span>
+      <span class="pill s-ok">✓ 성공</span>
+      <span class="pill s-diff">≠ 차이 있음</span>
+      <span class="pill s-bad">✕ 실패</span>
+      <span class="pill s-skip">⊘ 안전장치로 건너뜀</span>
+      <span class="pill s-need">✎ 입력이 비어 멈춤</span>
+      <span class="pill s-clean">↺ 정리됨</span>
+      <span class="pill s-left">◆ 남은 자원</span>
+    </div>
+    <div class="legend">
+      <span class="dim" style="font-size:13px">근거 표지:</span>
+      <span class="why">규칙</span><span class="why cc">Claude Code</span><span class="why me">사용자</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>② 흐름 화면</h2>
+    <p class="dim">"issue 다루기"를 "둘 다"로 실행한 직후입니다. 단계 2는 펼친 모습이고, 단계 4는 빈 입력 때문에 멈췄습니다. 오른쪽 끝의 안전장치 토글을 누르면 위쪽 줄 색이 바뀝니다.</p>
+    <div class="scroll"><div class="frame">
+      <div class="bar" id="bar">
+        <b>issue 다루기</b>
+        <span class="seg"><span>mock</span><span>실제</span><span class="on">둘 다</span></span>
+        <button class="tog" type="button"><i></i>정리 켬</button>
+        <span class="btn">▶ 전체 실행</span>
+        <span class="warnmsg">실제 서버에 변경 요청을 보냅니다</span>
+        <button class="tog safety sp" id="safety" type="button"><i></i><span id="safety-t">안전장치 켜짐</span></button>
+      </div>
+      <div class="body">
+        <div class="side">
+          <div class="lab">흐름</div>
+          <div class="fl sel"><span>issue 다루기</span><div class="row"><span class="pill s-need">✎ 빈 연결 1</span><span class="pill s-diff">≠ 차이</span></div></div>
+          <div class="fl"><span>repo 다루기</span><div class="row"><span class="pill s-ok">✓ 성공</span></div></div>
+          <div class="fl"><span>label 다루기</span><div class="row"><span class="pill s-need">✎ 빈 연결 2</span><span class="pill s-idle">○ 실행 전</span></div></div>
+        </div>
+        <div>
+          <div class="tl">
+
+            <div class="node"><div class="rail"><span class="n s-ok">1</span><i></i></div><div>
+              <div class="card"><div class="row"><span class="role">준비</span><span class="mono"><span class="method">POST</span> /user/repos</span><span class="sp pill s-ok">✓ mock 201</span><span class="pill s-ok">✓ 실제 201</span></div></div>
+              <div class="pass">↓ name = "specmock-check-1127T0612" <span class="why cc">Claude Code</span></div></div></div>
+
+            <div class="node"><div class="rail"><span class="n s-diff">2</span><i></i></div><div>
+              <div class="card open">
+                <div class="row"><span class="role">본 단계</span><span class="mono"><span class="method">POST</span> /repos/{owner}/{repo}/issues</span><span class="sp pill s-ok">✓ mock 201</span><span class="pill s-ok">✓ 실제 201</span><span class="pill s-diff">≠ 차이 1</span></div>
+                <div>
+                  <div class="sub">입력</div>
+                  <div class="in"><span class="mono">path.owner</span><span class="field">geonhos · 공통 값</span><span class="why me">사용자</span></div>
+                  <div class="in"><span class="mono">path.repo</span><span class="field">← 단계 1 응답의 name</span><span class="why cc">Claude Code</span></div>
+                  <div class="in"><span class="mono">body.title</span><span class="field">specmock 점검</span><span class="why me">사용자</span></div>
+                </div>
+                <div>
+                  <div class="sub">보낸 요청</div>
+<pre>POST /repos/geonhos/specmock-check-1127T0612/issues
+{ "title": "specmock 점검" }</pre>
+                </div>
+                <div>
+                  <div class="row" style="margin-bottom:4px"><span class="sub" style="margin:0">응답 · 차이가 난 필드만</span><span class="sp link">전체 보기</span></div>
+                  <div class="two">
+<pre>mock · 201 · 12ms
+<span class="hl">"locked": (없음)</span></pre>
+<pre>실제 · 201 · 418ms
+<span class="hl">"locked": false</span></pre>
+                  </div>
+                </div>
+              </div>
+              <div class="pass">↓ number = 1 <span class="why">규칙</span></div></div></div>
+
+            <div class="node"><div class="rail"><span class="n s-ok">3</span><i></i></div><div>
+              <div class="card"><div class="row"><span class="role">본 단계</span><span class="mono"><span class="method">GET</span> /repos/{owner}/{repo}/issues/{issue_number}</span><span class="sp pill s-ok">✓ mock 200</span><span class="pill s-ok">✓ 실제 200</span></div></div>
+              <div class="pass">↓ number = 1 <span class="why">규칙</span></div></div></div>
+
+            <div class="node"><div class="rail"><span class="n s-need">4</span><i></i></div><div>
+              <div class="card">
+                <div class="row"><span class="role">본 단계</span><span class="mono"><span class="method">PATCH</span> /repos/{owner}/{repo}/issues/{issue_number}</span><span class="sp pill s-need">✎ 입력이 비어 멈춤</span></div>
+                <div>
+                  <div class="sub">입력 필요 · 값을 직접 넣거나 앞 단계의 응답 필드를 고릅니다</div>
+                  <div class="in"><span class="mono">body.state</span><span class="field empty">값 입력…</span><span class="btn ghost">앞 단계 응답에서 고르기 ▾</span></div>
+                </div>
+              </div>
+              <div class="pass">↓ 멈춤 → 정리</div></div></div>
+
+            <div class="node"><div class="rail"><span class="n s-clean">5</span></div><div>
+              <div class="card"><div class="row"><span class="role">정리</span><span class="mono"><span class="method">DELETE</span> /repos/{owner}/{repo}</span><span class="sp pill s-clean">↺ mock 정리됨</span><span class="pill s-clean">↺ 실제 정리됨</span></div></div></div></div>
+
+          </div>
+          <div class="leftover">
+            <div class="row" style="margin-bottom:6px"><span class="pill s-left">◆ 남은 자원 1</span><span class="dim" style="font-size:12.5px">예시: 정리를 끄고 실행했을 때</span></div>
+            <div class="mono">repo · geonhos/specmock-check-1127T0612 · https://api.github.com/repos/geonhos/specmock-check-1127T0612</div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <section>
+    <h2>나머지 상태가 보이는 단계 예</h2>
+    <p class="dim">안전장치가 켜진 실제 실행과, 실패한 단계의 모습입니다.</p>
+    <div class="scroll"><div class="frame"><div class="tl">
+      <div class="node"><div class="rail"><span class="n s-skip">1</span><i></i></div><div>
+        <div class="card"><div class="row"><span class="role">준비</span><span class="mono"><span class="method">POST</span> /user/repos</span><span class="sp pill s-ok">✓ mock 201</span><span class="pill s-skip">⊘ 실제: 안전장치로 건너뜀</span></div>
+          <div class="dim" style="font-size:12.5px">안전장치가 켜져 있어 실제 서버에 POST를 보내지 않았습니다. 이 응답이 필요한 뒤 단계도 건너뜁니다.</div></div>
+        <div class="pass">↓ name</div></div></div>
+      <div class="node"><div class="rail"><span class="n s-bad">2</span><i></i></div><div>
+        <div class="card"><div class="row"><span class="role">본 단계</span><span class="mono"><span class="method">POST</span> /repos/{owner}/{repo}/issues</span><span class="sp pill s-bad">✕ mock 422</span><span class="pill s-skip">⊘ 실제: 안전장치로 건너뜀</span></div>
+          <div style="font-size:12.5px;color:var(--bad)">422를 받았습니다. 본문의 필수 필드 title이 비어 있는지 확인하십시오. 뒤 단계를 멈추고 정리로 넘어갔습니다.</div></div>
+        <div class="pass">↓ number</div></div></div>
+      <div class="node"><div class="rail"><span class="n s-idle">3</span></div><div>
+        <div class="card"><div class="row"><span class="role">본 단계</span><span class="mono"><span class="method">GET</span> /repos/{owner}/{repo}/issues/{issue_number}</span><span class="sp pill s-idle">○ 실행 전</span></div></div></div></div>
+    </div></div></div>
+  </section>
+
+  <section>
+    <h2>① 서비스 등록 화면</h2>
+    <p class="dim">왼쪽에 입력과 대상 설정, 오른쪽에 기능 고르기를 둡니다. 묶음은 기능 수만 먼저 보이고, 열 때 그 묶음의 기능을 불러옵니다.</p>
+    <div class="scroll"><div class="frame">
+      <div class="bar"><b>서비스 등록</b><span class="btn sp">등록하고 흐름 만들기</span></div>
+      <div class="reg">
+        <div class="form">
+          <div class="lab">서비스</div>
+          <label>서비스 이름<span class="field">github</span></label>
+          <label>스펙 URL<span class="field">https://raw.githubusercontent.com/github/rest-api-description/main/…/api.github.com.json</span></label>
+          <label>테스트 토큰 · 메모리에만 두고 저장하지 않습니다<span class="field">••••••••••••••••</span></label>
+          <div class="lab" style="margin-top:10px">대상 설정</div>
+          <label>실제 서버 주소 · 스펙의 servers 첫 값<span class="field">https://api.github.com</span></label>
+          <label>공통 헤더<span class="field">Authorization: Bearer {토큰}</span></label>
+          <label>공통 값<span class="field">owner = geonhos</span></label>
+        </div>
+        <div>
+          <div class="lab">기능 고르기 · 고른 기능 6 / 전체 1,281</div>
+          <div class="grp">▾ <b>issues</b><span class="cnt">3 / 55</span></div>
+          <div class="feat"><span class="chk on">✓</span><span class="mono"><span class="method">POST</span> /repos/{owner}/{repo}/issues</span></div>
+          <div class="feat"><span class="chk on">✓</span><span class="mono"><span class="method">GET</span> /repos/{owner}/{repo}/issues/{issue_number}</span></div>
+          <div class="feat"><span class="chk on">✓</span><span class="mono"><span class="method">PATCH</span> /repos/{owner}/{repo}/issues/{issue_number}</span></div>
+          <div class="feat"><span class="chk"></span><span class="mono"><span class="method">GET</span> /repos/{owner}/{repo}/issues</span></div>
+          <div class="feat dim" style="font-size:12.5px">… 나머지 51개</div>
+          <div class="grp" style="margin-top:8px">▸ <b>repos</b><span class="cnt">3 / 201</span></div>
+          <div class="grp">▸ <b>pulls</b><span class="cnt">0 / 27</span></div>
+          <div class="grp">▸ <b>actions</b><span class="cnt">0 / 184</span></div>
+          <div class="dim" style="font-size:12.5px">… 묶음 42개 더</div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+</div>
+<script>
+document.querySelectorAll('.switch button').forEach(function (b) {
+  b.addEventListener('click', function () {
+    document.documentElement.dataset.look = b.dataset.look;
+    document.querySelectorAll('.switch button').forEach(function (x) {
+      x.setAttribute('aria-pressed', String(x === b));
+    });
+  });
+});
+var safety = document.getElementById('safety');
+safety.addEventListener('click', function () {
+  var off = safety.classList.toggle('is-off');
+  document.getElementById('bar').classList.toggle('off', off);
+  document.getElementById('safety-t').textContent = off ? '안전장치 꺼짐' : '안전장치 켜짐';
+});
+</script>
+</body>
+</html>

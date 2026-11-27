@@ -2,4 +2,5 @@ packages:
   - packages/*
 
 allowBuilds:
+  "@astryxdesign/core": false
   esbuild: true

@@ -1,9 +1,4 @@
-* { box-sizing: border-box; }
-html, body { height: 100%; }
-body { margin: 0; background: var(--bg); color: var(--text); font: var(--fs-body)/1.4 var(--font); -webkit-font-smoothing: antialiased; font-feature-settings: "tnum"; }
-#root { height: 100%; }
-a { color: inherit; text-decoration: none; }
-button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; padding: 0; }
+@layer app {
 
 .app { display: grid; grid-template-rows: var(--h-top) minmax(0, 1fr); height: 100vh; }
 
@@ -47,7 +42,7 @@ button.step:hover { background: var(--surface-2); }
 /* 알림·확인 창 */
 .notice { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-2); border-left: 3px solid var(--danger); font-weight: 600; }
 .notice-hint { font-weight: 400; color: var(--text-2); }
-dialog { width: 420px; max-width: calc(100vw - 32px); padding: 0; border: 0; border-radius: var(--radius-lg); background: var(--surface-2); color: var(--text); }
+dialog { width: 420px; max-width: calc(100vw - 32px); padding: 0; border: 0; border-radius: var(--radius-lg); background: var(--color-background-card); color: var(--color-text-primary); }
 dialog::backdrop { background: rgba(0, 0, 0, .55); }
 .dialog-inner { padding: 20px; }
 dialog h2 { margin: 0 0 8px; font-size: var(--fs-dialog-title); }
@@ -56,7 +51,6 @@ dialog h2 { margin: 0 0 8px; font-size: var(--fs-dialog-title); }
 .btn-primary, .btn-ghost { height: var(--h-button); padding: 0 20px; border-radius: var(--radius-sm); font-weight: 700; font-size: var(--fs-button); }
 .btn-primary { background: var(--accent); color: var(--accent-ink); }
 .btn-ghost { background: var(--surface-3); }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ① 등록 · ② 분석 */
 .form, .analyze { display: flex; flex-direction: column; gap: 12px; max-width: 640px; }
@@ -182,3 +176,4 @@ dialog h2 { margin: 0 0 8px; font-size: var(--fs-dialog-title); }
 .var-input { height: var(--h-input); width: 120px; padding: 0 8px; margin-right: 6px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-1); color: var(--text); font: inherit; }
 .record-features { display: flex; flex-direction: column; gap: 8px; }
 .kv .st { width: auto; white-space: nowrap; }
+}
