@@ -1604,7 +1604,14 @@ export async function runFlow(flow: Flow, spec: MockSpec, target: FlowTarget, op
   
   The safety case: `create_repo` is skipped by safety. `create_issue` gets `skipped-safety` because its `path.repo` comes from a skipped step. `get_issue` is skipped for the same reason. `delete_repo` is never reached, because `created` is empty, so it becomes `skipped-safety` with `NOT_CREATED`. That matches the expected `["skipped-safety" ×4]`. Note that the dependency check runs before the safety check, so `get_issue` (a GET) is still skipped.
 
-- [ ] **Step 8: run, pass.** `pnpm exec vitest run packages/core/test/flowRun.test.ts` → 10 passed.
+- [ ] **Step 7b: add the review's missing tests (#39).** Append these cases to `flowRun.test.ts` (final code is in the file; each was checked to fail under its mutant of `run.ts`):
+  - DELETE scope: a DELETE whose last path input is a `step` source on a non-creating step (`get_issue`), or on a creating step that has not run, is `skipped-safety` with `NOT_CREATED` and sends no DELETE; a failed create halts the run, so a later DELETE stays `pending`.
+  - Step order (decision 14): real target, safety on, `params: {}`: a POST step with an empty `path.owner` is `skipped-safety` with `missing: []`, never `stopped-empty`. A step skipped because its dependency was skipped also returns `missing: []` (fix in `exec`).
+  - Masking: tokens (`ghp_…`, `github_pat_…`) echoed in 2xx bodies, user input, URL, a raw 401 body, a JSON 401 body and a failure reason (token in the base URL userinfo) never appear in `JSON.stringify(run)`. `flowRunService.test.ts` checks the saved `flow-runs/…/real.json` the same way.
+  - Schema mismatch: the step is `diff`, later steps run, outcome `diff`.
+  - Teardown order: with `delete_issue` listed after `delete_repo`, the issue is deleted first, then the repo.
+
+- [ ] **Step 8: run, pass.** `pnpm exec vitest run packages/core/test/flowRun.test.ts` → 18 passed.
 
 - [ ] **Step 9: commit.** `git add packages/core/src/flow packages/core/src/record/index.ts packages/core/test/flowRun.test.ts && git commit -m "feat(core): run flows step by step with safety, value passing and teardown"`
 
