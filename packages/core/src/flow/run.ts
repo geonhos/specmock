@@ -70,7 +70,7 @@ export async function runFlow(flow: Flow, spec: MockSpec, target: FlowTarget, op
       const src = input.source;
       if (src.kind === "step") {
         const dep = results.get(src.step);
-        if (dep?.state === "skipped-safety") return { ...r, state: "skipped-safety", reason: `앞 단계 ${src.step}이(가) 건너뛰어져 값이 없습니다.` };
+        if (dep?.state === "skipped-safety") return { ...r, state: "skipped-safety", missing: [], reason: `앞 단계 ${src.step}이(가) 건너뛰어져 값이 없습니다.` };
         const v = responses.has(src.step) ? pick(responses.get(src.step), src.field) : undefined;
         if (v === undefined || v === null) r.missing.push(input.slot); else values[input.slot] = v;
       } else if (src.kind === "empty") {
