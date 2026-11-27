@@ -26,9 +26,9 @@ export function FlowTopBar(p: { name: string; target: TargetChoice; onTarget: (t
           endContent={
             <>
               <CheckboxInput label="정리" value={p.cleanup} onChange={(on) => p.onCleanup(on === true)} />
-              <Switch label="안전장치" value={p.safety} onChange={() => p.onSafety()} />
               {p.running && p.cancellable ? <Button variant="secondary" label="실행 취소" onClick={p.onCancel} /> : null}
               <Button variant="primary" label="전체 실행" isDisabled={p.running || p.blocked} onClick={p.onRun} />
+              <Switch label="안전장치" value={p.safety} onChange={() => p.onSafety()} />
             </>
           } />
       </div>
