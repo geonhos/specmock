@@ -23,7 +23,7 @@ it("사이드바에 서비스 목록과 + 서비스 등록, 단계 막대는 없
   fakeApi(base());
   render(<App />);
   const nav = await screen.findByRole("navigation", { name: "서비스" });
-  expect(within(nav).getByRole("link", { name: /petstore/ })).toBeTruthy();
+  expect(within(nav).getByRole("button", { name: /petstore/ })).toBeTruthy();
   expect(within(nav).getByRole("link", { name: "+ 서비스 등록" })).toBeTruthy();
   expect(screen.queryByText("① 등록")).toBeNull();
 });
@@ -45,7 +45,7 @@ it("등록된 서비스가 없으면 등록 화면", async () => {
 it("workspace-changed가 오면 시스템 목록을 다시 불러온다", async () => {
   const api = fakeApi(base());
   render(<App />);
-  await screen.findByRole("link", { name: /petstore/ });
+  await screen.findByRole("button", { name: /petstore/ });
   const count = () => api.calls.filter((c) => c === "GET /api/systems").length;
   const before = count();
   FakeEventSource.last!.emit("workspace-changed", { system: "pets", files: ["catalog.json"] });
@@ -55,7 +55,7 @@ it("workspace-changed가 오면 시스템 목록을 다시 불러온다", async 
 it("SSE가 끊기면 '연결이 끊겼어요' 알림, 다시 연결되면 사라지고 목록을 다시 불러온다", async () => {
   const api = fakeApi(base());
   render(<App />);
-  await screen.findByRole("link", { name: /petstore/ });
+  await screen.findByRole("button", { name: /petstore/ });
   const es = FakeEventSource.last!;
   es.emit("ready", {});
   const count = () => api.calls.filter((c) => c === "GET /api/systems").length;
@@ -70,7 +70,7 @@ it("SSE가 끊기면 '연결이 끊겼어요' 알림, 다시 연결되면 사라
 it("watch-error가 오면 새로고침 안내 알림", async () => {
   fakeApi(base());
   render(<App />);
-  await screen.findByRole("link", { name: /petstore/ });
+  await screen.findByRole("button", { name: /petstore/ });
   FakeEventSource.last!.emit("watch-error", { message: "boom" });
   expect((await screen.findByRole("alert")).textContent).toContain("변경 감지가 멈췄어요");
 });
@@ -78,7 +78,7 @@ it("watch-error가 오면 새로고침 안내 알림", async () => {
 it("언마운트하면 EventSource를 닫는다", async () => {
   fakeApi(base());
   const { unmount } = render(<App />);
-  await screen.findByRole("link", { name: /petstore/ });
+  await screen.findByRole("button", { name: /petstore/ });
   const es = FakeEventSource.last!;
   expect(es.closed).toBe(false);
   unmount();
@@ -91,7 +91,7 @@ it("SSE가 영구히 끊겨 포기하면 새로고침 안내", async () => {
   try {
     fakeApi(base());
     render(<App />);
-    await screen.findByRole("link", { name: /petstore/ });
+    await screen.findByRole("button", { name: /petstore/ });
     for (let i = 0; i < 10; i++) {
       FakeEventSource.last!.fail(true);
       await vi.advanceTimersByTimeAsync(60_000);
