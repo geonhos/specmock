@@ -12,7 +12,7 @@ import { pruneRecorded, recordedName } from "./recorded.js";
 import { applyParams, type Target } from "./target.js";
 
 export const MAX_RECORD_BYTES = 1_048_576;
-const NORMAL_CONTRACT = "정상 요청";
+export const NORMAL_CONTRACT = "정상 요청";
 const SAFE_METHODS = new Set<HttpMethod>(["GET", "HEAD"]);
 
 export interface RecordOptions {
@@ -47,7 +47,7 @@ export interface RecordRun { result: RecordResult; driftMarkdown: string }
 const NUMERIC = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/;
 
 /** 파싱된 JSON 값의 문자열 값(과 키 아닌 값)에 마스킹을 적용한다. 숫자는 `String(n)` 또는 수치(`Number(비밀)`, 정규화 문자열이 4자 이상)가 비밀(4자 이상)과 일치할 때만 `"***"`로 바꾼다. 불리언·null은 그대로 둔다. */
-function maskValues(v: unknown, mask: (s: string) => string, secrets: readonly string[]): unknown {
+export function maskValues(v: unknown, mask: (s: string) => string, secrets: readonly string[]): unknown {
   if (typeof v === "string") return mask(v);
   if (typeof v === "number") return secrets.some((s) => s.length >= 4 && (s === String(v) || (NUMERIC.test(s) && String(Number(s)).length >= 4 && Number(s) === v))) ? "***" : v;
   if (Array.isArray(v)) return v.map((x) => maskValues(x, mask, secrets));
@@ -56,7 +56,7 @@ function maskValues(v: unknown, mask: (s: string) => string, secrets: readonly s
 }
 
 /** 바디에 비밀이 섞였을 수 있을 때: raw는 텍스트에, JSON은 문자열 값에만 적용한다(JSON 이스케이프·숫자 보존). */
-function maskBody(kind: "json" | "raw" | "empty" | "truncated", body: unknown, mask: (s: string) => string, secrets: readonly string[]): { kind: "json" | "raw"; body: unknown } | null {
+export function maskBody(kind: "json" | "raw" | "empty" | "truncated", body: unknown, mask: (s: string) => string, secrets: readonly string[]): { kind: "json" | "raw"; body: unknown } | null {
   if (kind === "raw") {
     const b = body as { raw: string; contentType: string };
     return { kind: "raw", body: { raw: mask(b.raw), contentType: b.contentType } };
@@ -76,7 +76,7 @@ function redactValues(r: Record<string, string>, secrets: string[]): Record<stri
 }
 
 /** 녹화 파일의 요청 헤더. target에서 온 헤더는 이름과 무관하게 전부 `***`(이름은 남김), contract 헤더는 값을 유지한다. */
-function recordedHeaders(contractHeaders: Record<string, string>, target: Target): Record<string, string> {
+export function recordedHeaders(contractHeaders: Record<string, string>, target: Pick<Target, "headers" | "secrets">): Record<string, string> {
   const fromTarget = Object.fromEntries(Object.keys(target.headers).map((k) => [k, "***"]));
   return maskHeaders(mergeHeaders(redactValues(contractHeaders, target.secrets), fromTarget));
 }
