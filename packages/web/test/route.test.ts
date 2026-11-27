@@ -1,17 +1,10 @@
 import { expect, it } from "vitest";
-import { parseRoute } from "../src/route";
+import { parseRoute, pathFor } from "../src/route";
 
 it("경로를 화면으로 푼다", () => {
   expect(parseRoute("/new")).toEqual({ screen: "new" });
-  expect(parseRoute("/systems/a%20b/select")).toEqual({ screen: "select", system: "a b" });
-  expect(parseRoute("/nope")).toEqual({ screen: "home" });
-});
-
-it("잘못된 % 인코딩은 던지지 않고 홈", () => {
-  expect(parseRoute("/systems/%E0%A4%A/analyze")).toEqual({ screen: "home" });
-  expect(parseRoute("/systems/%/verify")).toEqual({ screen: "home" });
-});
-
-it("/systems/stripe/record를 record 화면으로 푼다", () => {
-  expect(parseRoute("/systems/stripe/record")).toEqual({ screen: "record", system: "stripe" });
+  expect(parseRoute("/systems/a%20b/flows")).toEqual({ screen: "flows", system: "a b" });
+  expect(parseRoute("/systems/gh/select")).toEqual({ screen: "home" }); // 6단계 화면 경로는 더 없다
+  expect(parseRoute("/systems/%/flows")).toEqual({ screen: "home" });
+  expect(pathFor("flows", "a b")).toBe("/systems/a%20b/flows");
 });

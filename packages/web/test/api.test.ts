@@ -16,8 +16,8 @@ it("ok면 data를, 아니면 ApiError(code, hint)를", async () => {
 
 it("409 busy는 jobId를 싣고, POST 본문은 JSON, 이름은 인코딩한다", async () => {
   const f = fakeApi({
-    "POST /api/systems/a%20b/extract": () => ({ status: 409, body: { ok: false, error: { code: "busy", message: "진행 중" }, jobId: "j1" } }),
+    "POST /api/systems/a%20b/flows/f1/run": () => ({ status: 409, body: { ok: false, error: { code: "busy", message: "진행 중" }, jobId: "j1" } }),
   });
-  await expect(api.extract("a b", true)).rejects.toMatchObject({ status: 409, code: "busy", jobId: "j1" });
-  expect(f.bodies[0]).toEqual({ refresh: true });
+  await expect(api.runFlow("a b", "f1", ["mock"], true)).rejects.toMatchObject({ status: 409, code: "busy", jobId: "j1" });
+  expect(f.bodies[0]).toEqual({ targets: ["mock"], cleanup: true });
 });

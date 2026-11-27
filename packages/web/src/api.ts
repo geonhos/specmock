@@ -1,5 +1,4 @@
-import type { ApiErr, ApiOk, EnvInfo, EnvPutBody, EnvPutResult, FeatureList, Job, JobList, RecordBody, RecordLast, SystemOverview, SystemSummary, TargetInfo, TargetPutBody } from "@specmock/ui-server/api-types";
-import type { ChunkSummary, Feature, Selection } from "@specmock/core";
+import type { ApiErr, ApiOk, EnvInfo, EnvPutBody, EnvPutResult, FeatureGroups, FeatureList, FlowDetail, FlowList, FlowSource, FlowTargetName, Job, JobList, SafetyState, SystemOverview, SystemSummary, TargetInfo, TargetPutBody } from "@specmock/ui-server/api-types";
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string, readonly hint?: string, readonly jobId?: string, readonly from?: string, readonly to?: string) { super(message); this.name = "ApiError"; }
@@ -21,20 +20,21 @@ export const api = {
   ingest: (system: string, origins: string[]) => call<unknown>("POST", "/api/systems", { system, origins }),
   overview: (name: string) => call<SystemOverview>("GET", s(name)),
   analyze: (name: string) => call<{ mode: "catalog" | "prepared" }>("POST", `${s(name)}/analyze`),
-  chunks: (name: string) => call<ChunkSummary[]>("GET", `${s(name)}/chunks`),
   features: (name: string, group?: string) => call<FeatureList>("GET", `${s(name)}/features${group ? `?group=${encodeURIComponent(group)}` : ""}`),
-  feature: (name: string, id: string) => call<Feature>("GET", `${s(name)}/features/${encodeURIComponent(id)}`),
-  selection: (name: string) => call<Selection | null>("GET", `${s(name)}/selection`),
+  featureGroups: (name: string) => call<FeatureGroups>("GET", `${s(name)}/feature-groups`),
+  flows: (name: string) => call<FlowList>("GET", `${s(name)}/flows`),
+  inferFlows: (name: string) => call<unknown>("POST", `${s(name)}/flows/infer`, {}),
+  flow: (name: string, id: string) => call<FlowDetail>("GET", `${s(name)}/flows/${encodeURIComponent(id)}`),
+  setFlowInput: (name: string, id: string, stepId: string, slot: string, source: FlowSource) =>
+    call<FlowDetail>("POST", `${s(name)}/flows/${encodeURIComponent(id)}/inputs`, { stepId, slot, source }),
+  runFlow: (name: string, id: string, targets: FlowTargetName[], cleanup: boolean) =>
+    call<{ jobId: string }>("POST", `${s(name)}/flows/${encodeURIComponent(id)}/run`, { targets, cleanup }),
+  safety: (name: string) => call<SafetyState>("GET", `${s(name)}/safety`),
+  setSafety: (name: string, on: boolean) => call<SafetyState>("POST", `${s(name)}/safety`, { on }),
   saveSelection: (name: string, ids: string[]) => call<{ selected: string[] }>("POST", `${s(name)}/selection`, { ids }),
-  extract: (name: string, refresh = false) => call<{ jobId: string }>("POST", `${s(name)}/extract`, { refresh }),
-  generate: (name: string, outDir: string, force = false, language?: string) =>
-    call<{ jobId: string }>("POST", `${s(name)}/generate`, { outDir, force, ...(language ? { language } : {}) }),
-  verify: (name: string) => call<{ jobId: string }>("POST", `${s(name)}/verify`, {}),
   target: (name: string) => call<TargetInfo>("GET", `${s(name)}/target`),
   putTarget: (name: string, body: TargetPutBody) => call<TargetInfo>("PUT", `${s(name)}/target`, body),
   setEnv: (name: string, values: EnvPutBody["values"]) => call<EnvPutResult>("POST", `${s(name)}/env`, { values }),
-  recordLast: (name: string) => call<RecordLast>("GET", `${s(name)}/record/last`),
-  record: (name: string, body: RecordBody) => call<{ jobId: string }>("POST", `${s(name)}/record`, body),
   jobs: () => call<JobList>("GET", "/api/jobs"),
   cancel: (id: string) => call<{ state: Job["state"] }>("POST", `/api/jobs/${id}/cancel`),
 };

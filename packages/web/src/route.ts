@@ -1,22 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 
-export type Screen = "home" | "new" | "analyze" | "select" | "generate" | "verify" | "record";
+export type Screen = "home" | "new" | "flows";
 export interface Route { screen: Screen; system?: string }
-
-export const STEP_SCREENS = ["new", "analyze", "select", "generate", "verify", "record"] as const;
 
 export function parseRoute(pathname: string): Route {
   if (pathname === "/new") return { screen: "new" };
-  const m = /^\/systems\/([^/]+)\/(analyze|select|generate|verify|record)$/.exec(pathname);
+  const m = /^\/systems\/([^/]+)\/flows$/.exec(pathname);
   if (m) {
-    try { return { screen: m[2] as Screen, system: decodeURIComponent(m[1]!) }; } catch { /* 잘못된 % 인코딩 */ }
+    try { return { screen: "flows", system: decodeURIComponent(m[1]!) }; } catch { /* 잘못된 % 인코딩 */ }
   }
   return { screen: "home" };
 }
 
 export function pathFor(screen: Screen, system?: string): string {
   if (screen === "new" || !system) return screen === "home" ? "/" : "/new";
-  return `/systems/${encodeURIComponent(system)}/${screen}`;
+  return `/systems/${encodeURIComponent(system)}/flows`;
 }
 
 /** 라우터 없이 history API로 처리한다. 서버가 SPA 폴백을 주므로 새로 고침해도 같은 화면이 열린다. */
