@@ -139,6 +139,6 @@ describe("flow run route", () => {
     expect((await c.req("GET", "/systems/zzz/flows")).status).toBeGreaterThanOrEqual(400);
     expect((await c.req("POST", "/systems/s/flows/tickets/inputs", { stepId: "x" })).status).toBe(400);
     expect((await c.req("POST", "/systems/s/flows/tickets/inputs", { stepId: "get_ticket", slot: "path.nope", source: { kind: "empty" } })).status).toBe(400);
-    expect((await c.req("POST", "/systems/s/flows/nope/inputs", { stepId: "get_ticket", slot: "path.id", source: { kind: "empty" } })).status).toBe(400);
+    expect((await c.req("POST", "/systems/s/flows/nope/inputs", { stepId: "get_ticket", slot: "path.id", source: { kind: "empty" } })).status).toBe(404);
   });
 });
