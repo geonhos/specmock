@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -36,6 +36,16 @@ describe("runFlowTargets", () => {
     expect(api.requests[1]!.headers.authorization).toBe("Bearer ghp_abcdefghijklmnopqrstuvwxyz0123");
     expect(api.requests[0]!.headers.authorization).toBeUndefined(); // mock gets no real token
     expect((await readFlowRun(ws, "s", "tickets", "real"))!.outcome).toBe("success");
+  });
+  it("the saved flow-runs file holds no token even when the target echoes it", async () => {
+    const TOKEN = "ghp_abcdefghijklmnopqrstuvwxyz0123";
+    await api.close();
+    api = await startFakeTarget(() => ({ status: 201, body: { id: 1, echo: `Bearer ${TOKEN}`, again: TOKEN } }));
+    await writeFile(ws.file("s", "target.json"), JSON.stringify({ baseUrl: api.url, headers: { authorization: "Bearer ${TOKEN}" } }));
+    await runFlowTargets(ws, "s", "tickets", { targets: ["real"], cleanup: true, safety: false, env: { TOKEN } });
+    const saved = await readFile(ws.file("s", "flow-runs/tickets/real.json"), "utf8");
+    expect(saved).toContain("***");
+    expect(saved).not.toContain(TOKEN);
   });
   it("mock launch failure fails only the mock run", async () => {
     await writeFile(ws.file("s", "target.json"), JSON.stringify({ baseUrl: api.url }));
