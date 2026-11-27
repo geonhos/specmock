@@ -6,7 +6,7 @@ import YAML from "yaml";
 import { analyzeOpenApiDocument } from "../src/analyze/openapi.js";
 import { inferFlows, linkField, mergeFlows, parseResourcePath, responseProperties, singular } from "../src/flow/infer.js";
 import { dereferenceOpenApi } from "../src/ingest/openapi.js";
-import type { FlowsFile } from "../src/flow/types.js";
+import { FLOW_ID, FlowsFileSchema, type FlowsFile } from "../src/flow/types.js";
 import type { Feature } from "../src/types.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -134,6 +134,49 @@ describe("inferFlows", () => {
   });
 });
 
+const asFile = (flows: ReturnType<typeof inferFlows>["flows"]) => ({ system: "s", catalogHash: "h", inferredAt: "t", notes: [], flows });
+
+describe("inferFlows ids from raw path segments", () => {
+  it("keeps the file valid for segments with . : @ { }", () => {
+    const cases: Feature[][] = [
+      [feat("POST", "/chat.postMessage", { ts: { type: "string" } })],
+      [feat("POST", "/v1/{name}:cancel", { id: { type: "string" } })],
+      [feat("POST", "/a/x.y", { id: { type: "string" } }), feat("POST", "/b/x.y", { id: { type: "string" } })],
+    ];
+    for (const features of cases) {
+      const { flows } = inferFlows(features);
+      expect(flows.length).toBeGreaterThan(0);
+      expect(FlowsFileSchema.safeParse(asFile(flows)).success).toBe(true);
+    }
+  });
+  it("gives distinct ids when different segments sanitize to the same id", () => {
+    const { flows } = inferFlows([feat("POST", "/a/x.y", { id: { type: "string" } }), feat("POST", "/b/x_y", { id: { type: "string" } }), feat("POST", "/c/x:y", { id: { type: "string" } })]);
+    const ids = flows.map((f) => f.id);
+    expect(ids).toEqual(["x_y", "x_y_2", "x_y_3"]);
+    for (const f of flows) expect(f.steps.map((s) => s.id)).toEqual(["create_x_y"]);
+    expect(flows.map((f) => f.resource)).toEqual(["x.y", "x_y", "x:y"]); // 사람이 읽는 이름은 그대로
+  });
+  it("makes step ids unique within a flow after sanitizing", () => {
+    const { flows } = inferFlows([
+      feat("POST", "/a/{a_id}/x.y", { id: { type: "string" } }), feat("POST", "/a", { id: { type: "string" } }),
+      feat("POST", "/a/{a_id}/x_y", { id: { type: "string" } }),
+    ]);
+    for (const f of flows) expect(new Set(f.steps.map((s) => s.id)).size).toBe(f.steps.length);
+    expect(FlowsFileSchema.safeParse(asFile(flows)).success).toBe(true);
+  });
+  it("every flow id and step id matches FLOW_ID for odd paths", () => {
+    const paths = ["/chat.postMessage", "/v1/{name}:cancel", "/@me/items", "/x.y/{id}/z.w", "/a%20b", "/{p}/ä", "/m/{id}:verb"];
+    for (const p of paths) {
+      const { flows } = inferFlows([feat("POST", p, { id: { type: "string" } }), feat("GET", `${p === "/m/{id}:verb" ? "/m" : p}/{id}`), feat("DELETE", `${p === "/m/{id}:verb" ? "/m" : p}/{id}`)]);
+      for (const f of flows) {
+        expect(f.id).toMatch(FLOW_ID);
+        for (const s of f.steps) expect(s.id).toMatch(FLOW_ID);
+      }
+      expect(FlowsFileSchema.safeParse(asFile(flows)).success).toBe(true);
+    }
+  });
+});
+
 describe("mergeFlows (re-inference keeps claude/user inputs)", () => {
   it("keeps claude and user inputs by flow+step+slot, replaces rule inputs", () => {
     const next = inferFlows([feat("POST", "/tickets", { id: { type: "integer" } }, { type: "object", required: ["title"], properties: { title: { type: "string" } } })]);
@@ -142,5 +185,16 @@ describe("mergeFlows (re-inference keeps claude/user inputs)", () => {
     expect(merged[0]!.steps[0]!.inputs).toEqual([{ slot: "body.title", source: { kind: "user", value: "hello" }, basis: "user" }]);
     const fromRule: FlowsFile = { ...prev, flows: [{ ...prev.flows[0]!, steps: [{ ...prev.flows[0]!.steps[0]!, inputs: [{ slot: "body.title", source: { kind: "fixed", value: "old" }, basis: "rule" }] }] }] };
     expect(mergeFlows(fromRule, next.flows)[0]!.steps[0]!.inputs[0]!.source).toEqual({ kind: "empty" });
+  });
+  it("keeps Claude Code (basis claude) inputs and refreshes rule inputs", () => {
+    const next = inferFlows([feat("POST", "/tickets", { id: { type: "integer" } }, { type: "object", required: ["title", "body"], properties: { title: { type: "string" }, body: { type: "string" } } })]);
+    const step = next.flows[0]!.steps[0]!;
+    const prev: FlowsFile = { system: "s", catalogHash: "h", inferredAt: "t", notes: [], flows: [{ ...next.flows[0]!, steps: [{ ...step, inputs: [
+      { slot: "body.title", source: { kind: "fixed", value: "from claude" }, basis: "claude" },
+      { slot: "body.body", source: { kind: "fixed", value: "stale" }, basis: "rule" },
+    ] }] }] };
+    const inputs = mergeFlows(prev, next.flows)[0]!.steps[0]!.inputs;
+    expect(inputs.find((i) => i.slot === "body.title")).toEqual({ slot: "body.title", source: { kind: "fixed", value: "from claude" }, basis: "claude" });
+    expect(inputs.find((i) => i.slot === "body.body")).toEqual({ slot: "body.body", source: { kind: "empty" }, basis: "rule" });
   });
 });

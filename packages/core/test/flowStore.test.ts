@@ -67,6 +67,21 @@ describe("flow store", () => {
     expect(inputOf(setInput(manual, "issues", "create_issue", "path.repo", link, "claude"), "get_issue", "path.repo")!.source).toEqual({ kind: "user", value: "other" });
     expect(inputOf(setInput(file, "issues", "create_issue", "path.repo", { kind: "user", value: "x" }, "user"), "get_issue", "path.repo")!.source).toEqual(empty);
   });
+  it("propagation needs the same creating step: same slot name with another createdBy stays empty", () => {
+    const nested: Flow = { id: "cards", name: "card 다루기", resource: "card", steps: [
+      { id: "create_project", featureId: "p_create", role: "prep", creates: "project", inputs: [] },
+      { id: "get_project", featureId: "p_get", role: "prep", inputs: [{ slot: "path.id", source: empty, basis: "rule", createdBy: "create_project" }] },
+      { id: "create_card", featureId: "c_create", role: "main", creates: "card", inputs: [] },
+      { id: "get_card", featureId: "c_get", role: "main", inputs: [{ slot: "path.id", source: empty, basis: "rule", createdBy: "create_card" }] },
+      { id: "update_card", featureId: "c_update", role: "main", inputs: [{ slot: "path.id", source: empty, basis: "rule", createdBy: "create_card" }] },
+    ] };
+    const f: FlowsFile = { ...file, flows: [nested] };
+    const link = { kind: "step", step: "create_card", field: "id" } as const;
+    const next = setInput(f, "cards", "get_card", "path.id", link, "user");
+    const at = (id: string) => next.flows[0]!.steps.find((s) => s.id === id)!.inputs[0]!;
+    expect(at("update_card").source).toEqual(link);
+    expect(at("get_project").source).toEqual(empty);
+  });
   it("missingFeatures lists feature ids absent from the selection", () => {
     expect(missingFeatures(flow, new Set(["issues_create"]))).toEqual(["repos_create", "issues_get"]);
   });
