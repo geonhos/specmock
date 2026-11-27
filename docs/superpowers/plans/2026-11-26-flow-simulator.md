@@ -1625,7 +1625,7 @@ export async function runFlow(flow: Flow, spec: MockSpec, target: FlowTarget, op
   - Schema mismatch: the step is `diff`, later steps run, outcome `diff`.
   - Teardown order: with `delete_issue` listed after `delete_repo`, the issue is deleted first, then the repo.
 
-- [ ] **Step 7c: cancel cleans up and saves (user decision 17, #39).** A cancel (abort signal) is a failure of the run, not an exception. `runFlow` stops sending steps (unsent ones stay `pending` with `CANCELLED_NOT_RUN`), marks the in-flight step `failed` with `CANCELLED` (a create: `CANCELLED_CREATE`, because its response is unknown the run cannot delete it and has no id to list), runs the teardown under the same rules, and returns outcome `cancelled`. Teardown requests get `signal: undefined` (the per-request timeout stays), so the aborted signal does not cancel them. A cancel during teardown lets the request already sent finish; the rest become `leftover` steps and leftovers with `CANCELLED_LEFT`. `runFlowTargets` saves the cancelled run and skips the remaining targets. Tests in `flowRun.test.ts` (`describe("cancel …")`): cancel between two steps (a `fetch` spy aborts after the first response is read), cancel in flight (the stub delays the response), cleanup off, cancel during teardown, no token in the result; `flowRunService.test.ts`: the cancelled run is saved without the token and the next target is not run. Each failed before the change (the runner threw `AbortError`).
+- [ ] **Step 7c: cancel cleans up and saves (user decision 17, #39).** A cancel (abort signal) is a failure of the run, not an exception. `runFlow` stops sending steps (unsent ones stay `pending` with `CANCELLED_NOT_RUN`), marks the in-flight step `failed` with `CANCELLED` (a create: `CANCELLED_CREATE`, because its response is unknown the run cannot delete it and has no id to list), runs the teardown under the same rules, and returns outcome `cancelled`. Teardown requests get `signal: undefined` (the per-request timeout stays), so the aborted signal does not cancel them. A cancel during teardown lets the request already sent finish; the rest become `leftover` steps and leftovers with `CANCELLED_LEFT`. `runFlowTargets` saves the cancelled run. Before each target it checks the signal: an aborted signal means the target is not started and its file is not written, so its previous saved run stays (user decision 18). The result is `{ runs, notRun }`; `notRun` lists the targets that were not started. Tests in `flowRun.test.ts` (`describe("cancel …")`): cancel between two steps (a `fetch` spy aborts after the first response is read), cancel in flight (the stub delays the response), cleanup off, cancel during teardown, no token in the result; `flowRunService.test.ts`: the cancelled run is saved without the token and the next target is not run; a cancel during mock launch saves a `cancelled` mock run (not the "build the mock first" failure); a cancel before a target starts (during mock launch, or in `mock.stop()`) leaves that target's `real.json` byte-identical and lists it in `notRun`. Each failed before the change (the runner threw `AbortError`).
 
 - [ ] **Step 8: run, pass.** `pnpm exec vitest run packages/core/test/flowRun.test.ts` → 23 passed.
 
@@ -1778,7 +1778,7 @@ function failedRun(flowId: string, target: FlowTargetName, safety: boolean, clea
 }
 
 /** 흐름을 고른 대상에 차례로 실행하고 대상별 결과를 flow-runs/에 쓴다. 한 대상의 실패가 다른 대상을 막지 않는다. */
-export async function runFlowTargets(ws: Workspace, system: string, flowId: string, opts: RunFlowTargetsOptions): Promise<{ runs: FlowRun[] }> {
+export async function runFlowTargets(ws: Workspace, system: string, flowId: string, opts: RunFlowTargetsOptions): Promise<{ runs: FlowRun[]; notRun: FlowTargetName[] }> {
   const file = await readFlows(ws, system);
   const flow = file?.flows.find((f) => f.id === flowId);
   if (!flow) throw new Error(`알 수 없는 흐름: ${flowId}`);
@@ -1786,7 +1786,10 @@ export async function runFlowTargets(ws: Workspace, system: string, flowId: stri
   const missing = missingFeatures(flow, new Set(spec.features.map((f) => f.id)));
   if (missing.length > 0) throw new Error(`기능 없음: ${missing.join(", ")} (기능 선택이 바뀌었습니다. 흐름을 다시 추론하세요)`);
   const runs: FlowRun[] = [];
+  const notRun: FlowTargetName[] = [];
   for (const name of opts.targets) {
+    // 취소된 뒤에는 남은 대상을 시작하지 않고 그 대상의 지난 실행 기록(파일)을 그대로 둔다.
+    if (opts.signal?.aborted) { notRun.push(name); continue; }
     opts.onEvent?.({ stage: "flow", message: `${flow.name}: ${name} 실행` });
     let run: FlowRun;
     if (name === "mock") {
@@ -1810,9 +1813,8 @@ export async function runFlowTargets(ws: Workspace, system: string, flowId: stri
     }
     await writeFlowRun(ws, system, run);
     runs.push(run);
-    if (run.outcome === "cancelled") break; // 취소하면 남은 대상은 실행하지 않는다.
   }
-  return { runs };
+  return { runs, notRun };
 }
 ```
 
