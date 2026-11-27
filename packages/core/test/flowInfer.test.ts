@@ -107,7 +107,7 @@ describe("inferFlows", () => {
   it("GitHub-like spec: issues flow as the spec expects (§2 '예상하는 결과')", async () => {
     // ingest와 같은 순서: dereference 뒤 analyze(analyzeOpenApiDocument는 $ref를 풀지 않는다, src/analyze/openapi.ts:17)
     const doc = await dereferenceOpenApi(GITHUB, YAML.parse(await readFile(GITHUB, "utf8")));
-    const features = analyzeOpenApiDocument(doc);
+    const features = analyzeOpenApiDocument(doc as never);
     const at = new Map(features.map((f) => [f.id, `${f.method} ${f.path}`]));
     const { flows, notes } = inferFlows(features);
     expect(flows.map((f) => [f.id, f.name, f.resource])).toEqual([["repos", "repo 다루기", "repo"], ["issues", "issue 다루기", "issue"]]);
