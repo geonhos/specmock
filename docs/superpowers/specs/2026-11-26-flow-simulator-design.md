@@ -36,7 +36,7 @@ specmock은 로컬에서 도는 개인 업무 도우미입니다. 호스팅, 공
 
 ### 지금 코드의 사실 (analyst 조사, 2026-11-26)
 
-상세는 `.harness/flow-sim-facts-detail.md`에 있습니다. 경로는 `packages/core/src/` 기준입니다.
+경로는 `packages/core/src/` 기준입니다.
 
 - 서비스 이름으로 스펙을 찾는 등록부가 없습니다. `ingest`는 origins가 비면 오류를 냅니다(`ingest/index.ts:136`).
 - 실제 GitHub 스펙(1,281 기능)을 지금의 처리 흐름으로 돌려 측정했습니다. ingest는 4.09초, `source.json`은 56.8 MB, `catalog.json`은 37.3 MB이고 실패는 없었습니다. 이 스펙은 `links`와 `security`를 선언하지 않습니다. 상세는 `docs/superpowers/notes/flow-simulator-github-measure.md`에 있습니다.
@@ -215,7 +215,7 @@ GitHub 스펙 측정을 마쳤습니다. 결과는 `docs/superpowers/notes/flow-
 
 자원 그래프, 흐름 단계의 추가·삭제·순서 바꾸기, 실행 기록 비교, 색 주제 설정.
 
-색, 글꼴, 세부 모양은 구현 전에 시안 페이지를 한 번 더 만들어 사용자의 확인을 받습니다. 지금 시안은 배치만 정했습니다.
+모양은 "Astryx neutral" 시안(2026-11-27 확정)을 따르며, `@astryxdesign/core`로 만듭니다. 단계 상태 8종의 색은 CSS 변수 8개(`--st-*`)로 두고, 한글은 OS 글꼴을 씁니다. 밝은 모드만 지원합니다.
 
 ## 5. 오류 처리, 테스트, 완료 조건
 
