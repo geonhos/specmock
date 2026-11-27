@@ -14,7 +14,8 @@ export function Sidebar({ systems, current, go }: { systems: SystemSummary[]; cu
         <List density="compact">
           {systems.map((s) => {
             const to = pathFor("flows", s.name);
-            return <ListItem key={s.name} label={s.name} href={to} onClick={link(to)} isSelected={s.name === current} />;
+            // No href: Astryx ListItem never calls onClick when it renders an anchor, which made every switch a full page load.
+            return <ListItem key={s.name} label={s.name} onClick={() => go(to)} isSelected={s.name === current} />;
           })}
         </List>
         {/* Astryx Button renders a <button>, so the register entry is a plain link styled like a ghost button. */}
