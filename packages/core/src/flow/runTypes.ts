@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { FlowRole } from "./types.js";
+import { FLOW_ID, FlowRole } from "./types.js";
 
 export const FlowTargetName = z.enum(["mock", "real"]);
 export type FlowTargetName = z.infer<typeof FlowTargetName>;
@@ -33,7 +33,7 @@ export type FlowRunOutcome = z.infer<typeof FlowRunOutcome>;
 
 /** `.specmock/<system>/flow-runs/<flowId>/<target>.json`. 대상별 마지막 실행 하나. */
 export const FlowRunSchema = z.object({
-  flowId: z.string(),
+  flowId: z.string().regex(FLOW_ID),
   target: FlowTargetName,
   startedAt: z.string(),
   finishedAt: z.string(),

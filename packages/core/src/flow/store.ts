@@ -1,5 +1,6 @@
 import type { Workspace } from "../workspace.js";
-import { FlowsFileSchema, type Flow, type FlowBasis, type FlowSource, type FlowsFile } from "./types.js";
+import { FlowRunSchema, type FlowRun, type FlowTargetName } from "./runTypes.js";
+import { FLOW_ID, FlowsFileSchema, type Flow, type FlowBasis, type FlowSource, type FlowsFile } from "./types.js";
 
 export const FLOWS_FILE = "flows.json";
 
@@ -47,4 +48,19 @@ export function emptySlots(flow: Flow, params: Record<string, string>): string[]
 
 export function missingFeatures(flow: Flow, featureIds: ReadonlySet<string>): string[] {
   return [...new Set(flow.steps.map((s) => s.featureId).filter((id) => !featureIds.has(id)))];
+}
+
+export const FLOW_RUNS_DIR = "flow-runs";
+export function flowRunName(flowId: string, target: FlowTargetName): string {
+  if (!FLOW_ID.test(flowId)) throw new Error(`잘못된 흐름 id: ${flowId}`);
+  return `${FLOW_RUNS_DIR}/${flowId}/${target}.json`;
+}
+
+export async function readFlowRun(ws: Workspace, system: string, flowId: string, target: FlowTargetName): Promise<FlowRun | null> {
+  const name = flowRunName(flowId, target);
+  return (await ws.exists(system, name)) ? ws.read(system, name, FlowRunSchema) : null;
+}
+
+export async function writeFlowRun(ws: Workspace, system: string, run: FlowRun): Promise<string> {
+  return ws.write(system, flowRunName(run.flowId, run.target), FlowRunSchema, run);
 }
