@@ -6,6 +6,8 @@ export interface ResourcePath { resource: string; kind: "list" | "item"; params:
 const isParam = (s: string) => /^\{[^}]+\}$/.test(s);
 /** 흐름 id로 쓰지 않는 이름(ui-server 경로 `/flows/infer`와 겹침). */
 const RESERVED_IDS = new Set(["infer"]);
+/** 경로 구간을 흐름·단계 id(`FLOW_ID`)로 바꾼다. 허용 밖 문자는 `_`. 사람이 읽는 이름은 건드리지 않는다. */
+const idPart = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, "_");
 
 /** R1. 끝의 `{변수}`를 떼고 남은 마지막 고정 구간이 자원이다. 변수만 있는 경로는 null. */
 export function parseResourcePath(p: string): ResourcePath | null {
@@ -164,18 +166,19 @@ export function inferFlows(features: Feature[]): InferResult {
       steps.push({ id, featureId: feature.id, role, inputs: stepInputs(feature, creators), ...(creates ? { creates } : {}) });
       if (creates) creators.set(creates, { stepId: id, feature });
     };
-    for (const p of chain) if (p.create) add(`create_${p.s}`, p.create, "prep", p.s);
-    add(`create_${g.s}`, g.create, "main", g.s);
-    if (g.get) add(`get_${g.s}`, g.get, "main");
+    for (const p of chain) if (p.create) add(`create_${idPart(p.s)}`, p.create, "prep", p.s);
+    add(`create_${idPart(g.s)}`, g.create, "main", g.s);
+    if (g.get) add(`get_${idPart(g.s)}`, g.get, "main");
     const updates = [...g.updates].sort((a, b) => (a.method === b.method ? 0 : a.method === "PATCH" ? -1 : 1));
-    for (const u of updates) add(`update_${g.s}`, u, "main");
+    for (const u of updates) add(`update_${idPart(g.s)}`, u, "main");
     const parentDel = [...chain].reverse().find((p) => p.del && p.create); // 지우면 자식도 사라지는 가장 가까운 상위
-    if (g.del) add(`delete_${g.s}`, g.del, "cleanup");
+    if (g.del) add(`delete_${idPart(g.s)}`, g.del, "cleanup");
     else if (parentDel) notes.push(`${g.s}: 삭제 기능이 없어 상위 자원 ${parentDel.s}을(를) 지울 때 함께 지워진다고 봅니다. 상위 삭제가 실패하거나 정리를 끄면 "남은 자원"으로 알립니다.`);
     else notes.push(`${g.s}: 삭제 기능이 없어 실행 뒤 "남은 자원"으로 알립니다.`);
-    for (const p of [...chain].reverse()) if (p.del && p.create) add(`delete_${p.s}`, p.del, "cleanup");
-    let id = g.resource.replace(/[^A-Za-z0-9_-]/g, "_");
-    for (let n = 2; usedIds.has(id); n++) id = `${g.resource}_${n}`;
+    for (const p of [...chain].reverse()) if (p.del && p.create) add(`delete_${idPart(p.s)}`, p.del, "cleanup");
+    const base = idPart(g.resource);
+    let id = base;
+    for (let n = 2; usedIds.has(id); n++) id = `${base}_${n}`;
     usedIds.add(id);
     flows.push({ id, name: `${g.s} 다루기`, resource: g.s, steps });
   }
