@@ -1,10 +1,27 @@
+import { createServer, type Server } from "node:http";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { MockSpecSchema, SourceSchema, writeFlows } from "@specmock/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { startFakeTarget, type FakeTarget } from "../../core/test/fakeTarget.js";
 import { createApp } from "../src/app.js";
+
+interface FakeTarget { url: string; requests: { method: string; path: string }[]; close: () => Promise<void> }
+/** 요청을 기록하는 가짜 실제 서버. handler가 응답과 지연을 정한다. */
+async function startFakeTarget(handler: (r: { method: string; path: string }) => { status: number; body: unknown; delayMs?: number }): Promise<FakeTarget> {
+  const requests: { method: string; path: string }[] = [];
+  const server: Server = createServer((req, res) => {
+    const r = { method: req.method ?? "GET", path: new URL(req.url ?? "/", "http://x").pathname };
+    requests.push(r);
+    req.resume();
+    const out = handler(r);
+    setTimeout(() => { res.writeHead(out.status, { "content-type": "application/json" }); res.end(JSON.stringify(out.body)); }, out.delayMs ?? 0);
+  });
+  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+  const addr = server.address();
+  return { url: `http://127.0.0.1:${typeof addr === "object" && addr ? addr.port : 0}`, requests,
+    close: () => new Promise<void>((ok) => { server.closeAllConnections(); server.close(() => ok()); }) };
+}
 
 const HOST = { host: "127.0.0.1:4310", "content-type": "application/json" };
 let root: string; let api: FakeTarget;

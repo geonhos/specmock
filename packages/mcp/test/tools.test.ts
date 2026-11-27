@@ -20,10 +20,10 @@ async function copySample(): Promise<{ pets: string; recorded: unknown }> {
 }
 
 describe("tool registry", () => {
-  it("registers exactly TOOL_NAMES (13 tools, no leftovers)", async () => {
+  it("registers exactly TOOL_NAMES (15 tools, no leftovers)", async () => {
     const { tools } = await s.client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([...TOOL_NAMES].sort());
-    expect(TOOL_NAMES).toHaveLength(13);
+    expect(TOOL_NAMES).toHaveLength(15);
   });
 });
 
@@ -206,13 +206,13 @@ describe("errors", () => {
     const t = await s.err("list_features", { system: "nosuch" });
     expect(t).toContain("analyze_spec");
     expect(t).not.toContain("specmock analyze");
-    expect((await s.client.listTools()).tools.length).toBe(13);
+    expect((await s.client.listTools()).tools.length).toBe(15);
   });
 
   it("invalid system name and missing required args are tool errors", async () => {
     expect(await s.err("list_features", { system: "../x" })).toMatch(/시스템 이름이 올바르지 않습니다/);
     await s.err("list_features", {});
-    expect((await s.client.listTools()).tools.length).toBe(13);
+    expect((await s.client.listTools()).tools.length).toBe(15);
   });
 
   it("bad selection expression and unknown feature id → isError", async () => {

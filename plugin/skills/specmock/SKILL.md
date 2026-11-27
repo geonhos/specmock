@@ -9,7 +9,7 @@ description: Use when the user wants a mock server for an external API from a sp
 
 ## MCP 도구가 있으면 도구로 진행한다
 
-specmock 플러그인을 로드하면 specmock MCP 서버의 도구 13개가 함께 켜진다. 이 도구들이 보이면 **셸 명령 대신 도구를 쓴다**. 권한 확인 창이 없고 결과가 구조화되어 돌아온다. 보이지 않으면 아래 0~5의 CLI 흐름을 쓴다.
+specmock 플러그인을 로드하면 specmock MCP 서버의 도구 15개가 함께 켜진다. 이 도구들이 보이면 **셸 명령 대신 도구를 쓴다**. 권한 확인 창이 없고 결과가 구조화되어 돌아온다. 보이지 않으면 아래 0~5의 CLI 흐름을 쓴다.
 
 도구가 안 보이면 `packages/mcp/dist/server.js`가 없는 경우(저장소에서 `pnpm build`를 안 함)가 흔하다. 사용자에게 `pnpm build` 후 Claude Code에서 `/mcp`로 specmock 서버가 연결됐는지 확인하게 하고, 그래도 없으면 CLI 흐름으로 간다. 실제 도구 이름은 `mcp__plugin_specmock_specmock__<이름>` 형태다.
 
@@ -28,6 +28,8 @@ specmock 플러그인을 로드하면 specmock MCP 서버의 도구 13개가 함
 | `verify_mock` | contract test + coverage.md |
 | `record_responses` | `target.json`의 실제 시스템에 정상 요청을 보내 녹화 + drift.md, mock fixture에 반영 (`allowMutating`, `features`, `refresh`, `apply`) |
 | `open_ui` | 브라우저 화면 서버를 띄우고 URL만 돌려줌(두 번 불러도 같은 URL) |
+| `list_flows` | 추론된 흐름 목록(빈 입력 수·없는 기능·마지막 결과). `flowId`면 한 흐름의 상세, `infer: true`면 고른 기능에서 다시 추론 |
+| `fill_flow` | 흐름 단계 하나의 빈 입력(`path.<변수>`·`body.<필드>`)을 채움. 근거는 `claude`로 기록 |
 
 흐름:
 
@@ -57,6 +59,14 @@ specmock 플러그인을 로드하면 specmock MCP 서버의 도구 13개가 함
 - `outDir`은 사용자가 위치를 지정했을 때만 준다. 아니면 생략해 기본 `mock/<system>`을 쓴다.
 - `submit_extraction`의 `ok: false`는 실패가 아니라 고쳐서 다시 내라는 뜻이다. `errors`를 읽고 같은 청크를 고쳐 제출한다.
 - `record_responses`의 `allowMutating: true`는 실제 시스템에 생성·삭제 요청을 보낸다. 대상 `baseUrl`과 건너뛴 기능(`skipped`)을 알리고 확인받은 뒤에만 쓴다. `target.json` 헤더의 `${ENV}`는 Claude Code를 실행한 셸에 있어야 한다. 없다는 오류면 그 셸에서 변수를 설정하고 Claude Code를 다시 띄우라고 안내한다. 사용자에게 키 값을 대화에 붙여 넣으라고 하지 않는다. `${ENV}`로 넣은 값은 녹화·리포트에서 `***`로 가린다(직접 적은 값은 가리지 않음). `target.json`의 `features.<기능id>` 값이 공통 `params`보다 우선합니다.
+
+## 흐름
+
+`list_flows`로 흐름을 읽고, `fill_flow`로 빈 입력과 본문 값을 채웁니다.
+
+- 두 도구는 `flows.json`만 씁니다. 흐름 실행은 도구가 아니라 웹 화면에서 합니다. 실제 서버에 보내는 요청의 안전장치는 화면 서버가 판단합니다.
+- `list_flows`의 `empty`(`<단계 id>:<자리>`)가 비어 있는 입력입니다. 채울 값은 사용자에게 묻고, 지어내지 않습니다.
+- `fill_flow`로 채운 값은 `claude`로 기록되고 화면에서 고칠 수 있습니다.
 
 추출 규칙(근거 인용은 원문 그대로, 청크에 없는 엔드포인트를 보태지 않음)은 CLI 흐름과 같다. [extraction.md](references/extraction.md).
 
