@@ -1,4 +1,4 @@
-import { symlink } from "node:fs/promises";
+import { rm, symlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
@@ -21,7 +21,7 @@ test("흐름: 서비스 등록 → 흐름 화면 → 빈 입력 채우기 → mo
   await expect(page.getByText(/8개 선택/)).toBeVisible(); // 묶음 행은 체크할 때 받으므로 두 묶음이 다 들어온 뒤 누른다
   await page.getByRole("button", { name: "등록하고 흐름 만들기" }).click();
   await expect(page).toHaveURL(/\/systems\/gh\/flows$/);
-  await page.getByRole("link", { name: /issue 다루기/ }).click();
+  await page.getByRole("button", { name: /issue 다루기/ }).click();
   for (const [step, slot, value] of [["create_repo", "body.name", "flowtest"], ["create_issue", "body.title", "hello"]] as const) {
     await page.getByRole("button", { name: new RegExp(step) }).click();
     await page.getByLabel(`${slot} 값`).fill(value);
@@ -36,10 +36,18 @@ test("흐름: 서비스 등록 → 흐름 화면 → 빈 입력 채우기 → mo
   await page.getByLabel("path.repo 응답 필드").fill("name");
   await page.getByRole("button", { name: "path.repo 저장" }).click();
   await expect(page.getByText("입력 필요")).toHaveCount(0);
-  // 첫 실행은 mock 디렉터리에 node_modules가 없어 기동에 실패한다(설계 §5: mock 실행만 실패로 표시).
+  // 첫 실행은 mock을 만들고 npm install을 한다. 설치가 안 되는 환경(네트워크 없음)에서는 기동 실패로 끝나므로,
+  // 그때는 루트 node_modules를 링크해 한 번 더 실행한다(설계 §5: mock 실행만 실패로 표시).
+  test.setTimeout(300_000);
   await page.getByRole("button", { name: "전체 실행" }).click();
-  await expect(page.getByText(/mock을 띄우지 못했습니다/)).toBeVisible({ timeout: 60_000 });
-  await symlink(path.join(REPO, "node_modules"), path.join(ROOT, "mock", "gh", "node_modules"), "dir");
-  await page.getByRole("button", { name: "전체 실행" }).click();
-  await expect(page.locator(".flow-node .st-success").first()).toBeVisible({ timeout: 90_000 });
+  const success = page.locator(".flow-node .st-success").first();
+  const failure = page.getByText(/mock을 띄우지 못했습니다/);
+  await expect(success.or(failure)).toBeVisible({ timeout: 150_000 });
+  if (await failure.isVisible()) {
+    const modules = path.join(ROOT, "mock", "gh", "node_modules");
+    await rm(modules, { recursive: true, force: true });
+    await symlink(path.join(REPO, "node_modules"), modules, "dir");
+    await page.getByRole("button", { name: "전체 실행" }).click();
+  }
+  await expect(success).toBeVisible({ timeout: 90_000 });
 });

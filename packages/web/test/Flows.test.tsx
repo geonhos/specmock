@@ -25,7 +25,7 @@ it("list shows empty-input count; chart shows '입력 필요', edge names before
   fakeApi(routes());
   mount();
   const list = await screen.findByRole("navigation", { name: "흐름" });
-  expect(within(list).getByRole("link", { name: /issue 다루기.*빈 연결 1/ })).toBeTruthy();
+  expect(within(list).getByRole("button", { name: /issue 다루기.*빈 연결 1/ })).toBeTruthy();
   expect(await screen.findByText("입력 필요")).toBeTruthy();
   expect(screen.getByText("number")).toBeTruthy(); // 실행 전: 연결 이름
   expect(screen.getAllByText(STATE_LABEL.pending).length).toBeGreaterThan(0);
@@ -142,4 +142,18 @@ it("cancelled run: outcome 취소됨, unsent steps stay 실행 전, targets in n
   expect(await screen.findByText("취소됨")).toBeTruthy();
   expect(screen.getAllByText(STATE_LABEL.pending).length).toBeGreaterThan(0);
   expect(screen.getByText("실행하지 않은 대상: 실제")).toBeTruthy();
+});
+
+it("picking another flow in the list opens that flow", async () => {
+  const other = { ...flow, id: "repos", name: "repo 다루기" };
+  const r = routes();
+  fakeApi({ ...r,
+    "GET /api/systems/gh/flows": ok({ inferredAt: "t", notes: [], flows: [
+      { id: "repos", name: "repo 다루기", resource: "repo", steps: 1, empty: 0, missingFeatures: [], last: { mock: null, real: null } },
+      { id: "issues", name: "issue 다루기", resource: "issue", steps: 2, empty: 1, missingFeatures: [], last: { mock: null, real: null } }] }),
+    "GET /api/systems/gh/flows/repos": ok({ flow: other, empty: [], missingFeatures: [], runs: { mock: null, real: null } }) });
+  mount();
+  expect(await screen.findByRole("heading", { name: "repo 다루기" })).toBeTruthy();
+  fireEvent.click(within(screen.getByRole("navigation", { name: "흐름" })).getByRole("button", { name: /issue 다루기/ }));
+  expect(await screen.findByRole("heading", { name: "issue 다루기" })).toBeTruthy();
 });
