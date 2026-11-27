@@ -14,7 +14,7 @@ const F = [
   feature("issues_get", "GET", "/repos/{owner}/{repo}/issues/{issue_number}"), feature("repos_delete", "DELETE", "/repos/{owner}/{repo}"),
 ];
 const spec: MockSpec = { system: "gh", baseUrl: "http://x", features: F, notMocked: [], assumptions: [],
-  contracts: [contract(F[0]!, 201), contract(F[1]!, 201), contract(F[2]!, 200), contract(F[3]!, 204)] } as MockSpec;
+  contracts: [contract(F[0]!, 201), contract(F[1]!, 201), contract(F[2]!, 200), contract(F[3]!, 204)] } as unknown as MockSpec;
 
 const flow: Flow = { id: "issues", name: "issue 다루기", resource: "issue", steps: [
   { id: "create_repo", featureId: "repos_create", role: "prep", creates: "repo", inputs: [{ slot: "body.name", source: { kind: "user", value: "flowtest" }, basis: "user" }] },
