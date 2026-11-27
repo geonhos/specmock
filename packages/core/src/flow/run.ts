@@ -11,6 +11,10 @@ export const FLOW_AUTH_HINT = "토큰과 권한 범위(scope)를 확인하세요
 export const NOT_CREATED = "이번 실행이 만든 자원이 아니라 삭제하지 않았습니다.";
 export const CLEANUP_OFF = "정리를 끈 실행이라 남겨 두었습니다.";
 export const NO_DELETE = "삭제 기능이 흐름에 없어 남았습니다.";
+export const CANCELLED = "취소되었습니다.";
+export const CANCELLED_CREATE = "취소되었습니다. 응답을 받지 못해 서버에 만들어졌는지 알 수 없어 삭제하지 못했습니다.";
+export const CANCELLED_NOT_RUN = "취소되어 실행하지 않았습니다.";
+export const CANCELLED_LEFT = "취소되어 삭제하지 않았습니다.";
 export const SAFETY_SKIP = "안전장치가 켜져 있어 보내지 않았습니다(GET만 보냄).";
 const NAME_SLOTS = new Set(["body.name", "body.title"]);
 const SAFE = new Set(["GET", "HEAD"]);
@@ -38,7 +42,7 @@ const lastPathInput = (s: FlowStep) => s.inputs.filter((i) => i.slot.startsWith(
 
 interface Created { stepId: string; resource: string; url: string; id: string | null }
 
-/** 흐름 하나를 대상 하나에 실행한다(설계 §3). 예외를 던지지 않는다(취소 제외). 결과는 마스킹을 마친 값이다. */
+/** 흐름 하나를 대상 하나에 실행한다(설계 §3). 예외를 던지지 않는다(취소도 마찬가지: 정리한 뒤 outcome "cancelled"로 돌려준다). 결과는 마스킹을 마친 값이다. */
 export async function runFlow(flow: Flow, spec: MockSpec, target: FlowTarget, opts: RunFlowOptions): Promise<FlowRun> {
   const now = opts.now ?? (() => new Date());
   const started = now();
@@ -60,7 +64,8 @@ export async function runFlow(flow: Flow, spec: MockSpec, target: FlowTarget, op
     return cs.find((c) => c.name === NORMAL_CONTRACT) ?? cs[0];
   }
 
-  async function exec(step: FlowStep): Promise<StepResult> {
+  /** signal: 요청을 끊는 신호. 정리 요청에는 이미 취소된 신호를 넘기지 않는다(시간 제한은 유지). */
+  async function exec(step: FlowStep, signal: AbortSignal | undefined): Promise<StepResult> {
     const r = blank(step);
     const feature = features.get(step.featureId);
     const c = contractFor(step.featureId);
@@ -96,7 +101,7 @@ export async function runFlow(flow: Flow, spec: MockSpec, target: FlowTarget, op
     const bodyEntries = Object.entries(values).filter(([s]) => s.startsWith("body."));
     const body = feature.request.body === null ? null : Object.fromEntries(bodyEntries.map(([s, v]) => [s.slice(5), v]));
     const t0 = Date.now();
-    const run = await runContract(target.baseUrl, c, { headers: target.headers, timeoutMs: target.timeoutMs, signal: opts.signal, ajv, maxBytes: MAX_RECORD_BYTES, path: p, query, body });
+    const run = await runContract(target.baseUrl, c, { headers: target.headers, timeoutMs: target.timeoutMs, signal, ajv, maxBytes: MAX_RECORD_BYTES, path: p, query, body });
     r.durationMs = Date.now() - t0;
     r.values = maskValues(values, mask, target.secrets) as StepResult["values"];
     r.request = {
@@ -121,29 +126,38 @@ export async function runFlow(flow: Flow, spec: MockSpec, target: FlowTarget, op
     return errs.length > 0 ? { ...r, state: "diff", schemaErrors: errs, reason: errs[0]! } : { ...r, state: "success" };
   }
 
+  let cancelled = false;
   for (const step of flow.steps) {
     if (step.role === "cleanup") continue;
+    if (cancelled || opts.signal?.aborted) { cancelled = true; results.set(step.id, { ...blank(step), reason: CANCELLED_NOT_RUN }); continue; }
     if (halt) { results.set(step.id, { ...blank(step), reason: halt }); continue; }
     let r: StepResult;
-    try { r = await exec(step); } catch (e) {
-      if (opts.signal?.aborted) throw e;
-      r = { ...blank(step), state: "failed", reason: mask((e as Error).message) };
+    try { r = await exec(step, opts.signal); } catch (e) {
+      r = opts.signal?.aborted
+        ? { ...blank(step), state: "failed", reason: step.creates ? CANCELLED_CREATE : CANCELLED }
+        : { ...blank(step), state: "failed", reason: mask((e as Error).message) };
     }
     results.set(step.id, r);
-    if (r.state === "failed" || r.state === "stopped-empty") halt = `앞 단계 ${step.id}에서 멈췄습니다.`;
+    if (opts.signal?.aborted) cancelled = true;
+    else if (r.state === "failed" || r.state === "stopped-empty") halt = `앞 단계 ${step.id}에서 멈췄습니다.`;
   }
+  if (opts.signal?.aborted) cancelled = true;
 
   const cleanupSteps = flow.steps.filter((s) => s.role === "cleanup");
   const handled = new Set<string>();
   const reasons = new Map<string, string>(); // 만든 단계 id → 남은 이유
+  let interrupted = false;
   const cleaned = new Set<string>();         // 이번 실행에서 지운 자원을 만든 단계 id
   for (const res of [...created].reverse()) {
     if (!opts.cleanup) { reasons.set(res.stepId, CLEANUP_OFF); continue; }
     const del = cleanupSteps.find((s) => { const l = lastPathInput(s); return l?.source.kind === "step" && l.source.step === res.stepId; });
     if (!del) { reasons.set(res.stepId, NO_DELETE); continue; }
     handled.add(del.id);
+    // 정리 도중 취소가 오면 이미 보낸 요청만 끝내고 나머지는 남은 자원으로 적는다. 이미 취소된 채 시작한 정리는 끝까지 간다.
+    if (!cancelled && opts.signal?.aborted) { interrupted = true; }
+    if (interrupted) { results.set(del.id, { ...blank(del), state: "leftover", reason: CANCELLED_LEFT }); reasons.set(res.stepId, CANCELLED_LEFT); continue; }
     let r: StepResult;
-    try { r = await exec(del); } catch (e) { if (opts.signal?.aborted) throw e; r = { ...blank(del), state: "failed", reason: mask((e as Error).message) }; }
+    try { r = await exec(del, undefined); } catch (e) { r = { ...blank(del), state: "failed", reason: mask((e as Error).message) }; }
     if (r.state === "success" || r.state === "diff") { results.set(del.id, { ...r, state: "cleaned" }); cleaned.add(res.stepId); }
     else { results.set(del.id, { ...r, state: "leftover" }); reasons.set(res.stepId, r.reason ?? "삭제에 실패했습니다."); }
   }
@@ -165,6 +179,6 @@ export async function runFlow(flow: Flow, spec: MockSpec, target: FlowTarget, op
 
   const steps = flow.steps.map((s) => results.get(s.id)!);
   const has = (...st: StepResult["state"][]) => steps.some((s) => st.includes(s.state));
-  const outcome = has("failed") ? "failed" : has("stopped-empty", "skipped-safety") && steps.some((s) => s.role !== "cleanup" && (s.state === "stopped-empty" || s.state === "skipped-safety")) ? "stopped" : has("diff") ? "diff" : "success";
+  const outcome = cancelled || interrupted ? "cancelled" : has("failed") ? "failed" : has("stopped-empty", "skipped-safety") && steps.some((s) => s.role !== "cleanup" && (s.state === "stopped-empty" || s.state === "skipped-safety")) ? "stopped" : has("diff") ? "diff" : "success";
   return { flowId: flow.id, target: target.name, startedAt: started.toISOString(), finishedAt: now().toISOString(), safety: opts.safety, cleanup: opts.cleanup, suffix, outcome, error: null, steps, leftovers };
 }

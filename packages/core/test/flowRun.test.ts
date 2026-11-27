@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { FLOW_AUTH_HINT, NOT_CREATED, SAFETY_SKIP, runFlow, type FlowTarget } from "../src/flow/run.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CANCELLED_LEFT, CLEANUP_OFF, FLOW_AUTH_HINT, NOT_CREATED, SAFETY_SKIP, runFlow, type FlowTarget } from "../src/flow/run.js";
 import type { Flow } from "../src/flow/types.js";
 import type { Contract, Feature, MockSpec } from "../src/types.js";
 import { startFakeTarget, type FakeReq, type FakeRes, type FakeTarget } from "./fakeTarget.js";
@@ -240,5 +240,73 @@ describe("runFlow", () => {
     const run = await runFlow(flow, spec, target({ baseUrl: "http://127.0.0.1:1" }), { safety: false, cleanup: true, now: NOW });
     expect(run.steps[0]!.state).toBe("failed");
     expect(run.outcome).toBe("failed");
+  });
+  describe("cancel (user decision 17: clean up and save)", () => {
+    const TOKEN = "ghp_abcdefghijklmnopqrstuvwxyz0123";
+    const issueDelete: Flow["steps"][number] = { id: "delete_issue", featureId: "issues_delete", role: "cleanup", inputs: [
+      { slot: "path.owner", source: { kind: "empty" }, basis: "rule" },
+      { slot: "path.repo", source: { kind: "step", step: "create_repo", field: "name" }, basis: "rule", createdBy: "create_repo" },
+      { slot: "path.issue_number", source: { kind: "step", step: "create_issue", field: "number" }, basis: "rule", createdBy: "create_issue" }] };
+    const del = feature("issues_delete", "DELETE", "/repos/{owner}/{repo}/issues/{issue_number}");
+    const spec2: MockSpec = { ...spec, features: [...F, del], contracts: [...spec.contracts, contract(del, 204)] } as unknown as MockSpec;
+    const two: Flow = { ...flow, steps: [...flow.steps, issueDelete] };
+    const methods = () => t.requests.map((r) => `${r.method} ${r.path.replace(/flowtest-\d+/, "R")}`);
+
+    afterEach(() => { vi.restoreAllMocks(); });
+
+    it("cancel between two steps: no later step is sent, the created repo is deleted, the run is returned", async () => {
+      const ac = new AbortController();
+      const orig = globalThis.fetch; let calls = 0;
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (...a: Parameters<typeof fetch>) => {
+        const res = await orig(...a);
+        if (++calls !== 1) return res;
+        const buf = await res.arrayBuffer(); ac.abort(); // the first response is fully read, then the cancel arrives
+        return new Response(buf, { status: res.status, headers: res.headers });
+      });
+      const run = await runFlow(flow, spec, target(), { safety: false, cleanup: true, now: NOW, signal: ac.signal });
+      expect(methods()).toEqual(["POST /user/repos", "DELETE /repos/octo/R"]);
+      expect(run.outcome).toBe("cancelled");
+      expect(run.steps.map((s) => s.state)).toEqual(["success", "pending", "pending", "cleaned"]);
+      expect(run.leftovers).toEqual([]);
+    });
+
+    it("cancel while a request is in flight: that step is failed 'cancelled', earlier resources are deleted", async () => {
+      const ac = new AbortController();
+      await serve((r) => r.method === "POST" && r.path.endsWith("/issues") ? (setTimeout(() => ac.abort(), 30), { status: 201, body: { number: 7 }, delayMs: 3_000 }) : undefined);
+      const run = await runFlow(flow, spec, target(), { safety: false, cleanup: true, now: NOW, signal: ac.signal });
+      expect(methods()).toEqual(["POST /user/repos", "POST /repos/octo/R/issues", "DELETE /repos/octo/R"]);
+      expect(run.outcome).toBe("cancelled");
+      expect(run.steps.map((s) => s.state)).toEqual(["success", "failed", "pending", "cleaned"]);
+      expect(run.steps[1]!.reason).toContain("취소");
+      expect(run.steps[1]!.reason).toContain("만들어졌는지 알 수 없어"); // create response unknown: noted, no invented id
+      expect(run.steps[2]!.reason).toContain("취소");
+      expect(run.leftovers).toEqual([]);
+    });
+
+    it("cleanup off + cancel: nothing is deleted, the created repo is a leftover", async () => {
+      const ac = new AbortController();
+      await serve((r) => r.method === "POST" && r.path.endsWith("/issues") ? (setTimeout(() => ac.abort(), 30), { status: 201, body: { number: 7 }, delayMs: 3_000 }) : undefined);
+      const run = await runFlow(flow, spec, target(), { safety: false, cleanup: false, now: NOW, signal: ac.signal });
+      expect(t.requests.some((r) => r.method === "DELETE")).toBe(false);
+      expect(run.outcome).toBe("cancelled");
+      expect(run.leftovers.map((l) => [l.resource, l.reason])).toEqual([["repo", CLEANUP_OFF]]);
+    });
+
+    it("cancel during cleanup: the remaining resources are leftovers, the run is still returned", async () => {
+      const ac = new AbortController();
+      await serve((r) => r.method === "DELETE" && r.path.endsWith("/issues/7") ? (setTimeout(() => ac.abort(), 5), { status: 204, delayMs: 40 }) : undefined);
+      const run = await runFlow(two, spec2, target(), { safety: false, cleanup: true, now: NOW, signal: ac.signal });
+      expect(t.requests.filter((r) => r.method === "DELETE").map((r) => r.path.replace(/flowtest-\d+/, "R"))).toEqual(["/repos/octo/R/issues/7"]);
+      expect(run.outcome).toBe("cancelled");
+      expect(run.steps.map((s) => s.state)).toEqual(["success", "success", "success", "leftover", "cleaned"]);
+      expect(run.leftovers.map((l) => [l.resource, l.reason])).toEqual([["repo", CANCELLED_LEFT]]);
+    });
+
+    it("the result of a cancelled run holds no token", async () => {
+      const ac = new AbortController();
+      await serve((r) => r.method === "POST" && r.path.endsWith("/issues") ? (setTimeout(() => ac.abort(), 30), { status: 201, delayMs: 3_000 }) : undefined);
+      const run = await runFlow(flow, spec, target(), { safety: false, cleanup: true, now: NOW, signal: ac.signal });
+      expect(JSON.stringify(run)).not.toContain(TOKEN);
+    });
   });
 });

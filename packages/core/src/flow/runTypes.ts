@@ -28,7 +28,7 @@ export type StepResult = z.infer<typeof StepResultSchema>;
 export const LeftoverSchema = z.object({ resource: z.string(), stepId: z.string(), url: z.string(), id: z.string().nullable(), reason: z.string() });
 export type Leftover = z.infer<typeof LeftoverSchema>;
 
-export const FlowRunOutcome = z.enum(["success", "diff", "failed", "stopped"]);
+export const FlowRunOutcome = z.enum(["success", "diff", "failed", "stopped", "cancelled"]);
 export type FlowRunOutcome = z.infer<typeof FlowRunOutcome>;
 
 /** `.specmock/<system>/flow-runs/<flowId>/<target>.json`. 대상별 마지막 실행 하나. */

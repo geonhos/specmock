@@ -34,9 +34,9 @@ export const launchTsMock: LaunchMock = async (ws, system, { mockDir, signal, on
   return { baseUrl: `http://127.0.0.1:${server.port}`, stop: server.stop };
 };
 
-function failedRun(flowId: string, target: FlowTargetName, safety: boolean, cleanup: boolean, error: string): FlowRun {
+function failedRun(flowId: string, target: FlowTargetName, safety: boolean, cleanup: boolean, error: string, outcome: FlowRun["outcome"] = "failed"): FlowRun {
   const at = new Date().toISOString();
-  return { flowId, target, startedAt: at, finishedAt: at, safety, cleanup, suffix: "", outcome: "failed", error, steps: [], leftovers: [] };
+  return { flowId, target, startedAt: at, finishedAt: at, safety, cleanup, suffix: "", outcome, error, steps: [], leftovers: [] };
 }
 
 /** 흐름을 고른 대상에 차례로 실행하고 대상별 결과를 flow-runs/에 쓴다. 한 대상의 실패가 다른 대상을 막지 않는다. */
@@ -59,20 +59,20 @@ export async function runFlowTargets(ws: Workspace, system: string, flowId: stri
         const target: FlowTarget = { name, baseUrl: mock.baseUrl, headers: {}, params, timeoutMs: DEFAULT_TIMEOUT_MS, secrets: [] };
         run = await runFlow(flow, spec, target, { safety: opts.safety, cleanup: opts.cleanup, signal: opts.signal });
       } catch (e) {
-        if (opts.signal?.aborted) throw e;
-        run = failedRun(flowId, name, opts.safety, opts.cleanup, `mock을 띄우지 못했습니다. mock을 먼저 만드세요: ${(e as Error).message}`);
+        run = opts.signal?.aborted ? failedRun(flowId, name, opts.safety, opts.cleanup, "취소되었습니다. mock을 띄우는 중이었습니다.", "cancelled")
+          : failedRun(flowId, name, opts.safety, opts.cleanup, `mock을 띄우지 못했습니다. mock을 먼저 만드세요: ${(e as Error).message}`);
       } finally { await mock?.stop(); }
     } else {
       try {
         const t = await readTarget(ws, system, opts.env);
         run = await runFlow(flow, spec, { name, baseUrl: t.baseUrl, headers: t.headers, params: t.params, timeoutMs: t.timeoutMs, secrets: t.secrets }, { safety: opts.safety, cleanup: opts.cleanup, signal: opts.signal });
       } catch (e) {
-        if (opts.signal?.aborted) throw e;
-        run = failedRun(flowId, name, opts.safety, opts.cleanup, (e as Error).message);
+        run = failedRun(flowId, name, opts.safety, opts.cleanup, opts.signal?.aborted ? "취소되었습니다." : (e as Error).message, opts.signal?.aborted ? "cancelled" : "failed");
       }
     }
     await writeFlowRun(ws, system, run);
     runs.push(run);
+    if (run.outcome === "cancelled") break; // 취소하면 남은 대상은 실행하지 않는다.
   }
   return { runs };
 }

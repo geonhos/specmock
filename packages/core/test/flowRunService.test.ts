@@ -63,4 +63,15 @@ describe("runFlowTargets", () => {
     await ws.write("s", "mockspec.json", MockSpecSchema, { ...spec, features: [], contracts: [] });
     await expect(runFlowTargets(ws, "s", "tickets", { targets: ["mock"], cleanup: true, safety: true, env: {} })).rejects.toThrow(/기능 없음: t_create/);
   });
+  it("a cancelled run is returned and saved without the token; later targets are not run", async () => {
+    const TOKEN = "ghp_abcdefghijklmnopqrstuvwxyz0123";
+    const ac = new AbortController();
+    await api.close();
+    api = await startFakeTarget((r) => { if (r.method === "POST") setTimeout(() => ac.abort(), 30); return { status: 201, body: { id: 1 }, delayMs: 3_000 }; });
+    await writeFile(ws.file("s", "target.json"), JSON.stringify({ baseUrl: api.url, headers: { authorization: "Bearer ${TOKEN}" } }));
+    const out = await runFlowTargets(ws, "s", "tickets", { targets: ["real", "mock"], cleanup: true, safety: false, env: { TOKEN }, signal: ac.signal, launchMock: async () => { throw new Error("must not start"); } });
+    expect(out.runs.map((r) => [r.target, r.outcome])).toEqual([["real", "cancelled"]]);
+    expect((await readFlowRun(ws, "s", "tickets", "real"))!.outcome).toBe("cancelled");
+    expect(await readFile(ws.file("s", "flow-runs/tickets/real.json"), "utf8")).not.toContain(TOKEN);
+  });
 });
