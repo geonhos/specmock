@@ -507,7 +507,7 @@ import YAML from "yaml";
 import { analyzeOpenApiDocument } from "../src/analyze/openapi.js";
 import { inferFlows, linkField, mergeFlows, parseResourcePath, responseProperties, singular } from "../src/flow/infer.js";
 import { dereferenceOpenApi } from "../src/ingest/openapi.js";
-import { FLOW_ID, FlowsFileSchema, type FlowsFile } from "../src/flow/types.js";
+import { FLOW_ID, FlowsFileSchema, type Flow, type FlowsFile } from "../src/flow/types.js";
 import type { Feature } from "../src/types.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -697,6 +697,29 @@ describe("mergeFlows (re-inference keeps claude/user inputs)", () => {
     const inputs = mergeFlows(prev, next.flows)[0]!.steps[0]!.inputs;
     expect(inputs.find((i) => i.slot === "body.title")).toEqual({ slot: "body.title", source: { kind: "fixed", value: "from claude" }, basis: "claude" });
     expect(inputs.find((i) => i.slot === "body.body")).toEqual({ slot: "body.body", source: { kind: "empty" }, basis: "rule" });
+  });
+  it("drops a saved step reference whose step is gone from the new inference (#36)", () => {
+    const empty = { kind: "empty" } as const;
+    const prevFlow: Flow = { id: "issues", name: "n", resource: "issue", steps: [
+      { id: "create_repo", featureId: "repos_create", role: "prep", creates: "repo", inputs: [] },
+      { id: "create_issue", featureId: "issues_create", role: "main", creates: "issue", inputs: [
+        { slot: "path.repo", source: { kind: "step", step: "create_repo", field: "name" }, basis: "user", createdBy: "create_repo" },
+        { slot: "path.owner", source: { kind: "user", value: "octo" }, basis: "user" }] }] };
+    const prev: FlowsFile = { system: "s", catalogHash: "h", inferredAt: "t", notes: [], flows: [prevFlow] };
+    const nextFlow: Flow = { ...prevFlow, steps: [{ id: "create_issue", featureId: "issues_create", role: "main", creates: "issue", inputs: [
+      { slot: "path.repo", source: empty, basis: "rule" }, { slot: "path.owner", source: empty, basis: "rule" }] }] };
+    const inputs = mergeFlows(prev, [nextFlow])[0]!.steps[0]!.inputs;
+    expect(inputs.find((i) => i.slot === "path.repo")).toEqual({ slot: "path.repo", source: empty, basis: "rule" });
+    expect(inputs.find((i) => i.slot === "path.owner")!.source).toEqual({ kind: "user", value: "octo" }); // other kinds stay
+  });
+  it("keeps a saved step reference that still resolves", () => {
+    const steps: Flow["steps"] = [
+      { id: "create_repo", featureId: "repos_create", role: "prep", creates: "repo", inputs: [] },
+      { id: "create_issue", featureId: "issues_create", role: "main", creates: "issue", inputs: [
+        { slot: "path.repo", source: { kind: "step", step: "create_repo", field: "slug" }, basis: "user", createdBy: "create_repo" }] }];
+    const prev: FlowsFile = { system: "s", catalogHash: "h", inferredAt: "t", notes: [], flows: [{ id: "issues", name: "n", resource: "issue", steps }] };
+    const next: Flow = { id: "issues", name: "n", resource: "issue", steps: [steps[0]!, { ...steps[1]!, inputs: [{ slot: "path.repo", source: { kind: "step", step: "create_repo", field: "name" }, basis: "rule", createdBy: "create_repo" }] }] };
+    expect(mergeFlows(prev, [next])[0]!.steps[1]!.inputs[0]!.source).toEqual({ kind: "step", step: "create_repo", field: "slug" });
   });
 });
 ```
@@ -895,15 +918,19 @@ export function inferFlows(features: Feature[]): InferResult {
   return { flows, notes };
 }
 
-/** R 재추론: 이전 파일의 근거 claude·user 입력은 (흐름 id, 단계 id, 자리)가 같으면 출처와 근거를 그대로 둔다. `createdBy`는 새 추론 값을 쓴다. */
+/** R 재추론: 이전 파일의 근거 claude·user 입력은 (흐름 id, 단계 id, 자리)가 같으면 출처와 근거를 그대로 둔다. `createdBy`는 새 추론 값을 쓴다. 단계 출처가 새 흐름에 없는 단계를 가리키면 그 입력은 옮기지 않고 새 추론 값을 쓴다(빈 자리는 "입력 필요"). */
 export function mergeFlows(prev: FlowsFile | null, next: Flow[]): Flow[] {
   if (!prev) return next;
   const kept = new Map<string, FlowInput>();
   for (const f of prev.flows) for (const s of f.steps) for (const i of s.inputs) if (i.basis !== "rule") kept.set(`${f.id}\u0000${s.id}\u0000${i.slot}`, i);
-  return next.map((f) => ({ ...f, steps: f.steps.map((s) => ({ ...s, inputs: s.inputs.map((i) => {
-    const k = kept.get(`${f.id}\u0000${s.id}\u0000${i.slot}`);
-    return k ? { ...i, source: k.source, basis: k.basis } : i;
-  }) })) }));
+  return next.map((f) => {
+    const stepIds = new Set(f.steps.map((s) => s.id));
+    return { ...f, steps: f.steps.map((s) => ({ ...s, inputs: s.inputs.map((i) => {
+      const k = kept.get(`${f.id}\u0000${s.id}\u0000${i.slot}`);
+      if (!k || (k.source.kind === "step" && !stepIds.has(k.source.step))) return i;
+      return { ...i, source: k.source, basis: k.basis };
+    }) })) };
+  });
 }
 ```
 

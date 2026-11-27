@@ -185,13 +185,17 @@ export function inferFlows(features: Feature[]): InferResult {
   return { flows, notes };
 }
 
-/** R 재추론: 이전 파일의 근거 claude·user 입력은 (흐름 id, 단계 id, 자리)가 같으면 출처와 근거를 그대로 둔다. `createdBy`는 새 추론 값을 쓴다. */
+/** R 재추론: 이전 파일의 근거 claude·user 입력은 (흐름 id, 단계 id, 자리)가 같으면 출처와 근거를 그대로 둔다. `createdBy`는 새 추론 값을 쓴다. 단계 출처가 새 흐름에 없는 단계를 가리키면 그 입력은 옮기지 않고 새 추론 값을 쓴다(빈 자리는 "입력 필요"). */
 export function mergeFlows(prev: FlowsFile | null, next: Flow[]): Flow[] {
   if (!prev) return next;
   const kept = new Map<string, FlowInput>();
   for (const f of prev.flows) for (const s of f.steps) for (const i of s.inputs) if (i.basis !== "rule") kept.set(`${f.id}\u0000${s.id}\u0000${i.slot}`, i);
-  return next.map((f) => ({ ...f, steps: f.steps.map((s) => ({ ...s, inputs: s.inputs.map((i) => {
-    const k = kept.get(`${f.id}\u0000${s.id}\u0000${i.slot}`);
-    return k ? { ...i, source: k.source, basis: k.basis } : i;
-  }) })) }));
+  return next.map((f) => {
+    const stepIds = new Set(f.steps.map((s) => s.id));
+    return { ...f, steps: f.steps.map((s) => ({ ...s, inputs: s.inputs.map((i) => {
+      const k = kept.get(`${f.id}\u0000${s.id}\u0000${i.slot}`);
+      if (!k || (k.source.kind === "step" && !stepIds.has(k.source.step))) return i;
+      return { ...i, source: k.source, basis: k.basis };
+    }) })) };
+  });
 }
