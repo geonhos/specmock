@@ -350,7 +350,7 @@ describe("record (3B)", () => {
     const c = client();
     await prepare(c);
     const r = await c.get("/systems/petstore/target");
-    expect(r.body).toEqual({ ok: true, data: { exists: false, example: expect.stringContaining("https://api.example.com/v2") } });
+    expect(r.body).toEqual({ ok: true, data: { exists: false, suggestedBaseUrl: null, example: expect.stringContaining("https://api.example.com/v2") } });
   });
 
   it("GET target: 헤더의 직접 적은 값만 ***로 가리고 공통·기능별 값은 원문, env 상태를 싣는다", async () => {

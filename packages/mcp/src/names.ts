@@ -2,5 +2,6 @@
 export const TOOL_NAMES = [
   "ingest_spec", "analyze_spec", "get_chunk", "submit_extraction", "merge_extractions",
   "list_features", "show_feature", "select_features", "generate_mock", "finalize_generation", "verify_mock", "record_responses", "open_ui",
+  "list_flows", "fill_flow",
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];

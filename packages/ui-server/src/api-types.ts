@@ -1,4 +1,4 @@
-import type { Feature, FeatureRow, GenerateInfo, Selection, SourceInput } from "@specmock/core";
+import type { Feature, FeatureRow, FlowTargetName as FlowTargetNameT, GenerateInfo, Selection, SourceInput } from "@specmock/core";
 import type { ApiErrorBody } from "./errors.js";
 
 export type ApiOk<T> = { ok: true; data: T };
@@ -26,8 +26,12 @@ export type SystemOverview = {
 };
 /** 화면 목록용 행: core FeatureRow에 한 줄 설명(summary)과 응답 코드(codes)를 더한다. MCP 응답 형식은 그대로다. */
 export type FeatureListRow = FeatureRow & { summary: string; codes: string[] };
+export type FeatureGroups = { total: number; groups: { group: string; total: number }[] };
 export type FeatureList = { total: number; rows: FeatureListRow[]; groups: string[] };
 export type { AnalyzeSpecResult, ChunkSummary, Feature, FeatureRow, GenerateInfo, IngestSpecResult, Selection, SelectResult, SourceInput } from "@specmock/core";
+export type { Flow, FlowDetail, FlowInput, FlowList, FlowRun, FlowSource, FlowStep, FlowSummary, FlowTargetName, Leftover, StepResult, StepState } from "@specmock/core";
+export type FlowRunBody = { targets: FlowTargetNameT[]; cleanup?: boolean };
+export type SafetyState = { on: boolean };
 
 /** `literal`이 true면 `${이름}` 참조만으로 된 값이 아니다(직접 적은 값을 포함). 헤더의 literal 값만 `value`가 `"***"`고, 공통 값·기능별 값은 원문이다. false면 `${이름}` 참조 원문이다. */
 export type TargetEntry = { name: string; value: string; literal: boolean };
@@ -39,6 +43,7 @@ export type TargetInfo = {
   error?: string;
   /** 기존 화면 호환용(PR 2에서 새 화면이 `target.baseUrl`을 쓰면 제거). */
   baseUrl?: string;
+  suggestedBaseUrl?: string | null;
   target?: {
     baseUrl: string;
     timeoutMs: number;
@@ -68,7 +73,7 @@ export type RecordLast = {
   recorded: { featureId: string; status: number; at: string }[];
 };
 
-export type JobKind = "extract" | "generate" | "verify" | "record";
+export type JobKind = "extract" | "generate" | "verify" | "record" | "flow";
 export type Job = {
   id: string; system: string; kind: JobKind;
   state: "running" | "done" | "failed" | "cancelled";

@@ -17,7 +17,7 @@ export function localOnly(port: () => number): MiddlewareHandler {
   };
 }
 
-const POST_ONLY = /^\/api\/(?:systems\/[^/]+\/(?:analyze|extract|generate|verify|record|env)|jobs\/[^/]+\/cancel)\/?$/;
+const POST_ONLY = /^\/api\/(?:systems\/[^/]+\/(?:analyze|extract|generate|verify|record|env|flows\/infer|flows\/[^/]+\/(?:run|inputs))|jobs\/[^/]+\/cancel)\/?$/;
 const TARGET_PATH = /^\/api\/systems\/[^/]+\/target\/?$/;
 
 /** 이 API는 GET·POST와 `target`의 PUT만 쓴다. 그 밖의 메서드, POST 전용 경로의 GET, `target`의 POST는 405. */

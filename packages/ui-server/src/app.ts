@@ -3,9 +3,10 @@ import { z } from "zod";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { analyzeSpec, assertLanguage, CatalogSchema, ClaudeCodeAdapter, findFeature, generate, ingestSpec, listFeatures, readLock, MockSpecSchema, readTarget, recordResponses, select, summarizeChunks, DRIFT_FILE, TARGET_EXAMPLE, TARGET_FILE, TargetSchema, verifyMock, Workspace } from "@specmock/core";
+import { analyzeSpec, assertLanguage, CatalogSchema, ClaudeCodeAdapter, findFeature, flowDetail, flowSummaries, FlowSourceSchema, FlowTargetName, generate, inferFlowsForSystem, readFlows, runFlowTargets, setInput, type LaunchMock, suggestedBaseUrl, writeFlows, ingestSpec, listFeatures, readLock, MockSpecSchema, readTarget, recordResponses, select, summarizeChunks, DRIFT_FILE, TARGET_EXAMPLE, TARGET_FILE, TargetSchema, verifyMock, Workspace } from "@specmock/core";
 import { streamSSE } from "hono/streaming";
 import { EnvStore } from "./envStore.js";
+import { SafetyStore } from "./safety.js";
 import { EventBus, pushBounded, type BusEvent } from "./bus.js";
 import { BusyJobError, JobManager, NotCancellableError, ShuttingDownError } from "./jobs.js";
 import { errorBody, ingestInputError, InvalidRequest, NotFound, toApiError } from "./errors.js";
@@ -23,6 +24,10 @@ const RecordBody = z.object({ allowMutating: z.boolean().optional(), refresh: z.
 const EnvBody = z.object({ values: z.record(z.string(), z.string()) });
 /** GET target은 존재·형식만 본다. 모든 `${ENV}`가 값이 있는 것처럼 치환해 env 오류가 나지 않게 한다(치환 결과는 버린다). */
 const ANY_ENV: Record<string, string> = new Proxy({}, { get: () => "x" });
+const FlowInputBody = z.object({ stepId: z.string().min(1), slot: z.string().min(1), source: FlowSourceSchema });
+const FlowRunBody = z.object({ targets: z.array(FlowTargetName).min(1).refine((t) => new Set(t).size === t.length, "대상이 겹칩니다"), cleanup: z.boolean().default(true) });
+const SafetyBody = z.object({ on: z.boolean() });
+const REAL_BLOCKED = "토큰이 없거나 실제 서버 주소가 비어 있어 실제 실행을 막았어요. mock 실행은 할 수 있어요.";
 const SelectionBody = z.object({ ids: z.array(z.string()) });
 
 /** 본문이 없거나 비어 있어도 되는 요청용. 있으면 형식을 검사한다. */
@@ -51,6 +56,8 @@ export interface AppOptions {
   claudeCommand?: string;
   /** true면 SSE 하트비트 타이머가 프로세스를 붙잡지 않는다. */
   unref?: boolean;
+  /** 테스트용. 흐름 실행의 mock 기동을 바꾼다. 기본은 TS mock 생성 → 기동. */
+  launchMock?: LaunchMock;
   /** SSE 클라이언트별 대기 큐 상한. 기본 1000. */
   sseQueueLimit?: number;
 }
@@ -61,6 +68,7 @@ export function createApp(opts: AppOptions) {
   const bus = new EventBus();
   const jobs = new JobManager(bus);
   const envStore = new EnvStore();
+  const safety = new SafetyStore();
   const app = new Hono();
   app.use("*", localOnly(opts.port));
   app.use("/api/*", methodGuard);
@@ -93,6 +101,13 @@ export function createApp(opts: AppOptions) {
     const byId = new Map(catalog.features.map((f) => [f.id, f]));
     const rows = r.rows.map((row) => ({ ...row, summary: byId.get(row.id)?.summary || byId.get(row.id)?.title || row.id, codes: Object.keys(byId.get(row.id)?.responses ?? {}) }));
     return ok(c, { total: r.total, rows, groups: [...new Set(all.rows.map((x) => x.group))] });
+  });
+  /** 묶음별 기능 수만 돌려준다. 행은 GET /features?group=<g>로 묶음 하나씩 받는다. 순서는 listFeatures의 묶음 이름순(catalog/order.ts:14-20). */
+  app.get("/api/systems/:s/feature-groups", async (c) => {
+    const r = await listFeatures(ws, c.req.param("s"));
+    const totals = new Map<string, number>();
+    for (const row of r.rows) totals.set(row.group, (totals.get(row.group) ?? 0) + 1);
+    return ok(c, { total: r.total, groups: [...totals].map(([group, total]) => ({ group, total })) });
   });
   app.get("/api/systems/:s/features/:id", async (c) => {
     try { return ok(c, await findFeature(ws, c.req.param("s"), c.req.param("id"))); } catch (e) {
@@ -152,12 +167,12 @@ export function createApp(opts: AppOptions) {
   });
   // target.json 값은 헤더의 직접 적은 값만 "***"로 가린다(API 키·토큰이 응답·로그에 남지 않게). params·features는 원문을 돌려준다.
   const targetInfo = async (system: string) => {
-    if (!(await ws.exists(system, TARGET_FILE))) return { exists: false, example: TARGET_EXAMPLE };
+    if (!(await ws.exists(system, TARGET_FILE))) return { exists: false, example: TARGET_EXAMPLE, suggestedBaseUrl: await suggestedBaseUrl(ws, system) };
     try {
       const t = await readTarget(ws, system, ANY_ENV);   // 형식 확인만(치환 결과는 버린다)
       const raw = (await readRawTarget(ws, system))!;
       return {
-        exists: true, baseUrl: t.baseUrl, example: TARGET_EXAMPLE,
+        exists: true, baseUrl: t.baseUrl, example: TARGET_EXAMPLE, suggestedBaseUrl: await suggestedBaseUrl(ws, system),
         target: {
           baseUrl: t.baseUrl, timeoutMs: t.timeoutMs,
           headers: toHeaderEntries(raw.headers), params: toEntries(raw.params),
@@ -166,7 +181,7 @@ export function createApp(opts: AppOptions) {
         env: envStatus(envNames(raw), envStore, system),
       };
     } catch (e) {
-      return { exists: true, error: e instanceof Error ? e.message : String(e), example: TARGET_EXAMPLE };
+      return { exists: true, error: e instanceof Error ? e.message : String(e), example: TARGET_EXAMPLE, suggestedBaseUrl: await suggestedBaseUrl(ws, system) };
     }
   };
   app.get("/api/systems/:s/target", async (c) => {
@@ -209,6 +224,69 @@ export function createApp(opts: AppOptions) {
     const drift = (await ws.exists(system, DRIFT_FILE)) ? await readFile(ws.file(system, DRIFT_FILE), "utf8") : null;
     const recordedAt = drift?.match(/\((\d{4}-\d{2}-\d{2} \d{2}:\d{2}),/)?.[1];
     return ok(c, { exists: drift !== null, ...(drift !== null ? { driftMarkdown: drift } : {}), ...(recordedAt ? { recordedAt } : {}), recorded: await readRecordedSummaries(ws, system) });
+  });
+  app.get("/api/systems/:s/flows", async (c) => {
+    const system = c.req.param("s");
+    await assertRegistered(ws, system);
+    return ok(c, await flowSummaries(ws, system));
+  });
+  app.post("/api/systems/:s/flows/infer", async (c) => {
+    const system = c.req.param("s");
+    await assertRegistered(ws, system);
+    try { return ok(c, await inferFlowsForSystem(ws, system)); } catch (e) {
+      if (e instanceof Error && /먼저 기능을 고르세요/.test(e.message)) throw new InvalidRequest(e.message);
+      throw e;
+    }
+  });
+  app.get("/api/systems/:s/flows/:id", async (c) => {
+    const system = c.req.param("s");
+    await assertRegistered(ws, system);
+    try { return ok(c, await flowDetail(ws, system, c.req.param("id"))); } catch (e) {
+      if (e instanceof Error && /^알 수 없는 흐름/.test(e.message)) throw new NotFound(e.message);
+      throw e;
+    }
+  });
+  app.post("/api/systems/:s/flows/:id/inputs", async (c) => {
+    const system = c.req.param("s");
+    const b = await body(c, FlowInputBody);
+    await assertRegistered(ws, system);
+    const file = await readFlows(ws, system);
+    if (!file) throw new NotFound("흐름이 없어요. 먼저 흐름을 추론하세요.");
+    let next;
+    try { next = setInput(file, c.req.param("id"), b.stepId, b.slot, b.source, "user"); } catch (e) { throw new InvalidRequest((e as Error).message); }
+    await writeFlows(ws, system, next);
+    return ok(c, await flowDetail(ws, system, c.req.param("id")));
+  });
+  app.get("/api/systems/:s/safety", async (c) => {
+    const system = c.req.param("s");
+    await assertRegistered(ws, system);
+    return ok(c, { on: safety.get(system) });
+  });
+  app.post("/api/systems/:s/safety", async (c) => {
+    const system = c.req.param("s");
+    const b = await body(c, SafetyBody);
+    await assertRegistered(ws, system);
+    return ok(c, { on: safety.set(system, b.on) });
+  });
+  /** 안전장치는 요청 시점에 서버가 읽는다. 화면이 보낸 값은 쓰지 않는다. */
+  app.post("/api/systems/:s/flows/:id/run", async (c) => {
+    const system = c.req.param("s");
+    const flowId = c.req.param("id");
+    const b = await body(c, FlowRunBody);
+    await assertRegistered(ws, system);
+    const detail = await flowDetail(ws, system, flowId).catch((e: unknown) => {
+      if (e instanceof Error && /^알 수 없는 흐름/.test(e.message)) throw new NotFound(e.message);
+      throw e;
+    });
+    if (detail.missingFeatures.length > 0) return c.json(errorBody("failed", `기능 없음: ${detail.missingFeatures.join(", ")}`, "기능 선택이 바뀌었어요. 흐름을 다시 추론하세요."), 409);
+    const env = envStore.env(system);
+    if (b.targets.includes("real")) {
+      const usable = await readTarget(ws, system, env).then((t) => t.baseUrl !== "", () => false);
+      if (!usable) return c.json(errorBody("failed", REAL_BLOCKED), 409);
+    }
+    const on = safety.get(system);
+    const mockDir = await defaultOutDir(ws, opts.root, system);
+    return accepted(c, jobs.start(system, "flow", ({ signal, onEvent }) => runFlowTargets(ws, system, flowId, { targets: b.targets, cleanup: b.cleanup, safety: on, env, mockDir, signal, onEvent, launchMock: opts.launchMock })).id);
   });
   app.get("/api/jobs", (c) => ok(c, jobs.list()));
   app.post("/api/jobs/:id/cancel", (c) => {
