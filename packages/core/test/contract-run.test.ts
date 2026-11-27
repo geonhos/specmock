@@ -119,4 +119,15 @@ describe("runContract", () => {
     expect(t.requests[0].headers["content-type"]).toBe("application/json");
     expect(t.requests[0].body).toBe('{"amount":1000}');
   });
+  it("body option replaces the contract body (null sends no body)", async () => {
+    t = await startFakeTarget(() => ({ status: 201, body: { ok: true } }));
+    const c = contract({ method: "POST", path: "/x", body: { a: 1 } }, null, 201);
+    await runContract(t.url, c, { body: { title: "flow-20261126000000" } });
+    expect(JSON.parse(t.requests[0]!.body)).toEqual({ title: "flow-20261126000000" });
+    expect(t.requests[0]!.headers["content-type"]).toBe("application/json");
+    await runContract(t.url, contract({ method: "POST", path: "/x", body: null }, null, 201), { body: { a: 2 } });
+    expect(JSON.parse(t.requests[1]!.body)).toEqual({ a: 2 });
+    await runContract(t.url, c, { body: null });
+    expect(t.requests[2]!.body).toBe("");
+  });
 });
