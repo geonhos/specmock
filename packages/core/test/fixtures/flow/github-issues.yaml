@@ -1,0 +1,81 @@
+openapi: 3.0.3
+info: { title: github-trimmed, version: "1" }
+servers: [{ url: https://api.github.com }]
+paths:
+  /user/repos:
+    post:
+      operationId: repos/create-for-authenticated-user
+      tags: [repos]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string }, private: { type: boolean } } } } }
+      responses: { "201": { description: created, content: { application/json: { schema: { $ref: "#/components/schemas/repository" } } } } }
+  /repos/{owner}/{repo}:
+    parameters:
+      - { name: owner, in: path, required: true, schema: { type: string } }
+      - { name: repo, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: repos/get
+      tags: [repos]
+      responses: { "200": { description: ok, content: { application/json: { schema: { $ref: "#/components/schemas/repository" } } } } }
+    patch:
+      operationId: repos/update
+      tags: [repos]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { description: { type: string } } } } } }
+      responses: { "200": { description: ok, content: { application/json: { schema: { $ref: "#/components/schemas/repository" } } } } }
+    delete:
+      operationId: repos/delete
+      tags: [repos]
+      responses: { "204": { description: deleted } }
+  /repos/{owner}/{repo}/issues:
+    parameters:
+      - { name: owner, in: path, required: true, schema: { type: string } }
+      - { name: repo, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: issues/list-for-repo
+      tags: [issues]
+      responses: { "200": { description: ok, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/issue" } } } } } }
+    post:
+      operationId: issues/create
+      tags: [issues]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [title], properties: { title: { oneOf: [{ type: string }, { type: integer }] }, body: { type: string } } } } }
+      # allOf on purpose: rule 4 must find `number` through allOf members (measured shape, task 1)
+      responses: { "201": { description: created, content: { application/json: { schema: { allOf: [{ $ref: "#/components/schemas/issue" }, { type: object, properties: { html_url: { type: string } } }] } } } } }
+  /repos/{owner}/{repo}/issues/{issue_number}:
+    parameters:
+      - { name: owner, in: path, required: true, schema: { type: string } }
+      - { name: repo, in: path, required: true, schema: { type: string } }
+      - { name: issue_number, in: path, required: true, schema: { type: integer } }
+    get:
+      operationId: issues/get
+      tags: [issues]
+      responses: { "200": { description: ok, content: { application/json: { schema: { $ref: "#/components/schemas/issue" } } } } }
+    patch:
+      operationId: issues/update
+      tags: [issues]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { state: { type: string, enum: [open, closed] } } } } } }
+      # measured GitHub shape: allOf with empty top-level properties
+      responses: { "200": { description: ok, content: { application/json: { schema: { type: object, properties: {}, allOf: [{ $ref: "#/components/schemas/issue" }] } } } } }
+components:
+  schemas:
+    repository:
+      type: object
+      required: [id, node_id, name, full_name, owner, url]
+      properties:
+        id: { type: integer }
+        node_id: { type: string }
+        name: { type: string }
+        full_name: { type: string }
+        owner: { type: object, required: [login], properties: { login: { type: string } } }
+        url: { type: string }
+    issue:
+      type: object
+      required: [id, node_id, number, title, url]
+      properties:
+        id: { type: integer }
+        node_id: { type: string }
+        number: { type: integer }
+        title: { type: string }
+        url: { type: string }
