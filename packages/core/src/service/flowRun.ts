@@ -40,7 +40,7 @@ function failedRun(flowId: string, target: FlowTargetName, safety: boolean, clea
 }
 
 /** 흐름을 고른 대상에 차례로 실행하고 대상별 결과를 flow-runs/에 쓴다. 한 대상의 실패가 다른 대상을 막지 않는다. */
-export async function runFlowTargets(ws: Workspace, system: string, flowId: string, opts: RunFlowTargetsOptions): Promise<{ runs: FlowRun[] }> {
+export async function runFlowTargets(ws: Workspace, system: string, flowId: string, opts: RunFlowTargetsOptions): Promise<{ runs: FlowRun[]; notRun: FlowTargetName[] }> {
   const file = await readFlows(ws, system);
   const flow = file?.flows.find((f) => f.id === flowId);
   if (!flow) throw new Error(`알 수 없는 흐름: ${flowId}`);
@@ -48,7 +48,10 @@ export async function runFlowTargets(ws: Workspace, system: string, flowId: stri
   const missing = missingFeatures(flow, new Set(spec.features.map((f) => f.id)));
   if (missing.length > 0) throw new Error(`기능 없음: ${missing.join(", ")} (기능 선택이 바뀌었습니다. 흐름을 다시 추론하세요)`);
   const runs: FlowRun[] = [];
+  const notRun: FlowTargetName[] = [];
   for (const name of opts.targets) {
+    // 취소된 뒤에는 남은 대상을 시작하지 않고 그 대상의 지난 실행 기록(파일)을 그대로 둔다.
+    if (opts.signal?.aborted) { notRun.push(name); continue; }
     opts.onEvent?.({ stage: "flow", message: `${flow.name}: ${name} 실행` });
     let run: FlowRun;
     if (name === "mock") {
@@ -72,7 +75,6 @@ export async function runFlowTargets(ws: Workspace, system: string, flowId: stri
     }
     await writeFlowRun(ws, system, run);
     runs.push(run);
-    if (run.outcome === "cancelled") break; // 취소하면 남은 대상은 실행하지 않는다.
   }
-  return { runs };
+  return { runs, notRun };
 }

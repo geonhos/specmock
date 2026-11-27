@@ -74,4 +74,41 @@ describe("runFlowTargets", () => {
     expect((await readFlowRun(ws, "s", "tickets", "real"))!.outcome).toBe("cancelled");
     expect(await readFile(ws.file("s", "flow-runs/tickets/real.json"), "utf8")).not.toContain(TOKEN);
   });
+  it("a cancel during mock launch saves a cancelled mock run, not the build-first failure; the later target is not run", async () => {
+    await writeFile(ws.file("s", "target.json"), JSON.stringify({ baseUrl: api.url }));
+    const ac = new AbortController();
+    const out = await runFlowTargets(ws, "s", "tickets", { targets: ["mock", "real"], cleanup: true, safety: false, env: {}, signal: ac.signal,
+      launchMock: async () => { ac.abort(); throw new Error("aborted while installing"); } });
+    expect(out.runs).toHaveLength(1);
+    expect(out.runs[0]).toMatchObject({ target: "mock", outcome: "cancelled", error: expect.not.stringContaining("먼저 만드세요") });
+    expect(out.notRun).toEqual(["real"]);
+    expect(api.requests).toHaveLength(0);
+    expect(await readFlowRun(ws, "s", "tickets", "real")).toBeNull();
+  });
+  it("a cancel during mock launch keeps the previous saved real run", async () => {
+    await writeFile(ws.file("s", "target.json"), JSON.stringify({ baseUrl: api.url }));
+    await runFlowTargets(ws, "s", "tickets", { targets: ["real"], cleanup: true, safety: false, env: {} });
+    const before = await readFile(ws.file("s", "flow-runs/tickets/real.json"), "utf8");
+    const n = api.requests.length;
+    const ac = new AbortController();
+    const out = await runFlowTargets(ws, "s", "tickets", { targets: ["mock", "real"], cleanup: true, safety: false, env: {}, signal: ac.signal,
+      launchMock: async () => { ac.abort(); throw new Error("aborted"); } });
+    expect(out.runs.map((r) => r.target)).toEqual(["mock"]);
+    expect(out.notRun).toEqual(["real"]);
+    expect(api.requests).toHaveLength(n);
+    expect(await readFile(ws.file("s", "flow-runs/tickets/real.json"), "utf8")).toBe(before);
+  });
+  it("a cancel after a target finished does not start the next one and keeps its previous saved run", async () => {
+    await writeFile(ws.file("s", "target.json"), JSON.stringify({ baseUrl: api.url }));
+    await runFlowTargets(ws, "s", "tickets", { targets: ["real"], cleanup: true, safety: false, env: {} });
+    const before = await readFile(ws.file("s", "flow-runs/tickets/real.json"), "utf8");
+    const n = api.requests.length;
+    const ac = new AbortController();
+    const out = await runFlowTargets(ws, "s", "tickets", { targets: ["mock", "real"], cleanup: true, safety: false, env: {}, signal: ac.signal,
+      launchMock: async () => ({ baseUrl: api.url, stop: async () => { ac.abort(); } }) });
+    expect(out.runs.map((r) => [r.target, r.outcome])).toEqual([["mock", "success"]]);
+    expect(out.notRun).toEqual(["real"]);
+    expect(api.requests).toHaveLength(n + 1); // only the mock run's request
+    expect(await readFile(ws.file("s", "flow-runs/tickets/real.json"), "utf8")).toBe(before);
+  });
 });
