@@ -18,6 +18,8 @@ export interface ContractRunOptions {
   /** contract의 경로·쿼리 대신 쓸 값(record의 params 적용 결과). */
   path?: string;
   query?: Record<string, string>;
+  /** contract 본문 대신 보낼 값(흐름 실행의 단계별 값). undefined면 contract 본문. null이면 본문 없음. */
+  body?: unknown;
 }
 
 export type BodyKind = "json" | "raw" | "empty" | "truncated";
@@ -73,10 +75,11 @@ export async function runContract(baseUrl: string, c: Contract, opts: ContractRu
   if (c.expect.schema) { try { validate = (opts.ajv ?? makeAjv()).compile(c.expect.schema); } catch (e) { errors.push(`schema: ${(e as Error).message}`); } }
   const signals = [opts.signal, opts.timeoutMs !== undefined ? AbortSignal.timeout(opts.timeoutMs) : undefined].filter((s): s is AbortSignal => s !== undefined);
   try {
-    const headers = mergeHeaders(c.request.body !== null ? { "content-type": "application/json" } : {}, c.request.headers, opts.headers ?? {});
-    const body = c.request.body === null ? undefined
-      : isFormContentType(headers) ? encodeForm(c.request.body)
-      : JSON.stringify(c.request.body);
+    const reqBody = opts.body !== undefined ? opts.body : c.request.body;
+    const headers = mergeHeaders(reqBody !== null ? { "content-type": "application/json" } : {}, c.request.headers, opts.headers ?? {});
+    const body = reqBody === null ? undefined
+      : isFormContentType(headers) ? encodeForm(reqBody)
+      : JSON.stringify(reqBody);
     const res = await fetch(url, {
       method: c.request.method,
       headers,

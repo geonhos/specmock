@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { emptySlots, FLOWS_FILE, missingFeatures, readFlows, setInput, writeFlows } from "../src/flow/store.js";
+import { flowRunName, readFlowRun, writeFlowRun } from "../src/flow/store.js";
+import type { FlowRun } from "../src/flow/runTypes.js";
 import type { Flow, FlowsFile } from "../src/flow/types.js";
 import { Workspace } from "../src/workspace.js";
 import { analyze } from "../src/analyze/index.js";
@@ -105,5 +107,19 @@ describe("inferFlowsForSystem", () => {
     await ingest(ws, "gh", [GITHUB]);
     await analyze(ws, "gh");
     await expect(inferFlowsForSystem(ws, "gh")).rejects.toThrow(/먼저 기능을 고르세요/);
+  });
+});
+
+describe("flow run files", () => {
+  it("one file per flow and target under flow-runs/", async () => {
+    const run: FlowRun = { flowId: "issues", target: "mock", startedAt: "2026-11-26T01:02:03.000Z", finishedAt: "2026-11-26T01:02:04.000Z", safety: true, cleanup: true, suffix: "-20261126010203", outcome: "success", error: null, steps: [], leftovers: [] };
+    expect(flowRunName("issues", "mock")).toBe("flow-runs/issues/mock.json");
+    expect(await readFlowRun(ws, "gh", "issues", "mock")).toBeNull();
+    await writeFlowRun(ws, "gh", run);
+    expect(await readFlowRun(ws, "gh", "issues", "mock")).toEqual(run);
+  });
+  it("refuses a flow id that could leave flow-runs/", () => {
+    expect(() => flowRunName("../x", "mock")).toThrow(/흐름 id/);
+    expect(() => flowRunName("a/b", "real")).toThrow(/흐름 id/);
   });
 });
