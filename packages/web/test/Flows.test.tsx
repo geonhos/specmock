@@ -26,6 +26,8 @@ it("list shows empty-input count; chart shows '입력 필요', edge names before
   mount();
   const list = await screen.findByRole("navigation", { name: "흐름" });
   const item = within(list).getByRole("button", { name: /issue 다루기/ });
+  expect(within(item.closest("li")!).getByText("빈 연결 1").closest(".st-stopped-empty")).toBeTruthy(); // a pill, not plain text
+  expect(within(item.closest("li")!).getByText("실행 전").closest(".st-pending")).toBeTruthy();
   expect(item.getAttribute("href")).toBeNull();
   const header = await screen.findByRole("button", { name: /POST/ });
   expect(within(header).getByText("POST").className).toContain("flow-method");
@@ -38,6 +40,24 @@ it("list shows empty-input count; chart shows '입력 필요', edge names before
   fireEvent.click(screen.getByRole("button", { name: /create_issue/ }));
   expect(screen.getByText("Claude Code")).toBeTruthy();
   expect(screen.getByText("규칙")).toBeTruthy();
+});
+
+it("list pills: empty count, one pill per target with its outcome, 기능 없음", async () => {
+  const flows = [
+    { id: "a", name: "A", resource: "x", steps: 1, empty: 0, missingFeatures: [], last: { mock: "success", real: null } },
+    { id: "b", name: "B", resource: "x", steps: 1, empty: 2, missingFeatures: ["f_x"], last: { mock: "stopped", real: "diff" } },
+  ];
+  fakeApi({ ...routes(), "GET /api/systems/gh/flows": ok({ inferredAt: "t", notes: [], flows }) });
+  mount();
+  const list = await screen.findByRole("navigation", { name: "흐름" });
+  const [a, b] = within(list).getAllByRole("listitem");
+  expect(within(a!).getByText("mock 성공").closest(".st-success")).toBeTruthy();
+  expect(within(a!).getByText("실제 실행 전").closest(".st-pending")).toBeTruthy();
+  expect(within(a!).queryByText(/빈 연결/)).toBeNull(); // no pill when the count is 0
+  expect(within(b!).getByText("빈 연결 2")).toBeTruthy();
+  expect(within(b!).getByText("기능 없음")).toBeTruthy();
+  expect(within(b!).getByText("mock 멈춤").closest(".st-stopped-empty")).toBeTruthy();
+  expect(within(b!).getByText("실제 차이 있음").closest(".st-diff")).toBeTruthy();
 });
 
 it("renders all eight states with label and class", async () => {
