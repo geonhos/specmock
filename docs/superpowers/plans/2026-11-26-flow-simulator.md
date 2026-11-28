@@ -2303,6 +2303,8 @@ Look "D · Astryx neutral" was approved on 2026-11-27 (issue #28). The approved 
 - State colours are 8 CSS variables `--st-*`, applied to Astryx `Badge` through `className` (`.st` + `.st-<state>`). Each state shows colour, glyph and text.
 - Hangul font: OS fallback. Stack after Figtree: Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif. No Korean font is bundled.
 - Our CSS sits in `@layer app` (declared after `reset, astryx-base, astryx-theme`), so it beats the theme tokens. Unlayered CSS would beat every Astryx layer, so none is allowed.
+- Flow run jobs carry `input.flowId` (`Job.input`, set in the run route). The screen no longer keeps a client job-to-flow map; a flow job without `flowId` attaches to no flow (no notice, no cancel button).
+- The flow screen keeps its state per flow id in a pure store (`flowState.ts`) with one ordering rule: every request takes a seq when it is sent and a response writes its slot only if its seq is greater than the slot's (`write`). This replaces the per-effect `stale` flags, `currentRef` and the other ordering guards (issue #47). A save, run or cancel failure that lands after the user left the flow stays in that flow's entry and shows when the flow is picked again; a toggle failure belongs to the service.
 
 **Astryx facts the tests rely on**
 - `Selector` is a combobox: click it, then click the option (no `fireEvent.change`).
