@@ -1,5 +1,5 @@
 import { Badge } from "@astryxdesign/core/Badge";
-import type { FlowDetail, FlowList as FlowListData, FlowRunOutcome, FlowSource, FlowTargetName, Job, StepState } from "@specmock/ui-server/api-types";
+import type { FlowDetail, FlowList as FlowListData, FlowSource, FlowTargetName, Job } from "@specmock/ui-server/api-types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api } from "../api";
 import { FlowChart } from "../components/FlowChart";
@@ -13,7 +13,6 @@ import { useJob } from "../useJob";
 export type TargetChoice = "mock" | "real" | "both";
 const TARGETS: Record<TargetChoice, FlowTargetName[]> = { mock: ["mock"], real: ["real"], both: ["mock", "real"] };
 const TARGET_LABEL: Record<FlowTargetName, string> = { mock: "mock", real: "실제" };
-/** Outcome badge colour: reuse the step state colours; a cancelled run stays neutral. */
 const asError = (e: unknown) => (e instanceof ApiError ? e : new ApiError(0, "failed", String(e)));
 /** A load failure says what failed and what to do; the server's own message goes in the hint. */
 const loadError = (message: string, e: unknown) => {
@@ -42,7 +41,15 @@ function FlowsOf({ system, jobs, tick, refreshJobs }: Props) {
   const [safety, setSafety] = useState<boolean | null>(null); // null: not read yet or the read failed
   const [target, setTarget] = useState<TargetChoice>("mock");
   const [cleanup, setCleanup] = useState(true);
-  const [error, setError] = useState<ApiError | null>(null);
+  // Action errors (run, cancel, save) belong to the flow where they happened; a safety toggle failure belongs to the service.
+  const [flowErrors, setFlowErrors] = useState<Record<string, ApiError>>({});
+  const [safetyError, setSafetyError] = useState<ApiError | null>(null);
+  const failOn = (flowId: string, e: unknown) => setFlowErrors((m) => ({ ...m, [flowId]: asError(e) }));
+  // A success on a flow clears that flow's error and the service-wide one, not another flow's.
+  const clearOn = (flowId: string | null) => {
+    setSafetyError(null);
+    if (flowId) setFlowErrors((m) => { if (!(flowId in m)) return m; const { [flowId]: _gone, ...rest } = m; return rest; });
+  };
   const [loadFailed, setLoadFailed] = useState<{ list?: ApiError; detail?: { flowId: string; error: ApiError }; safety?: ApiError }>({});
   const failLoad = (k: "list" | "safety", e: ApiError | null) => setLoadFailed((f) => ({ ...f, [k]: e ?? undefined }));
   const job = useJob(jobs, system, "flow");
@@ -76,19 +83,19 @@ function FlowsOf({ system, jobs, tick, refreshJobs }: Props) {
     const saved = currentRef.current;
     if (!saved) return;
     // The response or the failure of a save belongs to the flow it was sent for; drop it once another flow is selected.
-    try { const d = await api.setFlowInput(system, saved, stepId, slot, source); if (currentRef.current === saved) { setDetail(d); setError(null); } } catch (e) { if (currentRef.current === saved) setError(asError(e)); }
+    try { const d = await api.setFlowInput(system, saved, stepId, slot, source); if (currentRef.current === saved) { setDetail(d); clearOn(saved); } } catch (e) { if (currentRef.current === saved) failOn(saved, e); }
   }, [system]);
   const run = async () => {
     if (!current) return;
-    try { const { jobId } = await api.runFlow(system, current, TARGETS[target], cleanup); jobFlow.current.set(jobId, current); job.watch(jobId); refreshJobs(); setError(null); } catch (e) { setError(asError(e)); }
+    try { const { jobId } = await api.runFlow(system, current, TARGETS[target], cleanup); jobFlow.current.set(jobId, current); job.watch(jobId); refreshJobs(); clearOn(current); } catch (e) { failOn(current, e); }
   };
   const cancel = async () => {
-    if (!job.running) return;
-    try { await api.cancel(job.running.id); refreshJobs(); setError(null); } catch (e) { setError(asError(e)); }
+    if (!job.running || !current) return;
+    try { await api.cancel(job.running.id); refreshJobs(); clearOn(current); } catch (e) { failOn(current, e); }
   };
   const toggleSafety = async () => {
     if (safety === null) return;
-    try { setSafety((await api.setSafety(system, !safety)).on); setError(null); } catch (e) { setError(asError(e)); }
+    try { setSafety((await api.setSafety(system, !safety)).on); clearOn(currentRef.current); } catch (e) { setSafetyError(asError(e)); }
   };
 
   const loadNotices = ([["list", loadFailed.list], ["detail", detailError], ["safety", loadFailed.safety]] as const).map(([k, e]) => e ? <Notice key={k} message={e.message} hint={e.hint} /> : null);
@@ -110,7 +117,7 @@ function FlowsOf({ system, jobs, tick, refreshJobs }: Props) {
       <FlowList flows={list?.flows ?? []} current={current} onPick={select} />
       <section className="flow-main">
         {loadNotices}
-        {error ? <Notice message={error.message} hint={error.hint} /> : null}
+        {[safetyError, current ? flowErrors[current] : undefined].map((e, i) => e ? <Notice key={i} message={e.message} hint={e.hint} /> : null)}
         {shown ? (
           <>
             <FlowTopBar name={shown.flow.name} target={target} onTarget={setTarget} cleanup={cleanup} onCleanup={setCleanup}

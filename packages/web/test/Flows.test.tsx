@@ -471,3 +471,147 @@ it("an older list response that arrives after a newer one does not replace it", 
   expect(screen.getByRole("button", { name: /새 목록 이름/ })).toBeTruthy();
   expect(screen.queryByRole("button", { name: /^issue 다루기/ })).toBeNull();
 });
+
+it("while flow A's job runs, flow B shows no 실행 취소; A shows it again (the cancel button belongs to the flow that was run)", async () => {
+  const { rerender } = await runOnA((state) => [flowJob(state)]);
+  rerender("running", 0);
+  expect(await screen.findByRole("button", { name: "실행 취소" })).toBeTruthy();
+  pickFlow(/repo 다루기/);
+  expect(await screen.findByRole("button", { name: /only_b/ })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "실행 취소" })).toBeNull();
+  pickFlow(/issue 다루기/);
+  expect(await screen.findByRole("button", { name: "실행 취소" })).toBeTruthy();
+});
+
+it("flow A's load fails at once and B's detail is still loading: A's load error is not shown on B (detailError flow check)", async () => {
+  let releaseB!: () => void;
+  const waitB = new Promise<void>((r) => { releaseB = r; });
+  fakeApi({ ...routes(), "GET /api/systems/gh/flows": twoFlows,
+    "GET /api/systems/gh/flows/issues": fail(500),
+    "GET /api/systems/gh/flows/repos": () => ({ body: { ok: true, data: detailOf(flowB) }, wait: waitB }) });
+  mount(); // current = issues, which fails at once
+  expect((await screen.findByRole("alert")).textContent).toContain("흐름을 불러오지 못했습니다");
+  pickFlow(/repo 다루기/); // B's detail is held back
+  await vi.waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  releaseB();
+  expect(await screen.findByRole("button", { name: /only_b/ })).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("a failure of A's first load that lands while A is loading again does not show on A (detail .catch stale guard)", async () => {
+  let release1!: () => void;
+  let release2!: () => void;
+  const wait1 = new Promise<void>((r) => { release1 = r; });
+  const wait2 = new Promise<void>((r) => { release2 = r; });
+  let n = 0;
+  fakeApi({ ...routes(), "GET /api/systems/gh/flows": twoFlows,
+    "GET /api/systems/gh/flows/issues": () => (++n === 1 ? { ...fail(500)(), wait: wait1 } : { body: { ok: true, data: detailOf(flow) }, wait: wait2 }),
+    "GET /api/systems/gh/flows/repos": ok(detailOf(flowB)) });
+  mount(); // 1st request for A is held and will fail
+  await screen.findByRole("button", { name: /repo 다루기/ }); // the list is loaded
+  pickFlow(/repo 다루기/);
+  expect(await screen.findByRole("button", { name: /only_b/ })).toBeTruthy();
+  pickFlow(/issue 다루기/); // 2nd request for A is held and will succeed
+  await vi.waitFor(() => expect(n).toBe(2));
+  release1();
+  await new Promise((r) => setTimeout(r, 50));
+  expect(screen.queryByRole("alert")).toBeNull(); // the first request is outdated: its failure must not show
+  release2();
+  expect(await screen.findByRole("button", { name: /create_issue/ })).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+// Action errors belong to the flow where they happened; a safety toggle failure belongs to the service.
+it("a failed run request on A is not shown on B and is shown again on A", async () => {
+  fakeApi({ ...routes(), "GET /api/systems/gh/flows": twoFlows,
+    "GET /api/systems/gh/flows/issues": ok(detailOf(flow)), "GET /api/systems/gh/flows/repos": ok(detailOf(flowB)),
+    "POST /api/systems/gh/flows/issues/run": fail(500, "A 실행 요청 실패") });
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "전체 실행" }));
+  await vi.waitFor(() => expect(screen.getByRole("alert").textContent).toContain("A 실행 요청 실패"));
+  pickFlow(/repo 다루기/);
+  expect(await screen.findByRole("button", { name: /only_b/ })).toBeTruthy();
+  expect(screen.queryByText(/A 실행 요청 실패/)).toBeNull();
+  pickFlow(/issue 다루기/);
+  expect((await screen.findByRole("alert")).textContent).toContain("A 실행 요청 실패");
+});
+
+it("a failed save on A is not shown on B and is shown again on A", async () => {
+  fakeApi({ ...routes(), "GET /api/systems/gh/flows": twoFlows,
+    "GET /api/systems/gh/flows/issues": ok(detailOf(flow)), "GET /api/systems/gh/flows/repos": ok(detailOf(flowB)),
+    "POST /api/systems/gh/flows/issues/inputs": fail(500, "A 저장 실패") });
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: /create_issue/ }));
+  fireEvent.change(screen.getByLabelText("body.title 값"), { target: { value: "hello" } });
+  fireEvent.click(screen.getByRole("button", { name: "body.title 저장" }));
+  await vi.waitFor(() => expect(screen.getByRole("alert").textContent).toContain("A 저장 실패"));
+  pickFlow(/repo 다루기/);
+  expect(await screen.findByRole("button", { name: /only_b/ })).toBeTruthy();
+  expect(screen.queryByText(/A 저장 실패/)).toBeNull();
+  pickFlow(/issue 다루기/);
+  expect((await screen.findByRole("alert")).textContent).toContain("A 저장 실패");
+});
+
+it("a failed save on A that is reported after the user picked B is dropped: A shows no error when picked again", async () => {
+  let release!: () => void;
+  const wait = new Promise<void>((r) => { release = r; });
+  await saveOnA(() => ({ ...fail(500, "A 저장 실패")(), wait }));
+  release();
+  await new Promise((r) => setTimeout(r, 50));
+  pickFlow(/issue 다루기/);
+  expect(await screen.findByRole("button", { name: /create_issue/ })).toBeTruthy();
+  expect(screen.queryByText(/A 저장 실패/)).toBeNull();
+});
+
+it("a failed cancel request on A is not shown on B and is shown again on A", async () => {
+  fakeApi({ ...routes(), "GET /api/systems/gh/flows": twoFlows,
+    "GET /api/systems/gh/flows/issues": ok(detailOf(flow)), "GET /api/systems/gh/flows/repos": ok(detailOf(flowB)),
+    "POST /api/systems/gh/flows/issues/run": ok({ jobId: "j1" }), "POST /api/jobs/j1/cancel": fail(500, "A 취소 실패") });
+  const view = (jobs: Job[], tick: number) => <Flows system="gh" jobs={jobs} tick={tick} refreshJobs={() => {}} />;
+  const { rerender } = render(view([], 0));
+  fireEvent.click(await screen.findByRole("button", { name: "전체 실행" }));
+  await vi.waitFor(() => expect(screen.getByRole("button", { name: "전체 실행" })).toBeTruthy());
+  rerender(view([flowJob("running")], 0));
+  fireEvent.click(await screen.findByRole("button", { name: "실행 취소" }));
+  await vi.waitFor(() => expect(screen.getByRole("alert").textContent).toContain("A 취소 실패"));
+  pickFlow(/repo 다루기/);
+  expect(await screen.findByRole("button", { name: /only_b/ })).toBeTruthy();
+  expect(screen.queryByText(/A 취소 실패/)).toBeNull();
+  pickFlow(/issue 다루기/);
+  expect((await screen.findByRole("alert")).textContent).toContain("A 취소 실패");
+});
+
+it("a failed safety toggle stays visible after switching flows (it is not flow-specific)", async () => {
+  fakeApi({ ...routes(), "GET /api/systems/gh/flows": twoFlows,
+    "GET /api/systems/gh/flows/issues": ok(detailOf(flow)), "GET /api/systems/gh/flows/repos": ok(detailOf(flowB)),
+    "POST /api/systems/gh/safety": fail(500, "토글 실패") });
+  mount();
+  fireEvent.click(await screen.findByRole("switch", { name: "안전장치" }));
+  await vi.waitFor(() => expect(screen.getByRole("alert").textContent).toContain("토글 실패"));
+  pickFlow(/repo 다루기/);
+  expect(await screen.findByRole("button", { name: /only_b/ })).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toContain("토글 실패");
+  pickFlow(/issue 다루기/);
+  expect((await screen.findByRole("alert")).textContent).toContain("토글 실패");
+});
+
+it("a flow's action error is cleared by a later successful run on that flow, not by one on another flow", async () => {
+  const post = { failing: true };
+  const api = fakeApi({ ...routes(), "GET /api/systems/gh/flows": twoFlows,
+    "GET /api/systems/gh/flows/issues": ok(detailOf(flow)), "GET /api/systems/gh/flows/repos": ok(detailOf(flowB)),
+    "POST /api/systems/gh/flows/issues/run": () => (post.failing ? fail(500, "A 실행 요청 실패")() : { body: { ok: true, data: { jobId: "j1" } } }),
+    "POST /api/systems/gh/flows/repos/run": ok({ jobId: "j2" }) });
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "전체 실행" }));
+  await vi.waitFor(() => expect(screen.getByRole("alert").textContent).toContain("A 실행 요청 실패"));
+  pickFlow(/repo 다루기/);
+  expect(await screen.findByRole("button", { name: /only_b/ })).toBeTruthy(); // B is loaded: the run button is B's
+  fireEvent.click(screen.getByRole("button", { name: "전체 실행" })); // a successful run on B
+  await vi.waitFor(() => expect(api.calls).toContain("POST /api/systems/gh/flows/repos/run"));
+  await new Promise((r) => setTimeout(r, 30));
+  pickFlow(/issue 다루기/);
+  expect((await screen.findByRole("alert")).textContent).toContain("A 실행 요청 실패"); // B's success did not clear A's error
+  post.failing = false;
+  fireEvent.click(await screen.findByRole("button", { name: "전체 실행" }));
+  await vi.waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+});
