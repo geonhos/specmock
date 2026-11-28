@@ -56,9 +56,19 @@ describe("flow run route", () => {
     const c = await setup(() => ({ status: 200, body: { id: 1 } }));
     const job = await c.run({ targets: ["real"] });
     expect(job).toMatchObject({ kind: "flow", state: "done", cancellable: true });
+    expect(job.input).toEqual({ flowId: "tickets" });
     expect(job.result).toMatchObject({ runs: [{ target: "real", safety: true }], notRun: [] });
     expect(methods()).toContain("GET"); // 독립 GET 단계(list_tickets)는 실제로 보낸다
     expect(methods().filter((m) => m !== "GET")).toEqual([]);
+  });
+
+  it("the flow job carries its flow id in /api/jobs", async () => {
+    const c = await setup(() => ({ status: 200, body: { id: 1 } }));
+    const job = await c.run({ targets: ["real"] });
+    const listed = await c.req("GET", "/jobs");
+    expect(listed.status).toBe(200);
+    const all = [...listed.body.data.running, ...listed.body.data.recent] as { id: string; input?: { flowId?: string } }[];
+    expect(all.find((j) => j.id === job.id)?.input?.flowId).toBe("tickets");
   });
 
   it("safety off: the real run sends POST too; the body cannot override the server's switch", async () => {

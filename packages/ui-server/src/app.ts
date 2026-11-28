@@ -289,7 +289,7 @@ export function createApp(opts: AppOptions) {
     }
     const on = safety.get(system);
     const mockDir = await defaultOutDir(ws, opts.root, system);
-    return accepted(c, jobs.start(system, "flow", ({ signal, onEvent }) => runFlowTargets(ws, system, flowId, { targets: b.targets, cleanup: b.cleanup, safety: on, env, mockDir, signal, onEvent, launchMock: opts.launchMock })).id);
+    return accepted(c, jobs.start(system, "flow", ({ signal, onEvent }) => runFlowTargets(ws, system, flowId, { targets: b.targets, cleanup: b.cleanup, safety: on, env, mockDir, signal, onEvent, launchMock: opts.launchMock }), { flowId }).id);
   });
   app.get("/api/jobs", (c) => ok(c, jobs.list()));
   app.post("/api/jobs/:id/cancel", (c) => {
