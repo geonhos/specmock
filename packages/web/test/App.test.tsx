@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { App } from "../src/App";
@@ -100,4 +102,14 @@ it("SSE가 영구히 끊겨 포기하면 새로고침 안내", async () => {
     expect(alert.textContent).toContain("서버와 연결이 끊겼어요");
     expect(alert.textContent).toContain("새로고침해 주세요");
   } finally { vi.useRealTimers(); }
+});
+
+it("app shell: .app has one row per child (no leftover row from the removed top bar)", async () => {
+  fakeApi(base());
+  const { container } = render(<App />);
+  const app = container.querySelector(".app")!;
+  const rows = /\.app \{[^}]*grid-template-rows:\s*([^;]+);/.exec(readFileSync(resolve(__dirname, "../src/styles/app.css"), "utf8"))![1]!;
+  const tracks = rows.replace(/minmax\([^)]*\)/g, "x").trim().split(/\s+/);
+  expect(tracks.length).toBe(app.children.length);
+  expect(app.children.length).toBe(1);
 });
