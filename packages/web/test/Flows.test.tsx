@@ -146,8 +146,11 @@ it("a running flow job shows 실행 취소, which posts the job cancel", async (
 it("cancelled run: outcome 취소됨, unsent steps stay 실행 전, targets in notRun are named", async () => {
   const cancelled: FlowRun = { ...run("mock", [res("create_issue", "success", { number: 1 }),
     { ...res("get_issue", "pending", null), reason: "취소되어 실행하지 않았습니다.", request: null, response: null }]), outcome: "cancelled" };
-  fakeApi(routes({ empty: [], runs: { mock: cancelled, real: null } }));
-  const { rerender } = render(<Flows system="gh" jobs={[flowJob("running")]} tick={0} refreshJobs={() => {}} />);
+  fakeApi({ ...routes({ empty: [], runs: { mock: cancelled, real: null } }), "POST /api/systems/gh/flows/issues/run": ok({ jobId: "j1" }) });
+  const { rerender } = render(<Flows system="gh" jobs={[]} tick={0} refreshJobs={() => {}} />);
+  fireEvent.click(await screen.findByRole("button", { name: "전체 실행" })); // the screen remembers that this flow started j1
+  await vi.waitFor(() => expect(screen.getByRole("button", { name: "전체 실행" })).toBeTruthy());
+  rerender(<Flows system="gh" jobs={[flowJob("running")]} tick={0} refreshJobs={() => {}} />);
   rerender(<Flows system="gh" jobs={[flowJob("done", { runs: [cancelled], notRun: ["real"] })]} tick={1} refreshJobs={() => {}} />);
   expect(await screen.findByText("취소됨")).toBeTruthy();
   expect(screen.getAllByText(STATE_LABEL.pending).length).toBeGreaterThan(0);
@@ -325,4 +328,88 @@ it("an action error is cleared by a later successful cancel", async () => {
   post.failing = false;
   fireEvent.click(screen.getByRole("button", { name: "실행 취소" }));
   await vi.waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+});
+
+// A save on flow A that is still in flight when the user picks B: the server echoes A's id, so only a check against the current selection can drop it.
+const saveOnA = async (post: () => { status?: number; body: unknown; wait?: Promise<unknown> }) => {
+  fakeApi({ ...routes(), "GET /api/systems/gh/flows": twoFlows,
+    "GET /api/systems/gh/flows/issues": ok(detailOf(flow)),
+    "GET /api/systems/gh/flows/repos": ok(detailOf(flowB)),
+    "POST /api/systems/gh/flows/issues/inputs": post });
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: /create_issue/ }));
+  fireEvent.change(screen.getByLabelText("body.title 값"), { target: { value: "hello" } });
+  fireEvent.click(screen.getByRole("button", { name: "body.title 저장" }));
+  fireEvent.click(screen.getByRole("button", { name: /repo 다루기.*빈 연결/ }));
+  expect(await screen.findByRole("button", { name: /only_b/ })).toBeTruthy();
+};
+
+it("a save response for flow A that arrives after the user picked B does not hide B's chart", async () => {
+  let release!: () => void;
+  const wait = new Promise<void>((r) => { release = r; });
+  await saveOnA(() => ({ body: { ok: true, data: detailOf(flow) }, wait }));
+  release();
+  await new Promise((r) => setTimeout(r, 50));
+  expect(screen.getByRole("button", { name: /only_b/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "전체 실행" })).toBeTruthy();
+});
+
+it("a failed save on flow A that is reported after the user picked B shows no error on B", async () => {
+  let release!: () => void;
+  const wait = new Promise<void>((r) => { release = r; });
+  await saveOnA(() => ({ ...fail(500, "A 저장 실패")(), wait }));
+  release();
+  await new Promise((r) => setTimeout(r, 50));
+  expect(screen.queryByText(/A 저장 실패/)).toBeNull();
+  expect(screen.getByRole("button", { name: /only_b/ })).toBeTruthy();
+});
+
+// Run notices belong to the flow that was run (the screen remembers job id -> flow id).
+const runOnA = async (jobs: (state: "running" | "done" | "failed") => Job[]) => {
+  fakeApi({ ...routes(), "GET /api/systems/gh/flows": twoFlows,
+    "GET /api/systems/gh/flows/issues": ok(detailOf(flow)),
+    "GET /api/systems/gh/flows/repos": ok(detailOf(flowB)),
+    "POST /api/systems/gh/flows/issues/run": ok({ jobId: "j1" }) });
+  const view = (state: "running" | "done" | "failed", tick: number) => <Flows system="gh" jobs={jobs(state)} tick={tick} refreshJobs={() => {}} />;
+  const { rerender } = render(<Flows system="gh" jobs={[]} tick={0} refreshJobs={() => {}} />);
+  fireEvent.click(await screen.findByRole("button", { name: "전체 실행" }));
+  await vi.waitFor(() => expect(screen.getByRole("button", { name: "전체 실행" })).toBeTruthy());
+  return { rerender: (state: "running" | "done" | "failed", tick: number) => rerender(view(state, tick)) };
+};
+const pickFlow = (re: RegExp) => fireEvent.click(within(screen.getByRole("navigation", { name: "흐름" })).getByRole("button", { name: re }));
+
+it("a failed job and its notRun targets show only on the flow that was run", async () => {
+  const jobsOf = (state: "running" | "done" | "failed"): Job[] => [state === "failed"
+    ? { ...flowJob("failed"), error: { code: "boom", message: "A 실행이 실패했습니다", hint: "다시 시도" } } as Job
+    : flowJob(state, { runs: [], notRun: ["real"] })];
+  const { rerender } = await runOnA(jobsOf);
+  rerender("running", 0);
+  rerender("done", 1);
+  expect(await screen.findByText("실행하지 않은 대상: 실제")).toBeTruthy();
+  pickFlow(/repo 다루기/);
+  expect(await screen.findByRole("button", { name: /only_b/ })).toBeTruthy();
+  expect(screen.queryByText(/실행하지 않은 대상/)).toBeNull();
+  pickFlow(/issue 다루기/);
+  expect(await screen.findByText("실행하지 않은 대상: 실제")).toBeTruthy();
+  rerender("failed", 2);
+  expect(await screen.findByText("A 실행이 실패했습니다")).toBeTruthy();
+  pickFlow(/repo 다루기/);
+  expect(await screen.findByRole("button", { name: /only_b/ })).toBeTruthy();
+  expect(screen.queryByText("A 실행이 실패했습니다")).toBeNull();
+  pickFlow(/issue 다루기/);
+  expect(await screen.findByText("A 실행이 실패했습니다")).toBeTruthy();
+});
+
+it("a job whose flow is unknown (started before a reload) shows no run notice on any flow", async () => {
+  fakeApi({ ...routes(), "GET /api/systems/gh/flows": twoFlows,
+    "GET /api/systems/gh/flows/issues": ok(detailOf(flow)), "GET /api/systems/gh/flows/repos": ok(detailOf(flowB)) });
+  const failedJob = { ...flowJob("failed"), error: { code: "boom", message: "이전 실행 실패", hint: "다시 시도" } } as Job;
+  const { rerender } = render(<Flows system="gh" jobs={[flowJob("running")]} tick={0} refreshJobs={() => {}} />); // seen as running, flow unknown
+  await screen.findByRole("button", { name: /create_issue/ });
+  rerender(<Flows system="gh" jobs={[failedJob]} tick={1} refreshJobs={() => {}} />);
+  await new Promise((r) => setTimeout(r, 50));
+  expect(screen.queryByText("이전 실행 실패")).toBeNull();
+  rerender(<Flows system="gh" jobs={[flowJob("done", { runs: [], notRun: ["real"] })]} tick={2} refreshJobs={() => {}} />);
+  await new Promise((r) => setTimeout(r, 50));
+  expect(screen.queryByText(/실행하지 않은 대상/)).toBeNull();
 });
