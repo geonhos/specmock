@@ -380,7 +380,7 @@ const pickFlow = (re: RegExp) => fireEvent.click(within(screen.getByRole("naviga
 
 it("a failed job and its notRun targets show only on the flow that was run", async () => {
   const jobsOf = (state: "running" | "done" | "failed"): Job[] => [state === "failed"
-    ? { ...flowJob("failed"), error: { code: "boom", message: "A 실행이 실패했습니다", hint: "다시 시도" } } as Job
+    ? { ...flowJob("failed"), error: { code: "failed", message: "A 실행이 실패했습니다", hint: "다시 시도" } } as Job
     : flowJob(state, { runs: [], notRun: ["real"] })];
   const { rerender } = await runOnA(jobsOf);
   rerender("running", 0);
@@ -403,7 +403,7 @@ it("a failed job and its notRun targets show only on the flow that was run", asy
 it("a job whose flow is unknown (started before a reload) shows no run notice on any flow", async () => {
   fakeApi({ ...routes(), "GET /api/systems/gh/flows": twoFlows,
     "GET /api/systems/gh/flows/issues": ok(detailOf(flow)), "GET /api/systems/gh/flows/repos": ok(detailOf(flowB)) });
-  const failedJob = { ...flowJob("failed"), error: { code: "boom", message: "이전 실행 실패", hint: "다시 시도" } } as Job;
+  const failedJob = { ...flowJob("failed"), error: { code: "failed", message: "이전 실행 실패", hint: "다시 시도" } } as Job;
   const { rerender } = render(<Flows system="gh" jobs={[flowJob("running")]} tick={0} refreshJobs={() => {}} />); // seen as running, flow unknown
   await screen.findByRole("button", { name: /create_issue/ });
   rerender(<Flows system="gh" jobs={[failedJob]} tick={1} refreshJobs={() => {}} />);
@@ -412,4 +412,36 @@ it("a job whose flow is unknown (started before a reload) shows no run notice on
   rerender(<Flows system="gh" jobs={[flowJob("done", { runs: [], notRun: ["real"] })]} tick={2} refreshJobs={() => {}} />);
   await new Promise((r) => setTimeout(r, 50));
   expect(screen.queryByText(/실행하지 않은 대상/)).toBeNull();
+});
+
+it("flow A's load fails after B loaded: B shows no load error (detailError flow check and the detail .catch guard)", async () => {
+  let release!: () => void;
+  const wait = new Promise<void>((r) => { release = r; });
+  fakeApi({ ...routes(), "GET /api/systems/gh/flows": twoFlows,
+    "GET /api/systems/gh/flows/issues": () => ({ ...fail(500)(), wait }),
+    "GET /api/systems/gh/flows/repos": ok(detailOf(flowB)) });
+  mount(); // current = issues; its failure is held back
+  fireEvent.click(await screen.findByRole("button", { name: /repo 다루기.*빈 연결/ }));
+  expect(await screen.findByRole("button", { name: /only_b/ })).toBeTruthy();
+  release();
+  await new Promise((r) => setTimeout(r, 50));
+  expect(screen.queryByText(/흐름을 불러오지 못했습니다/)).toBeNull();
+  expect(screen.getByRole("button", { name: /only_b/ })).toBeTruthy();
+});
+
+it("an older list response that arrives after a newer one does not replace it", async () => {
+  const oldList = { inferredAt: "t", notes: [], flows: [{ id: "issues", name: "issue 다루기", resource: "issue", steps: 2, empty: 1, missingFeatures: [], last: { mock: null, real: null } }] };
+  const newList = { ...oldList, flows: [{ ...oldList.flows[0]!, name: "새 목록 이름" }] };
+  let release!: () => void;
+  const wait = new Promise<void>((r) => { release = r; });
+  let n = 0;
+  fakeApi({ ...routes(), "GET /api/systems/gh/flows": () => (++n === 1 ? { body: { ok: true, data: oldList }, wait } : { body: { ok: true, data: newList } }),
+    "GET /api/systems/gh/flows/issues": ok(detailOf(flow)) });
+  const { rerender } = render(<Flows system="gh" jobs={[]} tick={0} refreshJobs={() => {}} />); // 1st list request is held
+  reload(rerender, 1); // 2nd request answers at once
+  expect(await screen.findByRole("button", { name: /새 목록 이름/ })).toBeTruthy();
+  release();
+  await new Promise((r) => setTimeout(r, 50));
+  expect(screen.getByRole("button", { name: /새 목록 이름/ })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /^issue 다루기/ })).toBeNull();
 });
