@@ -1,3 +1,4 @@
+import { Button } from "@astryxdesign/core/Button";
 import { useEffect, useRef, type ReactNode } from "react";
 
 interface Props { open: boolean; title: string; confirmLabel: string; onCancel: () => void; onConfirm: () => void; children?: ReactNode }
@@ -36,8 +37,8 @@ function Modal({ title, confirmLabel, onCancel, onConfirm, children }: Props) {
         <h2>{title}</h2>
         <div className="dialog-body">{children}</div>
         <div className="dialog-actions">
-          <button type="button" className="btn-ghost" onClick={onCancel}>취소</button>
-          <button type="button" className="btn-primary" onClick={onConfirm} data-autofocus>{confirmLabel}</button>
+          <Button variant="ghost" label="취소" onClick={onCancel} />
+          <Button variant="primary" label={confirmLabel} onClick={onConfirm} data-autofocus="" />
         </div>
       </div>
     </dialog>

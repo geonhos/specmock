@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ConfirmDialog } from "../src/components/ConfirmDialog";
 import { Notice } from "../src/components/Notice";
+import { Sidebar } from "../src/components/Sidebar";
 
 it("Notice: role=alert, hint는 둘째 줄", () => {
   render(<Notice message="실패했어요" hint="먼저 ② 분석을 진행해 주세요." />);
@@ -59,4 +60,12 @@ it("ConfirmDialog: showModal 환경에서는 브라우저의 cancel 이벤트(Es
   render(<ConfirmDialog open title="t" confirmLabel="확인" onCancel={onCancel} onConfirm={() => {}}>본문</ConfirmDialog>);
   fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
   expect(onCancel).toHaveBeenCalledTimes(1);
+});
+
+it("Sidebar: clicking a service navigates through go() without a page load", () => {
+  const go = vi.fn();
+  render(<Sidebar systems={[{ name: "gh" } as never, { name: "gl" } as never]} current="gh" go={go} />);
+  const entry = screen.getByText("gl");
+  fireEvent.click(entry);
+  expect(go).toHaveBeenCalledWith("/systems/gl/flows");
 });

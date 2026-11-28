@@ -1,4 +1,4 @@
-import type { EnvStatus, RecordLast, TargetEntry, TargetInfo, TargetPutBody, TargetPutItem } from "@specmock/ui-server/api-types";
+import type { TargetEntry, TargetInfo, TargetPutBody, TargetPutItem } from "@specmock/ui-server/api-types";
 
 /**
  * 화면 ⑥ 설정 폼의 편집용 모델. 서버는 헤더의 직접 적은 값만 `***`로 가려 보낸다(literal). 그 행은 `keep`으로 "파일의 값 그대로"를 뜻하고,
@@ -78,70 +78,4 @@ export function refNames(m: FormModel, knownIds: ReadonlySet<string>): string[] 
     for (const x of r.value.matchAll(REF)) names.add(x[1]!);
   }
   return [...names];
-}
-
-export const ENV_STATUS_LABEL: Record<EnvStatus, string> = { process: "설정됨(서버)", session: "설정됨(화면 입력)", missing: "미설정" };
-
-export type OutcomeKind = "matched" | "drifted" | "mismatch" | "skipped" | "failed" | "none";
-export interface Outcome { kind: OutcomeKind; label: string; /** 펼치면 보이는 이유. */ details: string[] }
-export const NONE: Outcome = { kind: "none", label: "미녹화", details: [] };
-
-/** core RecordResponsesResult 중 화면이 쓰는 부분(service/record.ts). */
-export interface RecordDone {
-  result: {
-    baseUrl: string; matched: string[];
-    drifted: { featureId: string; errors: string[] }[];
-    statusMismatch: { featureId: string; expected: number; actual: number; hint?: string }[];
-    skipped: { featureId: string }[];
-    failed: { featureId: string; reason: string }[];
-    applied: { selected: number; generate: { written?: string[] } | null } | null;
-  };
-  driftMarkdown: string;
-  notes: string[];
-}
-
-/** 이번 job 결과 → 기능별 결과. */
-export function outcomesFromJob(d: RecordDone): Map<string, Outcome> {
-  const m = new Map<string, Outcome>();
-  for (const id of d.result.matched) m.set(id, { kind: "matched", label: "일치", details: [] });
-  for (const e of d.result.drifted) m.set(e.featureId, { kind: "drifted", label: "스펙과 다름", details: e.errors });
-  for (const e of d.result.statusMismatch) m.set(e.featureId, { kind: "mismatch", label: `상태 불일치(기대 ${e.expected}, 실제 ${e.actual})`, details: e.hint ? [e.hint] : [] });
-  for (const e of d.result.skipped) m.set(e.featureId, { kind: "skipped", label: "건너뜀(변경 요청)", details: [] });
-  for (const e of d.result.failed) m.set(e.featureId, { kind: "failed", label: "실패", details: [e.reason] });
-  return m;
-}
-
-/**
- * 한 번의 녹화가 걸릴 수 있는 시간의 여유. drift.md 시각은 실행이 끝난 분이고 녹화 파일은 실행 중에 쓰이므로,
- * 10분을 넘는 실행에서는 이번 실행의 앞쪽 녹화가 미녹화로 보일 수 있다.
- * 근본 해결은 core가 drift.md에 실행 시작 시각을 쓰는 것이다(후속 이슈 #27).
- */
-const RUN_SLACK_MS = 10 * 60_000;
-const driftTime = (s: string | undefined): number => (s ? new Date(s.replace(" ", "T")).getTime() : NaN);
-
-/**
- * 저장된 drift.md와 recorded 목록 → 기능별 결과. drift.md 항목은 `- <id> <METHOD> <path> …` 줄이다. 어느 구역에도 없는 녹화는 일치로 본다.
- * 다만 `recordedAt`(drift.md 시각)보다 한참 오래된 녹화 파일은 옛 실행의 잔여물이라 미녹화로 둔다.
- */
-export function outcomesFromLast(last: RecordLast): Map<string, Outcome> {
-  const m = new Map<string, Outcome>();
-  const cut = driftTime(last.recordedAt) - RUN_SLACK_MS;
-  for (const r of last.recorded) {
-    if (Number.isFinite(cut) && Date.parse(r.at) < cut) continue;
-    m.set(r.featureId, { kind: "matched", label: "일치", details: [] });
-  }
-  let section = "";
-  for (const line of (last.driftMarkdown ?? "").split("\n")) {
-    if (line.startsWith("## ")) { section = line.slice(3).trim(); continue; }
-    const x = /^- (\S+) [A-Z]+ \S+ ?(.*)$/.exec(line);
-    if (!x) continue;
-    const [, id, rest = ""] = x;
-    if (section === "스펙과 다름") m.set(id!, { kind: "drifted", label: "스펙과 다름", details: rest.replace(/^→ \d+\.\s*/, "").split("; ").filter(Boolean) });
-    else if (section === "상태 불일치") {
-      const s = /기대 (\d+), 실제 (\d+)\.\s*(.*)$/.exec(rest);
-      m.set(id!, { kind: "mismatch", label: s ? `상태 불일치(기대 ${s[1]}, 실제 ${s[2]})` : "상태 불일치", details: s?.[3] ? [s[3]] : [] });
-    } else if (section === "건너뜀") m.set(id!, { kind: "skipped", label: "건너뜀(변경 요청)", details: [] });
-    else if (section === "실패") m.set(id!, { kind: "failed", label: "실패", details: [rest.replace(/^— /, "")] });
-  }
-  return m;
 }

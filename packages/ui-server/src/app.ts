@@ -253,7 +253,10 @@ export function createApp(opts: AppOptions) {
     const file = await readFlows(ws, system);
     if (!file) throw new NotFound("흐름이 없어요. 먼저 흐름을 추론하세요.");
     let next;
-    try { next = setInput(file, c.req.param("id"), b.stepId, b.slot, b.source, "user"); } catch (e) { throw new InvalidRequest((e as Error).message); }
+    try { next = setInput(file, c.req.param("id"), b.stepId, b.slot, b.source, "user"); } catch (e) {
+      const m = (e as Error).message;
+      throw /^알 수 없는 흐름/.test(m) ? new NotFound(m) : new InvalidRequest(m);
+    }
     await writeFlows(ws, system, next);
     return ok(c, await flowDetail(ws, system, c.req.param("id")));
   });
@@ -286,7 +289,7 @@ export function createApp(opts: AppOptions) {
     }
     const on = safety.get(system);
     const mockDir = await defaultOutDir(ws, opts.root, system);
-    return accepted(c, jobs.start(system, "flow", ({ signal, onEvent }) => runFlowTargets(ws, system, flowId, { targets: b.targets, cleanup: b.cleanup, safety: on, env, mockDir, signal, onEvent, launchMock: opts.launchMock })).id);
+    return accepted(c, jobs.start(system, "flow", ({ signal, onEvent }) => runFlowTargets(ws, system, flowId, { targets: b.targets, cleanup: b.cleanup, safety: on, env, mockDir, signal, onEvent, launchMock: opts.launchMock }), { flowId }).id);
   });
   app.get("/api/jobs", (c) => ok(c, jobs.list()));
   app.post("/api/jobs/:id/cancel", (c) => {

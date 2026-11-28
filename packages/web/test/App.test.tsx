@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { App } from "../src/App";
@@ -14,31 +16,28 @@ const base = () => ({
   "GET /api/env": () => ({ body: { ok: true, data: { root: "/r", claude: true } } }),
   "GET /api/systems": () => ({ body: { ok: true, data: systems } }),
   "GET /api/jobs": () => ({ body: { ok: true, data: { running: [], recent: [] } } }),
-  // "/"가 ④ 생성 화면으로 가므로 그 화면이 읽는 개요도 있어야 한다.
-  "GET /api/systems/petstore": () => ({ body: { ok: true, data: { summary: systems[0], source: [], analyze: "catalog", catalogTotal: 3, selection: null, generate: null, coverage: null, defaultOutDir: "/r/mock/petstore" } } }),
+  // "/" goes to the first service's flow screen, so the routes that screen reads must exist too.
+  "GET /api/systems/petstore/flows": () => ({ body: { ok: true, data: { inferredAt: null, notes: [], flows: [] } } }),
+  "GET /api/systems/petstore/safety": () => ({ body: { ok: true, data: { on: true } } }),
 });
 
-it("사이드바에 시스템 목록과 + 스펙 등록, 상단에 단계 6개", async () => {
+it("사이드바에 서비스 목록과 + 서비스 등록, 단계 막대는 없다", async () => {
   fakeApi(base());
   render(<App />);
-  const nav = await screen.findByRole("navigation", { name: "시스템" });
-  expect(within(nav).getByRole("link", { name: /petstore/ })).toBeTruthy();
-  expect(within(nav).getByRole("link", { name: "+ 스펙 등록" })).toBeTruthy();
-  for (const s of ["① 등록", "② 분석", "③ 기능 선택", "④ 생성", "⑤ 검증", "⑥ 녹화"]) expect(screen.getByText(s)).toBeTruthy();
+  const nav = await screen.findByRole("navigation", { name: "서비스" });
+  expect(within(nav).getByRole("button", { name: /petstore/ })).toBeTruthy();
+  expect(within(nav).getByRole("link", { name: "+ 서비스 등록" })).toBeTruthy();
+  expect(screen.queryByText("① 등록")).toBeNull();
 });
 
-it("첫 시스템의 다음 단계로 이동하고, 완료한 단계는 버튼·못 가는 단계는 aria-disabled, stale은 보조 글자", async () => {
+it("첫 서비스의 흐름 화면으로 이동한다", async () => {
   fakeApi(base());
   render(<App />);
-  await screen.findByRole("heading", { name: /생성/ });
-  expect(window.location.pathname).toBe("/systems/petstore/generate");
-  expect(screen.getByText("② 분석").closest("button")).toBeTruthy();
-  expect(screen.getByText("⑤ 검증").closest("[aria-disabled='true']")).toBeTruthy();
-  expect(screen.getByText("④ 생성").closest("[aria-current='step']")).toBeTruthy();
-  expect(screen.getByText("다시 실행 필요")).toBeTruthy();
+  await screen.findByRole("heading", { name: "흐름" });
+  expect(window.location.pathname).toBe("/systems/petstore/flows");
 });
 
-it("등록된 시스템이 없으면 ① 등록 화면", async () => {
+it("등록된 서비스가 없으면 등록 화면", async () => {
   fakeApi({ ...base(), "GET /api/systems": () => ({ body: { ok: true, data: [] } }) });
   render(<App />);
   await screen.findByRole("heading", { name: /등록/ });
@@ -48,7 +47,7 @@ it("등록된 시스템이 없으면 ① 등록 화면", async () => {
 it("workspace-changed가 오면 시스템 목록을 다시 불러온다", async () => {
   const api = fakeApi(base());
   render(<App />);
-  await screen.findByRole("link", { name: /petstore/ });
+  await screen.findByRole("button", { name: /petstore/ });
   const count = () => api.calls.filter((c) => c === "GET /api/systems").length;
   const before = count();
   FakeEventSource.last!.emit("workspace-changed", { system: "pets", files: ["catalog.json"] });
@@ -58,7 +57,7 @@ it("workspace-changed가 오면 시스템 목록을 다시 불러온다", async 
 it("SSE가 끊기면 '연결이 끊겼어요' 알림, 다시 연결되면 사라지고 목록을 다시 불러온다", async () => {
   const api = fakeApi(base());
   render(<App />);
-  await screen.findByRole("link", { name: /petstore/ });
+  await screen.findByRole("button", { name: /petstore/ });
   const es = FakeEventSource.last!;
   es.emit("ready", {});
   const count = () => api.calls.filter((c) => c === "GET /api/systems").length;
@@ -73,7 +72,7 @@ it("SSE가 끊기면 '연결이 끊겼어요' 알림, 다시 연결되면 사라
 it("watch-error가 오면 새로고침 안내 알림", async () => {
   fakeApi(base());
   render(<App />);
-  await screen.findByRole("link", { name: /petstore/ });
+  await screen.findByRole("button", { name: /petstore/ });
   FakeEventSource.last!.emit("watch-error", { message: "boom" });
   expect((await screen.findByRole("alert")).textContent).toContain("변경 감지가 멈췄어요");
 });
@@ -81,7 +80,7 @@ it("watch-error가 오면 새로고침 안내 알림", async () => {
 it("언마운트하면 EventSource를 닫는다", async () => {
   fakeApi(base());
   const { unmount } = render(<App />);
-  await screen.findByRole("link", { name: /petstore/ });
+  await screen.findByRole("button", { name: /petstore/ });
   const es = FakeEventSource.last!;
   expect(es.closed).toBe(false);
   unmount();
@@ -94,7 +93,7 @@ it("SSE가 영구히 끊겨 포기하면 새로고침 안내", async () => {
   try {
     fakeApi(base());
     render(<App />);
-    await screen.findByRole("link", { name: /petstore/ });
+    await screen.findByRole("button", { name: /petstore/ });
     for (let i = 0; i < 10; i++) {
       FakeEventSource.last!.fail(true);
       await vi.advanceTimersByTimeAsync(60_000);
@@ -105,19 +104,12 @@ it("SSE가 영구히 끊겨 포기하면 새로고침 안내", async () => {
   } finally { vi.useRealTimers(); }
 });
 
-it("StepBar는 generate 완료면 ⑥ 녹화에 갈 수 있고, stale.record면 다시 실행 필요를 보인다", async () => {
-  const done = { ...systems[0]!, steps: { registered: true, analyzed: true, selected: true, generated: true, verified: false, record: false }, stale: { record: true } };
-  fakeApi({ ...base(), "GET /api/systems": () => ({ body: { ok: true, data: [done] } }) , "GET /api/systems/petstore": () => ({ body: { ok: true, data: { summary: done, source: [], analyze: "catalog", catalogTotal: 3, selection: null, generate: null, coverage: null, defaultOutDir: "/r" } } }) });
-  render(<App />);
-  await screen.findByRole("heading", { name: /mock 검증/ });
-  const bar = screen.getByRole("list", { name: "단계" });
-  expect(within(bar).getByText("⑥ 녹화").closest("button")).toBeTruthy();
-  expect(within(bar).getByText("다시 실행 필요")).toBeTruthy();
-});
-
-it("generate 전에는 ⑥ 녹화에 갈 수 없다", async () => {
+it("app shell: .app has one row per child (no leftover row from the removed top bar)", async () => {
   fakeApi(base());
-  render(<App />);
-  await screen.findByRole("heading", { name: /생성/ });
-  expect(screen.getByText("⑥ 녹화").closest("[aria-disabled='true']")).toBeTruthy();
+  const { container } = render(<App />);
+  const app = container.querySelector(".app")!;
+  const rows = /\.app \{[^}]*grid-template-rows:\s*([^;]+);/.exec(readFileSync(resolve(__dirname, "../src/styles/app.css"), "utf8"))![1]!;
+  const tracks = rows.replace(/minmax\([^)]*\)/g, "x").trim().split(/\s+/);
+  expect(tracks.length).toBe(app.children.length);
+  expect(app.children.length).toBe(1);
 });
