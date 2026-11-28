@@ -16,6 +16,11 @@ const TARGET_LABEL: Record<FlowTargetName, string> = { mock: "mock", real: "실�
 /** Outcome badge colour: reuse the step state colours; a cancelled run stays neutral. */
 const OUTCOME_STATE: Record<FlowRunOutcome, StepState> = { success: "success", diff: "diff", failed: "failed", stopped: "stopped-empty", cancelled: "pending" };
 const asError = (e: unknown) => (e instanceof ApiError ? e : new ApiError(0, "failed", String(e)));
+/** A load failure says what failed and what to do; the server's own message goes in the hint. */
+const loadError = (message: string, e: unknown) => {
+  const err = asError(e);
+  return new ApiError(err.status, err.code, message, `(${err.hint ?? err.message}) 화면을 새로 고치거나 서비스를 다시 선택해 주십시오.`);
+};
 const notRunOf = (result: unknown): FlowTargetName[] => {
   const n = (result as { notRun?: unknown } | undefined)?.notRun;
   return Array.isArray(n) ? n.filter((t): t is FlowTargetName => t === "mock" || t === "real") : [];
@@ -30,19 +35,25 @@ function FlowsOf({ system, jobs, tick, refreshJobs }: Props) {
   const [list, setList] = useState<FlowListData | null>(null);
   const [current, setCurrent] = useState<string | null>(null);
   const [detail, setDetail] = useState<FlowDetail | null>(null);
-  const [safety, setSafety] = useState(true);
+  const [safety, setSafety] = useState<boolean | null>(null); // null: not read yet or the read failed
   const [target, setTarget] = useState<TargetChoice>("mock");
   const [cleanup, setCleanup] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
+  const [loadFailed, setLoadFailed] = useState<{ list?: ApiError; detail?: ApiError; safety?: ApiError }>({});
+  const failLoad = (k: "list" | "detail" | "safety", e: ApiError | null) => setLoadFailed((f) => ({ ...f, [k]: e ?? undefined }));
   const job = useJob(jobs, system, "flow");
   const seenState = job.seen?.state;
 
   useEffect(() => {
-    api.flows(system).then((l) => { setList(l); setCurrent((c) => c ?? l.flows[0]?.id ?? null); }).catch((e) => setError(asError(e)));
-    api.safety(system).then((s) => setSafety(s.on)).catch(() => undefined);
+    api.flows(system).then((l) => { setList(l); failLoad("list", null); setCurrent((c) => c ?? l.flows[0]?.id ?? null); }).catch((e) => failLoad("list", loadError("흐름 목록을 불러오지 못했습니다.", e)));
+    api.safety(system).then((s) => { setSafety(s.on); failLoad("safety", null); }).catch((e) => {
+      setSafety(null);
+      const err = asError(e);
+      failLoad("safety", new ApiError(err.status, err.code, "안전장치 상태를 읽지 못했습니다.", `(${err.hint ?? err.message}) 상태를 알 수 없는 동안에는 안전장치를 바꿀 수 없습니다. 화면을 새로 고쳐 주십시오.`));
+    });
   }, [system, tick, seenState]);
   useEffect(() => {
-    if (current) api.flow(system, current).then(setDetail).catch((e) => setError(asError(e)));
+    if (current) api.flow(system, current).then((d) => { setDetail(d); failLoad("detail", null); }).catch((e) => failLoad("detail", loadError("흐름을 불러오지 못했습니다.", e)));
   }, [system, current, tick, seenState]);
 
   const saveInput = useCallback(async (stepId: string, slot: string, source: FlowSource) => {
@@ -58,12 +69,15 @@ function FlowsOf({ system, jobs, tick, refreshJobs }: Props) {
     try { await api.cancel(job.running.id); refreshJobs(); } catch (e) { setError(asError(e)); }
   };
   const toggleSafety = async () => {
+    if (safety === null) return;
     try { setSafety((await api.setSafety(system, !safety)).on); } catch (e) { setError(asError(e)); }
   };
 
+  const loadNotices = (["list", "detail", "safety"] as const).map((k) => loadFailed[k] ? <Notice key={k} message={loadFailed[k]!.message} hint={loadFailed[k]!.hint} /> : null);
   if (list && list.flows.length === 0) {
     return (
       <section className="flows-empty">
+        {loadNotices}
         <p>고른 기능에서 흐름을 만들지 못했어요.</p>
         <ul>{list.notes.map((n) => <li key={n}>{n}</li>)}</ul>
       </section>
@@ -74,13 +88,14 @@ function FlowsOf({ system, jobs, tick, refreshJobs }: Props) {
     <div className="flow-layout">
       <FlowList flows={list?.flows ?? []} current={current} onPick={setCurrent} />
       <section className="flow-main">
+        {loadNotices}
+        {error ? <Notice message={error.message} hint={error.hint} /> : null}
         {detail ? (
           <>
             <FlowTopBar name={detail.flow.name} target={target} onTarget={setTarget} cleanup={cleanup} onCleanup={setCleanup}
               safety={safety} onSafety={() => void toggleSafety()} running={job.running !== undefined} cancellable={job.running?.cancellable === true}
               blocked={detail.missingFeatures.length > 0} onRun={() => void run()} onCancel={() => void cancel()} />
             {detail.missingFeatures.length > 0 ? <Notice message={`기능 없음: ${detail.missingFeatures.join(", ")}`} hint="기능 선택이 바뀌었어요. 흐름을 다시 추론하세요." /> : null}
-            {error ? <Notice message={error.message} hint={error.hint} /> : null}
             {seenState === "failed" && job.seen?.error ? <Notice message={job.seen.error.message} hint={job.seen.error.hint} /> : null}
             {(["mock", "real"] as const).map((t) => detail.runs[t]?.error ? <Notice key={t} message={`${TARGET_LABEL[t]} 실행: ${detail.runs[t]!.error}`} /> : null)}
             <div className="flow-badges">

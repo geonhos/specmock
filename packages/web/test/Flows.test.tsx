@@ -167,3 +167,40 @@ it("picking another flow in the list opens that flow", async () => {
   fireEvent.click(within(screen.getByRole("navigation", { name: "흐름" })).getByRole("button", { name: /issue 다루기/ }));
   expect(await screen.findByRole("heading", { name: "issue 다루기" })).toBeTruthy();
 });
+
+const fail = (status: number, message = "서버 오류") => () => ({ status, body: { ok: false, error: { code: "boom", message } } });
+
+it("GET /flows fails → an alert says what failed and what to do (no blank screen)", async () => {
+  fakeApi({ ...routes(), "GET /api/systems/gh/flows": fail(500) });
+  mount();
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("흐름 목록을 불러오지 못했습니다");
+  expect(alert.textContent).toContain("새로 고");
+});
+
+it("the first GET /flows/:id fails → alert shown and the list stays visible", async () => {
+  fakeApi({ ...routes(), "GET /api/systems/gh/flows/issues": fail(500) });
+  mount();
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("흐름을 불러오지 못했습니다");
+  expect(within(screen.getByRole("navigation", { name: "흐름" })).getByRole("button", { name: /issue 다루기/ })).toBeTruthy();
+});
+
+it("a failed safety read shows a notice and a disabled switch, with no off colour; a later read restores it", async () => {
+  const glFlow = { ...flow, id: "glissues" };
+  fakeApi({ ...routes(),
+    "GET /api/systems/gh/safety": fail(500),
+    "GET /api/systems/gl/flows": ok({ inferredAt: "t", notes: [], flows: [{ id: "glissues", name: "issue 다루기", resource: "issue", steps: 2, empty: 0, missingFeatures: [], last: { mock: null, real: null } }] }),
+    "GET /api/systems/gl/flows/glissues": ok({ flow: glFlow, empty: [], missingFeatures: [], runs: { mock: null, real: null } }),
+    "GET /api/systems/gl/safety": ok({ on: true }) });
+  const { rerender } = render(<Flows system="gh" jobs={[]} tick={0} refreshJobs={() => {}} />);
+  const sw = await screen.findByRole("switch", { name: "안전장치" });
+  await vi.waitFor(() => expect(screen.getByRole("alert").textContent).toContain("안전장치 상태를 읽지 못했습니다"));
+  expect(sw.hasAttribute("disabled") || sw.getAttribute("aria-disabled") === "true").toBe(true);
+  expect(document.querySelector('[data-safety="off"]')).toBeNull();
+  expect(screen.queryByText("실제 서버에 변경 요청을 보냅니다")).toBeNull();
+  rerender(<Flows system="gl" jobs={[]} tick={0} refreshJobs={() => {}} />);
+  await vi.waitFor(() => expect(screen.getByRole("switch", { name: "안전장치" }).hasAttribute("disabled")).toBe(false));
+  expect(((screen.getByRole("switch", { name: "안전장치" })) as HTMLInputElement).checked).toBe(true);
+  expect(screen.queryByRole("alert")).toBeNull();
+});
