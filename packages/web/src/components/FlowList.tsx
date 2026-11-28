@@ -1,5 +1,6 @@
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Badge } from "@astryxdesign/core/Badge";
+import { useId, useRef } from "react";
 import type { FlowSummary, FlowTargetName, StepState } from "@specmock/ui-server/api-types";
 import { OUTCOME_LABEL, OUTCOME_STATE, STATE_LABEL, STATE_SYMBOL } from "../flowModel";
 
@@ -27,14 +28,25 @@ function FlowPills({ f }: { f: FlowSummary }) {
   );
 }
 
+/**
+ * ListItem puts the label and the description inside one button, so the button's name would include every pill.
+ * It has no prop for aria-describedby, so the flow name is its own button (`interactiveRef`: the row adds no second tab stop)
+ * that names the item and points at the pills as its description.
+ */
+function FlowItem({ f, selected, onPick }: { f: FlowSummary; selected: boolean; onPick: (id: string) => void }) {
+  const button = useRef<HTMLButtonElement>(null);
+  const pillsId = useId();
+  return (
+    <ListItem label={<button ref={button} type="button" className="flow-name-button" aria-describedby={pillsId} onClick={() => onPick(f.id)}>{f.name}</button>}
+      isSelected={selected} interactiveRef={button} description={<span id={pillsId}><FlowPills f={f} /></span>} />
+  );
+}
+
 export function FlowList({ flows, current, onPick }: { flows: FlowSummary[]; current: string | null; onPick: (id: string) => void }) {
   return (
     <nav aria-label="흐름" className="panel flow-list">
       <List density="compact">
-        {flows.map((f) => (
-          <ListItem key={f.id} label={f.name} isSelected={f.id === current}
-            onClick={() => onPick(f.id)} description={<FlowPills f={f} />} />
-        ))}
+        {flows.map((f) => <FlowItem key={f.id} f={f} selected={f.id === current} onPick={onPick} />)}
       </List>
     </nav>
   );

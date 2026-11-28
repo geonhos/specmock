@@ -60,6 +60,7 @@ dialog h2 { margin: 0 0 8px; font-size: 16px; }
 .flow-list-item { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 10px; text-align: left; background: transparent; border: 0; cursor: pointer; color: inherit; font: inherit; }
 .flow-list-item[aria-current="true"] { background: #d4d4d4; }
 .flow-list-item:hover { background: #ebebeb; }
+.flow-name-button { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; text-align: left; cursor: pointer; word-break: break-all; }
 .flow-list-name { font-weight: 600; word-break: break-all; }
 .flow-badges { display: flex; gap: 4px; flex-wrap: wrap; }
 .flow-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
