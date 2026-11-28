@@ -89,7 +89,7 @@ describe("reduce", () => {
 });
 
 const job = (o: Partial<Job> & { id: string }): Job => ({ system: "s", kind: "flow", state: "done", cancellable: true, startedAt: "t", ...o }) as Job;
-const failedErr = { code: "failed", message: "job failed", hint: "retry" };
+const failedErr = { code: "failed" as const, message: "job failed", hint: "retry" };
 type RunRow = [string, Job[], string, Partial<ReturnType<typeof runView>>];
 const runRows: RunRow[] = [
   ["no flow job → nothing", [], "A", { running: false, cancellable: false, failed: undefined, notRun: [] }],

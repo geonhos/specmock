@@ -1,6 +1,6 @@
 import { Badge } from "@astryxdesign/core/Badge";
-import type { FlowDetail, FlowList as FlowListData, FlowSource, FlowTargetName, Job } from "@specmock/ui-server/api-types";
-import { useCallback, useEffect, useRef, useState } from "react";
+import type { FlowSource, FlowTargetName, Job } from "@specmock/ui-server/api-types";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { ApiError, api } from "../api";
 import { FlowChart } from "../components/FlowChart";
 import { FlowList } from "../components/FlowList";
@@ -8,7 +8,7 @@ import { FlowTopBar } from "../components/FlowTopBar";
 import { Leftovers } from "../components/Leftovers";
 import { Notice } from "../components/Notice";
 import { OUTCOME_LABEL, OUTCOME_STATE } from "../flowModel";
-import { useJob } from "../useJob";
+import { initial, reduce, runView, screenView } from "../flowState";
 
 export type TargetChoice = "mock" | "real" | "both";
 const TARGETS: Record<TargetChoice, FlowTargetName[]> = { mock: ["mock"], real: ["real"], both: ["mock", "real"] };
@@ -19,10 +19,6 @@ const loadError = (message: string, e: unknown) => {
   const err = asError(e);
   return new ApiError(err.status, err.code, message, `(${err.hint ?? err.message}) 화면을 새로 고치거나 서비스를 다시 선택해 주십시오.`);
 };
-const notRunOf = (result: unknown): FlowTargetName[] => {
-  const n = (result as { notRun?: unknown } | undefined)?.notRun;
-  return Array.isArray(n) ? n.filter((t): t is FlowTargetName => t === "mock" || t === "real") : [];
-};
 
 type Props = { system: string; jobs: Job[]; tick: number; refreshJobs: () => void };
 
@@ -30,108 +26,86 @@ type Props = { system: string; jobs: Job[]; tick: number; refreshJobs: () => voi
 export function Flows(p: Props) { return <FlowsOf key={p.system} {...p} />; }
 
 function FlowsOf({ system, jobs, tick, refreshJobs }: Props) {
-  const [list, setList] = useState<FlowListData | null>(null);
-  const [current, setCurrent] = useState<string | null>(null);
-  // The selected flow for async callbacks: a closure's `current` is stale and a server echoing the requested id proves nothing.
-  const currentRef = useRef<string | null>(null);
-  const select = useCallback((id: string) => { currentRef.current = id; setCurrent(id); }, []);
-  // job id -> the flow that started it (client memory; `Job` carries no flow id). Lost on reload: then no run notice is shown.
-  const jobFlow = useRef(new Map<string, string>());
-  const [detail, setDetail] = useState<FlowDetail | null>(null);
-  const [safety, setSafety] = useState<boolean | null>(null); // null: not read yet or the read failed
+  // All server-backed state lives in the store, keyed by flow id; see flowState.ts for the one ordering rule.
+  const [state, dispatch] = useReducer(reduce, initial);
+  const counter = useRef(0);
+  const nextSeq = () => ++counter.current; // every request takes its seq when it is sent
   const [target, setTarget] = useState<TargetChoice>("mock");
   const [cleanup, setCleanup] = useState(true);
-  // Action errors (run, cancel, save) belong to the flow where they happened; a safety toggle failure belongs to the service.
-  const [flowErrors, setFlowErrors] = useState<Record<string, ApiError>>({});
-  const [safetyError, setSafetyError] = useState<ApiError | null>(null);
-  const failOn = (flowId: string, e: unknown) => setFlowErrors((m) => ({ ...m, [flowId]: asError(e) }));
-  // A success on a flow clears that flow's error and the service-wide one, not another flow's.
-  const clearOn = (flowId: string | null) => {
-    setSafetyError(null);
-    if (flowId) setFlowErrors((m) => { if (!(flowId in m)) return m; const { [flowId]: _gone, ...rest } = m; return rest; });
-  };
-  const [loadFailed, setLoadFailed] = useState<{ list?: ApiError; detail?: { flowId: string; error: ApiError }; safety?: ApiError }>({});
-  const failLoad = (k: "list" | "safety", e: ApiError | null) => setLoadFailed((f) => ({ ...f, [k]: e ?? undefined }));
-  const job = useJob(jobs, system, "flow");
-  const seenState = job.seen?.state;
+  const view = screenView(state);
+  const { selected } = view;
+  const rv = runView(jobs, system, selected);
+  // Any change of the last flow job (start, progress end, finish) reloads what the job may have changed.
+  const lastJob = jobs.filter((j) => j.system === system && j.kind === "flow").at(-1);
+  const jobKey = lastJob ? `${lastJob.id}:${lastJob.state}` : "";
 
-  // Each effect ignores a response that lands after its inputs changed (a newer load or another selected flow).
   useEffect(() => {
-    let stale = false;
-    api.flows(system).then((l) => { if (stale) return; setList(l); failLoad("list", null); if (currentRef.current === null && l.flows[0]) select(l.flows[0].id); }).catch((e) => { if (!stale) failLoad("list", loadError("흐름 목록을 불러오지 못했습니다.", e)); });
-    api.safety(system).then((s) => { if (stale) return; setSafety(s.on); failLoad("safety", null); }).catch((e) => {
-      if (stale) return;
-      setSafety(null);
+    const listSeq = nextSeq();
+    api.flows(system).then((list) => dispatch({ type: "listLoaded", seq: listSeq, list }), (e) => dispatch({ type: "listFailed", seq: listSeq, error: loadError("흐름 목록을 불러오지 못했습니다.", e) }));
+    const safetySeq = nextSeq();
+    api.safety(system).then((r) => dispatch({ type: "safetyLoaded", seq: safetySeq, on: r.on }), (e) => {
       const err = asError(e);
-      failLoad("safety", new ApiError(err.status, err.code, "안전장치 상태를 읽지 못했습니다.", `(${err.hint ?? err.message}) 상태를 알 수 없는 동안에는 안전장치를 바꿀 수 없습니다. 화면을 새로 고쳐 주십시오.`));
+      dispatch({ type: "safetyFailed", seq: safetySeq, error: new ApiError(err.status, err.code, "안전장치 상태를 읽지 못했습니다.", `(${err.hint ?? err.message}) 상태를 알 수 없는 동안에는 안전장치를 바꿀 수 없습니다. 화면을 새로 고쳐 주십시오.`) });
     });
-    return () => { stale = true; };
-  }, [system, tick, seenState]);
+  }, [system, tick, jobKey]);
   useEffect(() => {
-    if (!current) return;
-    let stale = false;
-    api.flow(system, current)
-      .then((d) => { if (stale) return; setDetail(d); setLoadFailed((f) => ({ ...f, detail: undefined })); })
-      .catch((e) => { if (!stale) setLoadFailed((f) => ({ ...f, detail: { flowId: current, error: loadError("흐름을 불러오지 못했습니다.", e) } })); });
-    return () => { stale = true; };
-  }, [system, current, tick, seenState]);
-  // Only the selected flow's data is shown or acted on; while it is not loaded the chart stays empty.
-  const shown = detail && detail.flow.id === current ? detail : null;
-  const detailError = loadFailed.detail && loadFailed.detail.flowId === current ? loadFailed.detail.error : undefined;
+    if (!selected) return;
+    const seq = nextSeq();
+    api.flow(system, selected).then((detail) => dispatch({ type: "detailLoaded", seq, flowId: selected, detail }), (e) => dispatch({ type: "detailFailed", seq, flowId: selected, error: loadError("흐름을 불러오지 못했습니다.", e) }));
+  }, [system, selected, tick, jobKey]);
 
-  const saveInput = useCallback(async (stepId: string, slot: string, source: FlowSource) => {
-    const saved = currentRef.current;
-    if (!saved) return;
-    // The response or the failure of a save belongs to the flow it was sent for; drop it once another flow is selected.
-    try { const d = await api.setFlowInput(system, saved, stepId, slot, source); if (currentRef.current === saved) { setDetail(d); clearOn(saved); } } catch (e) { if (currentRef.current === saved) failOn(saved, e); }
-  }, [system]);
+  // Each handler takes its seq and the flow id when it sends, so a late response lands in that flow's entry.
+  const saveInput = async (stepId: string, slot: string, source: FlowSource) => {
+    if (!selected) return;
+    const flowId = selected; const seq = nextSeq();
+    try { dispatch({ type: "saved", seq, flowId, detail: await api.setFlowInput(system, flowId, stepId, slot, source) }); } catch (e) { dispatch({ type: "actionFailed", seq, flowId, error: asError(e) }); }
+  };
   const run = async () => {
-    if (!current) return;
-    try { const { jobId } = await api.runFlow(system, current, TARGETS[target], cleanup); jobFlow.current.set(jobId, current); job.watch(jobId); refreshJobs(); clearOn(current); } catch (e) { failOn(current, e); }
+    if (!selected) return;
+    const flowId = selected; const seq = nextSeq();
+    try { await api.runFlow(system, flowId, TARGETS[target], cleanup); refreshJobs(); dispatch({ type: "actionOk", seq, flowId }); } catch (e) { dispatch({ type: "actionFailed", seq, flowId, error: asError(e) }); }
   };
   const cancel = async () => {
-    if (!job.running || !current) return;
-    try { await api.cancel(job.running.id); refreshJobs(); clearOn(current); } catch (e) { failOn(current, e); }
+    if (!rv.runningId || !selected) return;
+    const flowId = selected; const seq = nextSeq();
+    try { await api.cancel(rv.runningId); refreshJobs(); dispatch({ type: "actionOk", seq, flowId }); } catch (e) { dispatch({ type: "actionFailed", seq, flowId, error: asError(e) }); }
   };
   const toggleSafety = async () => {
-    if (safety === null) return;
-    try { setSafety((await api.setSafety(system, !safety)).on); clearOn(currentRef.current); } catch (e) { setSafetyError(asError(e)); }
+    if (view.safety === null) return;
+    const flowId = selected; const seq = nextSeq();
+    try { dispatch({ type: "toggled", seq, flowId, on: (await api.setSafety(system, !view.safety)).on }); } catch (e) { dispatch({ type: "toggleFailed", seq, error: asError(e) }); }
   };
 
-  const loadNotices = ([["list", loadFailed.list], ["detail", detailError], ["safety", loadFailed.safety]] as const).map(([k, e]) => e ? <Notice key={k} message={e.message} hint={e.hint} /> : null);
-  if (list && list.flows.length === 0) {
+  const notices = (list: typeof view.notices) => list.map((e, i) => <Notice key={i} message={e.message} hint={e.hint} />);
+  if (view.list && view.flows.length === 0) {
     return (
       <section className="flows-empty">
-        {loadNotices}
+        {notices(view.loadNotices)}
         <p>고른 기능에서 흐름을 만들지 못했어요.</p>
-        <ul>{list.notes.map((n) => <li key={n}>{n}</li>)}</ul>
+        <ul>{view.list.notes.map((n) => <li key={n}>{n}</li>)}</ul>
       </section>
     );
   }
-  // Run notices belong to the flow that was run; a job started before a reload has no known flow, so none is shown.
-  const seenHere = job.seen !== undefined && jobFlow.current.get(job.seen.id) === current;
-  const notRun = seenState === "done" && seenHere ? notRunOf(job.seen?.result) : [];
-  const ranHere = job.running !== undefined && (jobFlow.current.get(job.running.id) ?? current) === current;
+  const shown = view.detail;
   return (
     <div className="flow-layout">
-      <FlowList flows={list?.flows ?? []} current={current} onPick={select} />
+      <FlowList flows={view.flows} current={selected} onPick={(flowId) => dispatch({ type: "pick", flowId })} />
       <section className="flow-main">
-        {loadNotices}
-        {[safetyError, current ? flowErrors[current] : undefined].map((e, i) => e ? <Notice key={i} message={e.message} hint={e.hint} /> : null)}
+        {notices(view.notices)}
         {shown ? (
           <>
             <FlowTopBar name={shown.flow.name} target={target} onTarget={setTarget} cleanup={cleanup} onCleanup={setCleanup}
-              safety={safety} onSafety={() => void toggleSafety()} running={job.running !== undefined} cancellable={ranHere && job.running?.cancellable === true}
+              safety={view.safety} onSafety={() => void toggleSafety()} running={rv.running} cancellable={rv.cancellable}
               blocked={shown.missingFeatures.length > 0} onRun={() => void run()} onCancel={() => void cancel()} />
             {shown.missingFeatures.length > 0 ? <Notice message={`기능 없음: ${shown.missingFeatures.join(", ")}`} hint="기능 선택이 바뀌었어요. 흐름을 다시 추론하세요." /> : null}
-            {seenHere && seenState === "failed" && job.seen?.error ? <Notice message={job.seen.error.message} hint={job.seen.error.hint} /> : null}
+            {rv.failed ? <Notice message={rv.failed.message} hint={rv.failed.hint} /> : null}
             {(["mock", "real"] as const).map((t) => shown.runs[t]?.error ? <Notice key={t} message={`${TARGET_LABEL[t]} 실행: ${shown.runs[t]!.error}`} /> : null)}
             <div className="flow-badges">
               {(["mock", "real"] as const).map((t) => { const r = shown.runs[t]; return r ? (
                 <span key={t}><span className="muted">{TARGET_LABEL[t]} 결과 </span><Badge variant="neutral" className={`st st-${OUTCOME_STATE[r.outcome]}`} label={OUTCOME_LABEL[r.outcome]} /></span>
               ) : null; })}
             </div>
-            {notRun.length > 0 ? <p className="notrun">{`실행하지 않은 대상: ${notRun.map((t) => TARGET_LABEL[t]).join(", ")}`}</p> : null}
+            {rv.notRun.length > 0 ? <p className="notrun">{`실행하지 않은 대상: ${rv.notRun.map((t) => TARGET_LABEL[t]).join(", ")}`}</p> : null}
             <FlowChart flow={shown.flow} features={shown.features} runs={shown.runs} empty={shown.empty} onSave={saveInput} />
             <Leftovers runs={shown.runs} />
           </>
