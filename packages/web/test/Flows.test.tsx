@@ -254,3 +254,75 @@ it("safety: fail → notice and disabled switch; reload ok → enabled with the 
   unknown();
   expect(sw().checked).toBe(false); // the stale "off" is not shown as a known state: data-safety is unknown and the switch is disabled
 });
+
+// Stale responses: two flows A ("issues") and B ("repos") in one list; the user picks A, then B.
+const flowB: FlowDetail["flow"] = { id: "repos", name: "repo 다루기", resource: "repo", steps: [step("only_b", "main")] };
+const twoFlows = ok({ inferredAt: "t", notes: [], flows: [
+  { id: "issues", name: "issue 다루기", resource: "issue", steps: 2, empty: 0, missingFeatures: [], last: { mock: null, real: null } },
+  { id: "repos", name: "repo 다루기", resource: "repo", steps: 1, empty: 0, missingFeatures: [], last: { mock: null, real: null } }] });
+const detailOf = (f: FlowDetail["flow"]) => ({ flow: f, empty: [], missingFeatures: [], runs: { mock: null, real: null } });
+
+it("a late response for flow A does not replace flow B after the user picked B", async () => {
+  let release!: () => void;
+  const wait = new Promise<void>((r) => { release = r; });
+  fakeApi({ ...routes(), "GET /api/systems/gh/flows": twoFlows,
+    "GET /api/systems/gh/flows/issues": () => ({ body: { ok: true, data: detailOf(flow) }, wait }),
+    "GET /api/systems/gh/flows/repos": ok(detailOf(flowB)) });
+  mount(); // current = issues; its detail is held back
+  fireEvent.click(await screen.findByRole("button", { name: /repo 다루기.*빈 연결/ }));
+  expect(await screen.findByRole("button", { name: /only_b/ })).toBeTruthy();
+  release();
+  await new Promise((r) => setTimeout(r, 50));
+  expect(screen.getByRole("button", { name: /only_b/ })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /create_issue/ })).toBeNull();
+});
+
+it("flow B fails to load: B's error shows and A's chart is not shown as B", async () => {
+  fakeApi({ ...routes(), "GET /api/systems/gh/flows": twoFlows,
+    "GET /api/systems/gh/flows/issues": ok(detailOf(flow)),
+    "GET /api/systems/gh/flows/repos": fail(500) });
+  mount();
+  await screen.findByRole("button", { name: /create_issue/ });
+  fireEvent.click(screen.getByRole("button", { name: /repo 다루기.*빈 연결/ }));
+  expect((await screen.findByRole("alert")).textContent).toContain("흐름을 불러오지 못했습니다");
+  expect(screen.queryByRole("button", { name: /create_issue/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: "전체 실행" })).toBeNull();
+});
+
+it("empty-flows view still shows load notices (a failed safety read)", async () => {
+  fakeApi({ ...routes(), "GET /api/systems/gh/flows": ok({ inferredAt: "t", notes: ["메모"], flows: [] }), "GET /api/systems/gh/safety": fail(500) });
+  mount();
+  expect(await screen.findByText("고른 기능에서 흐름을 만들지 못했어요.")).toBeTruthy();
+  await vi.waitFor(() => expect(screen.getByRole("alert").textContent).toContain("안전장치 상태를 읽지 못했습니다"));
+});
+
+it("clicking the disabled safety switch while the state is unknown sends nothing", async () => {
+  const api = fakeApi({ ...routes(), "GET /api/systems/gh/safety": fail(500), "POST /api/systems/gh/safety": ok({ on: false }) });
+  mount();
+  await vi.waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+  fireEvent.click(screen.getByRole("switch", { name: "안전장치" }));
+  await new Promise((r) => setTimeout(r, 30));
+  expect(api.calls).not.toContain("POST /api/systems/gh/safety");
+});
+
+it("an action error is cleared by a later successful safety toggle", async () => {
+  const post = { failing: true };
+  fakeApi({ ...routes(), "POST /api/systems/gh/safety": () => (post.failing ? fail(500, "토글 실패")() : { body: { ok: true, data: { on: false } } }) });
+  mount();
+  fireEvent.click(await screen.findByRole("switch", { name: "안전장치" }));
+  await vi.waitFor(() => expect(screen.getByRole("alert").textContent).toContain("토글 실패"));
+  post.failing = false;
+  fireEvent.click(screen.getByRole("switch", { name: "안전장치" }));
+  await vi.waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+});
+
+it("an action error is cleared by a later successful cancel", async () => {
+  const post = { failing: true };
+  fakeApi({ ...routes(), "POST /api/jobs/j1/cancel": () => (post.failing ? fail(500, "취소 실패")() : { body: { ok: true, data: { state: "running" } } }) });
+  render(<Flows system="gh" jobs={[flowJob("running")]} tick={0} refreshJobs={() => {}} />);
+  fireEvent.click(await screen.findByRole("button", { name: "실행 취소" }));
+  await vi.waitFor(() => expect(screen.getByRole("alert").textContent).toContain("취소 실패"));
+  post.failing = false;
+  fireEvent.click(screen.getByRole("button", { name: "실행 취소" }));
+  await vi.waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+});

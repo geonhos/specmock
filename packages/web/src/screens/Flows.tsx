@@ -39,26 +39,38 @@ function FlowsOf({ system, jobs, tick, refreshJobs }: Props) {
   const [target, setTarget] = useState<TargetChoice>("mock");
   const [cleanup, setCleanup] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
-  const [loadFailed, setLoadFailed] = useState<{ list?: ApiError; detail?: ApiError; safety?: ApiError }>({});
-  const failLoad = (k: "list" | "detail" | "safety", e: ApiError | null) => setLoadFailed((f) => ({ ...f, [k]: e ?? undefined }));
+  const [loadFailed, setLoadFailed] = useState<{ list?: ApiError; detail?: { flowId: string; error: ApiError }; safety?: ApiError }>({});
+  const failLoad = (k: "list" | "safety", e: ApiError | null) => setLoadFailed((f) => ({ ...f, [k]: e ?? undefined }));
   const job = useJob(jobs, system, "flow");
   const seenState = job.seen?.state;
 
+  // Each effect ignores a response that lands after its inputs changed (a newer load or another selected flow).
   useEffect(() => {
-    api.flows(system).then((l) => { setList(l); failLoad("list", null); setCurrent((c) => c ?? l.flows[0]?.id ?? null); }).catch((e) => failLoad("list", loadError("흐름 목록을 불러오지 못했습니다.", e)));
-    api.safety(system).then((s) => { setSafety(s.on); failLoad("safety", null); }).catch((e) => {
+    let stale = false;
+    api.flows(system).then((l) => { if (stale) return; setList(l); failLoad("list", null); setCurrent((c) => c ?? l.flows[0]?.id ?? null); }).catch((e) => { if (!stale) failLoad("list", loadError("흐름 목록을 불러오지 못했습니다.", e)); });
+    api.safety(system).then((s) => { if (stale) return; setSafety(s.on); failLoad("safety", null); }).catch((e) => {
+      if (stale) return;
       setSafety(null);
       const err = asError(e);
       failLoad("safety", new ApiError(err.status, err.code, "안전장치 상태를 읽지 못했습니다.", `(${err.hint ?? err.message}) 상태를 알 수 없는 동안에는 안전장치를 바꿀 수 없습니다. 화면을 새로 고쳐 주십시오.`));
     });
+    return () => { stale = true; };
   }, [system, tick, seenState]);
   useEffect(() => {
-    if (current) api.flow(system, current).then((d) => { setDetail(d); failLoad("detail", null); }).catch((e) => failLoad("detail", loadError("흐름을 불러오지 못했습니다.", e)));
+    if (!current) return;
+    let stale = false;
+    api.flow(system, current)
+      .then((d) => { if (stale) return; setDetail(d); setLoadFailed((f) => ({ ...f, detail: undefined })); })
+      .catch((e) => { if (!stale) setLoadFailed((f) => ({ ...f, detail: { flowId: current, error: loadError("흐름을 불러오지 못했습니다.", e) } })); });
+    return () => { stale = true; };
   }, [system, current, tick, seenState]);
+  // Only the selected flow's data is shown or acted on; while it is not loaded the chart stays empty.
+  const shown = detail && detail.flow.id === current ? detail : null;
+  const detailError = loadFailed.detail && loadFailed.detail.flowId === current ? loadFailed.detail.error : undefined;
 
   const saveInput = useCallback(async (stepId: string, slot: string, source: FlowSource) => {
     if (!current) return;
-    try { setDetail(await api.setFlowInput(system, current, stepId, slot, source)); setError(null); } catch (e) { setError(asError(e)); }
+    try { const d = await api.setFlowInput(system, current, stepId, slot, source); if (d.flow.id === current) setDetail(d); setError(null); } catch (e) { setError(asError(e)); }
   }, [system, current]);
   const run = async () => {
     if (!current) return;
@@ -66,14 +78,14 @@ function FlowsOf({ system, jobs, tick, refreshJobs }: Props) {
   };
   const cancel = async () => {
     if (!job.running) return;
-    try { await api.cancel(job.running.id); refreshJobs(); } catch (e) { setError(asError(e)); }
+    try { await api.cancel(job.running.id); refreshJobs(); setError(null); } catch (e) { setError(asError(e)); }
   };
   const toggleSafety = async () => {
     if (safety === null) return;
-    try { setSafety((await api.setSafety(system, !safety)).on); } catch (e) { setError(asError(e)); }
+    try { setSafety((await api.setSafety(system, !safety)).on); setError(null); } catch (e) { setError(asError(e)); }
   };
 
-  const loadNotices = (["list", "detail", "safety"] as const).map((k) => loadFailed[k] ? <Notice key={k} message={loadFailed[k]!.message} hint={loadFailed[k]!.hint} /> : null);
+  const loadNotices = ([["list", loadFailed.list], ["detail", detailError], ["safety", loadFailed.safety]] as const).map(([k, e]) => e ? <Notice key={k} message={e.message} hint={e.hint} /> : null);
   if (list && list.flows.length === 0) {
     return (
       <section className="flows-empty">
@@ -90,22 +102,22 @@ function FlowsOf({ system, jobs, tick, refreshJobs }: Props) {
       <section className="flow-main">
         {loadNotices}
         {error ? <Notice message={error.message} hint={error.hint} /> : null}
-        {detail ? (
+        {shown ? (
           <>
-            <FlowTopBar name={detail.flow.name} target={target} onTarget={setTarget} cleanup={cleanup} onCleanup={setCleanup}
+            <FlowTopBar name={shown.flow.name} target={target} onTarget={setTarget} cleanup={cleanup} onCleanup={setCleanup}
               safety={safety} onSafety={() => void toggleSafety()} running={job.running !== undefined} cancellable={job.running?.cancellable === true}
-              blocked={detail.missingFeatures.length > 0} onRun={() => void run()} onCancel={() => void cancel()} />
-            {detail.missingFeatures.length > 0 ? <Notice message={`기능 없음: ${detail.missingFeatures.join(", ")}`} hint="기능 선택이 바뀌었어요. 흐름을 다시 추론하세요." /> : null}
+              blocked={shown.missingFeatures.length > 0} onRun={() => void run()} onCancel={() => void cancel()} />
+            {shown.missingFeatures.length > 0 ? <Notice message={`기능 없음: ${shown.missingFeatures.join(", ")}`} hint="기능 선택이 바뀌었어요. 흐름을 다시 추론하세요." /> : null}
             {seenState === "failed" && job.seen?.error ? <Notice message={job.seen.error.message} hint={job.seen.error.hint} /> : null}
-            {(["mock", "real"] as const).map((t) => detail.runs[t]?.error ? <Notice key={t} message={`${TARGET_LABEL[t]} 실행: ${detail.runs[t]!.error}`} /> : null)}
+            {(["mock", "real"] as const).map((t) => shown.runs[t]?.error ? <Notice key={t} message={`${TARGET_LABEL[t]} 실행: ${shown.runs[t]!.error}`} /> : null)}
             <div className="flow-badges">
-              {(["mock", "real"] as const).map((t) => { const r = detail.runs[t]; return r ? (
+              {(["mock", "real"] as const).map((t) => { const r = shown.runs[t]; return r ? (
                 <span key={t}><span className="muted">{TARGET_LABEL[t]} 결과 </span><Badge variant="neutral" className={`st st-${OUTCOME_STATE[r.outcome]}`} label={OUTCOME_LABEL[r.outcome]} /></span>
               ) : null; })}
             </div>
             {notRun.length > 0 ? <p className="notrun">{`실행하지 않은 대상: ${notRun.map((t) => TARGET_LABEL[t]).join(", ")}`}</p> : null}
-            <FlowChart flow={detail.flow} runs={detail.runs} empty={detail.empty} onSave={saveInput} />
-            <Leftovers runs={detail.runs} />
+            <FlowChart flow={shown.flow} runs={shown.runs} empty={shown.empty} onSave={saveInput} />
+            <Leftovers runs={shown.runs} />
           </>
         ) : null}
       </section>
