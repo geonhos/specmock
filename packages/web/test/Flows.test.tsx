@@ -204,3 +204,53 @@ it("a failed safety read shows a notice and a disabled switch, with no off colou
   expect(((screen.getByRole("switch", { name: "안전장치" })) as HTMLInputElement).checked).toBe(true);
   expect(screen.queryByRole("alert")).toBeNull();
 });
+
+// Same-system reloads: bump `tick` on the mounted instance (no remount), after swapping a route between fail and ok.
+const flaky = (good: unknown, bad = fail(500)) => { const s = { failing: true }; return { s, route: () => (s.failing ? bad() : { body: { ok: true, data: good } }) }; };
+const reload = (rerender: (ui: React.ReactElement) => void, tick: number) => rerender(<Flows system="gh" jobs={[]} tick={tick} refreshJobs={() => {}} />);
+const detailOk = { flow, empty: [], missingFeatures: [], runs: { mock: null, real: null } };
+
+it("list: a failed load shows the alert, a reload on the same service clears it", async () => {
+  const r = routes();
+  const l = flaky(await (r["GET /api/systems/gh/flows"]() as { body: { data: unknown } }).body.data);
+  fakeApi({ ...r, "GET /api/systems/gh/flows": l.route });
+  const { rerender } = mount();
+  expect((await screen.findByRole("alert")).textContent).toContain("흐름 목록을 불러오지 못했습니다");
+  l.s.failing = false;
+  reload(rerender, 1);
+  await vi.waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  expect(await screen.findByRole("navigation", { name: "흐름" })).toBeTruthy();
+});
+
+it("detail: a failed load shows the alert, a reload on the same flow clears it", async () => {
+  const d = flaky(detailOk);
+  fakeApi({ ...routes(), "GET /api/systems/gh/flows/issues": d.route });
+  const { rerender } = mount();
+  expect((await screen.findByRole("alert")).textContent).toContain("흐름을 불러오지 못했습니다");
+  d.s.failing = false;
+  reload(rerender, 1);
+  await vi.waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  expect(await screen.findByRole("switch", { name: "안전장치" })).toBeTruthy();
+});
+
+it("safety: fail → notice and disabled switch; reload ok → enabled with the server value; reload fail → unknown again", async () => {
+  const s = flaky({ on: false });
+  fakeApi({ ...routes(), "GET /api/systems/gh/safety": s.route });
+  const { rerender } = mount();
+  const sw = () => screen.getByRole("switch", { name: "안전장치" }) as HTMLInputElement;
+  const unknown = () => { expect(sw().getAttribute("aria-disabled") === "true" || sw().disabled).toBe(true); expect(document.querySelector('[data-safety="unknown"]')).not.toBeNull(); };
+  await screen.findByRole("switch", { name: "안전장치" });
+  await vi.waitFor(() => expect(screen.getByRole("alert").textContent).toContain("안전장치 상태를 읽지 못했습니다"));
+  unknown();
+  s.s.failing = false;
+  reload(rerender, 1);
+  await vi.waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  expect(sw().disabled).toBe(false);
+  expect(sw().checked).toBe(false);
+  expect(document.querySelector('[data-safety="off"]')).not.toBeNull();
+  s.s.failing = true;
+  reload(rerender, 2);
+  await vi.waitFor(() => expect(screen.getByRole("alert").textContent).toContain("안전장치 상태를 읽지 못했습니다"));
+  unknown();
+  expect(sw().checked).toBe(false); // the stale "off" is not shown as a known state: data-safety is unknown and the switch is disabled
+});
