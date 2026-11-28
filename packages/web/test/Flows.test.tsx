@@ -16,7 +16,7 @@ const res = (stepId: string, state: StepResult["state"], body: unknown, values =
 const run = (target: "mock" | "real", steps: StepResult[], leftovers: FlowRun["leftovers"] = []): FlowRun => ({ flowId: "issues", target, startedAt: "a", finishedAt: "b", safety: target === "real", cleanup: true, suffix: "", outcome: "success", error: null, steps, leftovers });
 const routes = (detail: Partial<FlowDetail> = {}, safety = true) => ({
   "GET /api/systems/gh/flows": ok({ inferredAt: "t", notes: ['issue: 삭제 기능이 없어 실행 뒤 "남은 자원"으로 알립니다.'], flows: [{ id: "issues", name: "issue 다루기", resource: "issue", steps: 2, empty: 1, missingFeatures: [], last: { mock: null, real: null } }] }),
-  "GET /api/systems/gh/flows/issues": ok({ flow, empty: ["create_issue:body.title"], missingFeatures: [], runs: { mock: null, real: null }, ...detail }),
+  "GET /api/systems/gh/flows/issues": ok({ flow, empty: ["create_issue:body.title"], missingFeatures: [], features: { f_create_issue: { method: "POST", path: "/repos/{owner}/{repo}/issues" } }, runs: { mock: null, real: null }, ...detail }),
   "GET /api/systems/gh/safety": ok({ on: safety }),
 });
 const mount = () => render(<Flows system="gh" jobs={[]} tick={0} refreshJobs={() => {}} />);
@@ -25,7 +25,13 @@ it("list shows empty-input count; chart shows '입력 필요', edge names before
   fakeApi(routes());
   mount();
   const list = await screen.findByRole("navigation", { name: "흐름" });
-  expect(within(list).getByRole("button", { name: /issue 다루기.*빈 연결 1/ })).toBeTruthy();
+  const item = within(list).getByRole("button", { name: /issue 다루기/ });
+  expect(item.getAttribute("href")).toBeNull();
+  const header = await screen.findByRole("button", { name: /POST/ });
+  expect(within(header).getByText("POST").className).toContain("flow-method");
+  expect(within(header).getByText("/repos/{owner}/{repo}/issues")).toBeTruthy();
+  expect(within(header).getByText("create_issue")).toBeTruthy(); // the step id stays visible
+  expect(screen.getByRole("button", { name: /f_get_issue/ })).toBeTruthy(); // no catalog entry: the feature id is shown
   expect(await screen.findByText("입력 필요")).toBeTruthy();
   expect(screen.getByText("number")).toBeTruthy(); // before a run: the edge shows the field name
   expect(screen.getAllByText(STATE_LABEL.pending).length).toBeGreaterThan(0);
@@ -60,7 +66,7 @@ it("after a run: edge shows `field = value`; expanded step shows only differing 
 });
 
 it("fill an empty input with a user value → POST inputs with source user", async () => {
-  const api = fakeApi({ ...routes(), "POST /api/systems/gh/flows/issues/inputs": ok({ flow, empty: [], missingFeatures: [], runs: { mock: null, real: null } }) });
+  const api = fakeApi({ ...routes(), "POST /api/systems/gh/flows/issues/inputs": ok({ flow, empty: [], missingFeatures: [], features: {}, runs: { mock: null, real: null } }) });
   mount();
   fireEvent.click(await screen.findByRole("button", { name: /create_issue/ }));
   fireEvent.change(screen.getByLabelText("body.title 값"), { target: { value: "hello" } });
@@ -73,7 +79,7 @@ it("switch a user-valued input to an earlier step's response field and save the 
   // c's slot starts as a user value with no createdBy, so nothing is preselected; "b" is not the default step.
   const three: FlowDetail["flow"] = { ...flow, steps: [step("a", "prep"), step("b", "main"),
     step("c", "main", [{ slot: "body.owner", source: { kind: "user", value: "x" }, basis: "user" }])] };
-  const detail = { flow: three, empty: [], missingFeatures: [], runs: { mock: null, real: null } };
+  const detail = { flow: three, empty: [], missingFeatures: [], features: {}, runs: { mock: null, real: null } };
   const api = fakeApi({ ...routes(detail), "POST /api/systems/gh/flows/issues/inputs": ok(detail) });
   mount();
   fireEvent.click(await screen.findByRole("button", { name: /f_c/ }));
@@ -124,7 +130,7 @@ it("safety is read per service: switching service shows that service's value (#4
   const glFlow = { ...flow, id: "glissues" };
   const api = fakeApi({ ...routes({}, false), // gh: safety off
     "GET /api/systems/gl/flows": ok({ inferredAt: "t", notes: [], flows: [{ id: "glissues", name: "issue 다루기", resource: "issue", steps: 2, empty: 0, missingFeatures: [], last: { mock: null, real: null } }] }),
-    "GET /api/systems/gl/flows/glissues": ok({ flow: glFlow, empty: [], missingFeatures: [], runs: { mock: null, real: null } }),
+    "GET /api/systems/gl/flows/glissues": ok({ flow: glFlow, empty: [], missingFeatures: [], features: {}, runs: { mock: null, real: null } }),
     "GET /api/systems/gl/safety": ok({ on: true }) });
   const { rerender } = render(<Flows system="gh" jobs={[]} tick={0} refreshJobs={() => {}} />);
   expect(((await screen.findByRole("switch", { name: "안전장치" })) as HTMLInputElement).checked).toBe(false);
@@ -164,7 +170,7 @@ it("picking another flow in the list opens that flow", async () => {
     "GET /api/systems/gh/flows": ok({ inferredAt: "t", notes: [], flows: [
       { id: "repos", name: "repo 다루기", resource: "repo", steps: 1, empty: 0, missingFeatures: [], last: { mock: null, real: null } },
       { id: "issues", name: "issue 다루기", resource: "issue", steps: 2, empty: 1, missingFeatures: [], last: { mock: null, real: null } }] }),
-    "GET /api/systems/gh/flows/repos": ok({ flow: other, empty: [], missingFeatures: [], runs: { mock: null, real: null } }) });
+    "GET /api/systems/gh/flows/repos": ok({ flow: other, empty: [], missingFeatures: [], features: {}, runs: { mock: null, real: null } }) });
   mount();
   expect(await screen.findByRole("heading", { name: "repo 다루기" })).toBeTruthy();
   fireEvent.click(within(screen.getByRole("navigation", { name: "흐름" })).getByRole("button", { name: /issue 다루기/ }));
@@ -194,7 +200,7 @@ it("a failed safety read shows a notice and a disabled switch, with no off colou
   fakeApi({ ...routes(),
     "GET /api/systems/gh/safety": fail(500),
     "GET /api/systems/gl/flows": ok({ inferredAt: "t", notes: [], flows: [{ id: "glissues", name: "issue 다루기", resource: "issue", steps: 2, empty: 0, missingFeatures: [], last: { mock: null, real: null } }] }),
-    "GET /api/systems/gl/flows/glissues": ok({ flow: glFlow, empty: [], missingFeatures: [], runs: { mock: null, real: null } }),
+    "GET /api/systems/gl/flows/glissues": ok({ flow: glFlow, empty: [], missingFeatures: [], features: {}, runs: { mock: null, real: null } }),
     "GET /api/systems/gl/safety": ok({ on: true }) });
   const { rerender } = render(<Flows system="gh" jobs={[]} tick={0} refreshJobs={() => {}} />);
   const sw = await screen.findByRole("switch", { name: "안전장치" });
@@ -211,7 +217,7 @@ it("a failed safety read shows a notice and a disabled switch, with no off colou
 // Same-system reloads: bump `tick` on the mounted instance (no remount), after swapping a route between fail and ok.
 const flaky = (good: unknown, bad = fail(500)) => { const s = { failing: true }; return { s, route: () => (s.failing ? bad() : { body: { ok: true, data: good } }) }; };
 const reload = (rerender: (ui: React.ReactElement) => void, tick: number) => rerender(<Flows system="gh" jobs={[]} tick={tick} refreshJobs={() => {}} />);
-const detailOk = { flow, empty: [], missingFeatures: [], runs: { mock: null, real: null } };
+const detailOk = { flow, empty: [], missingFeatures: [], features: {}, runs: { mock: null, real: null } };
 
 it("list: a failed load shows the alert, a reload on the same service clears it", async () => {
   const r = routes();
@@ -263,7 +269,7 @@ const flowB: FlowDetail["flow"] = { id: "repos", name: "repo 다루기", resourc
 const twoFlows = ok({ inferredAt: "t", notes: [], flows: [
   { id: "issues", name: "issue 다루기", resource: "issue", steps: 2, empty: 0, missingFeatures: [], last: { mock: null, real: null } },
   { id: "repos", name: "repo 다루기", resource: "repo", steps: 1, empty: 0, missingFeatures: [], last: { mock: null, real: null } }] });
-const detailOf = (f: FlowDetail["flow"]) => ({ flow: f, empty: [], missingFeatures: [], runs: { mock: null, real: null } });
+const detailOf = (f: FlowDetail["flow"]) => ({ flow: f, empty: [], missingFeatures: [], features: {}, runs: { mock: null, real: null } });
 
 it("a late response for flow A does not replace flow B after the user picked B", async () => {
   let release!: () => void;
@@ -272,7 +278,7 @@ it("a late response for flow A does not replace flow B after the user picked B",
     "GET /api/systems/gh/flows/issues": () => ({ body: { ok: true, data: detailOf(flow) }, wait }),
     "GET /api/systems/gh/flows/repos": ok(detailOf(flowB)) });
   mount(); // current = issues; its detail is held back
-  fireEvent.click(await screen.findByRole("button", { name: /repo 다루기.*빈 연결/ }));
+  fireEvent.click(await screen.findByRole("button", { name: /repo 다루기/ }));
   expect(await screen.findByRole("button", { name: /only_b/ })).toBeTruthy();
   release();
   await new Promise((r) => setTimeout(r, 50));
@@ -286,7 +292,7 @@ it("flow B fails to load: B's error shows and A's chart is not shown as B", asyn
     "GET /api/systems/gh/flows/repos": fail(500) });
   mount();
   await screen.findByRole("button", { name: /create_issue/ });
-  fireEvent.click(screen.getByRole("button", { name: /repo 다루기.*빈 연결/ }));
+  fireEvent.click(screen.getByRole("button", { name: /repo 다루기/ }));
   expect((await screen.findByRole("alert")).textContent).toContain("흐름을 불러오지 못했습니다");
   expect(screen.queryByRole("button", { name: /create_issue/ })).toBeNull();
   expect(screen.queryByRole("button", { name: "전체 실행" })).toBeNull();
@@ -340,7 +346,7 @@ const saveOnA = async (post: () => { status?: number; body: unknown; wait?: Prom
   fireEvent.click(await screen.findByRole("button", { name: /create_issue/ }));
   fireEvent.change(screen.getByLabelText("body.title 값"), { target: { value: "hello" } });
   fireEvent.click(screen.getByRole("button", { name: "body.title 저장" }));
-  fireEvent.click(screen.getByRole("button", { name: /repo 다루기.*빈 연결/ }));
+  fireEvent.click(screen.getByRole("button", { name: /repo 다루기/ }));
   expect(await screen.findByRole("button", { name: /only_b/ })).toBeTruthy();
 };
 
@@ -421,7 +427,7 @@ it("flow A's load fails after B loaded: B shows no load error (detailError flow 
     "GET /api/systems/gh/flows/issues": () => ({ ...fail(500)(), wait }),
     "GET /api/systems/gh/flows/repos": ok(detailOf(flowB)) });
   mount(); // current = issues; its failure is held back
-  fireEvent.click(await screen.findByRole("button", { name: /repo 다루기.*빈 연결/ }));
+  fireEvent.click(await screen.findByRole("button", { name: /repo 다루기/ }));
   expect(await screen.findByRole("button", { name: /only_b/ })).toBeTruthy();
   release();
   await new Promise((r) => setTimeout(r, 50));

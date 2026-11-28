@@ -49,6 +49,21 @@ describe("flow routes", () => {
     expect((await c.get("/systems/gh/flows/nope")).status).toBe(404);
   });
 
+  it("detail carries method and path of each step's feature; a feature outside the selection has no entry", async () => {
+    const c = await registered();
+    await c.post("/systems/gh/flows/infer");
+    const d = (await c.get("/systems/gh/flows/issues")).body.data;
+    const create = d.flow.steps.find((s: { id: string }) => s.id === "create_issue");
+    expect(d.features[create.featureId]).toEqual({ method: "POST", path: "/repos/{owner}/{repo}/issues" });
+    expect(Object.keys(d.features).sort()).toEqual([...new Set(d.flow.steps.map((s: { featureId: string }) => s.featureId))].sort());
+    const ids = (await c.get("/systems/gh/features")).body.data.rows.map((r: { id: string }) => r.id).filter((id: string) => id !== create.featureId);
+    await c.post("/systems/gh/selection", { ids });
+    const after = (await c.get("/systems/gh/flows/issues")).body.data;
+    expect(after.missingFeatures).toEqual([create.featureId]);
+    expect(after.features[create.featureId]).toBeUndefined();
+    expect(Object.keys(after.features)).not.toHaveLength(0);
+  });
+
   it("infer before selection is a 400 with the fix-it message", async () => {
     const c = client();
     await c.post("/systems", { system: "gh", origins: [GITHUB] });

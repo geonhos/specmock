@@ -13,6 +13,8 @@ export const STATE_SYMBOL: Record<StepState, string> = {
 export const OUTCOME_LABEL: Record<FlowRunOutcome, string> = {
   success: STATE_LABEL.success, diff: STATE_LABEL.diff, failed: STATE_LABEL.failed, stopped: "멈춤", cancelled: "취소됨",
 };
+/** Pill state used for the last run's outcome; a cancelled run reads as not finished. */
+export const OUTCOME_STATE: Record<FlowRunOutcome, StepState> = { success: "success", diff: "diff", failed: "failed", stopped: "stopped-empty", cancelled: "pending" };
 export const BASIS_LABEL = { rule: "규칙", claude: "Claude Code", user: "사용자" } as const;
 
 export type Runs = { mock: FlowRun | null; real: FlowRun | null };

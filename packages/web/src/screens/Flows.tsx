@@ -7,14 +7,13 @@ import { FlowList } from "../components/FlowList";
 import { FlowTopBar } from "../components/FlowTopBar";
 import { Leftovers } from "../components/Leftovers";
 import { Notice } from "../components/Notice";
-import { OUTCOME_LABEL } from "../flowModel";
+import { OUTCOME_LABEL, OUTCOME_STATE } from "../flowModel";
 import { useJob } from "../useJob";
 
 export type TargetChoice = "mock" | "real" | "both";
 const TARGETS: Record<TargetChoice, FlowTargetName[]> = { mock: ["mock"], real: ["real"], both: ["mock", "real"] };
 const TARGET_LABEL: Record<FlowTargetName, string> = { mock: "mock", real: "실제" };
 /** Outcome badge colour: reuse the step state colours; a cancelled run stays neutral. */
-const OUTCOME_STATE: Record<FlowRunOutcome, StepState> = { success: "success", diff: "diff", failed: "failed", stopped: "stopped-empty", cancelled: "pending" };
 const asError = (e: unknown) => (e instanceof ApiError ? e : new ApiError(0, "failed", String(e)));
 /** A load failure says what failed and what to do; the server's own message goes in the hint. */
 const loadError = (message: string, e: unknown) => {
@@ -126,7 +125,7 @@ function FlowsOf({ system, jobs, tick, refreshJobs }: Props) {
               ) : null; })}
             </div>
             {notRun.length > 0 ? <p className="notrun">{`실행하지 않은 대상: ${notRun.map((t) => TARGET_LABEL[t]).join(", ")}`}</p> : null}
-            <FlowChart flow={shown.flow} runs={shown.runs} empty={shown.empty} onSave={saveInput} />
+            <FlowChart flow={shown.flow} features={shown.features} runs={shown.runs} empty={shown.empty} onSave={saveInput} />
             <Leftovers runs={shown.runs} />
           </>
         ) : null}

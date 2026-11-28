@@ -1,5 +1,5 @@
 import { Badge } from "@astryxdesign/core/Badge";
-import type { Flow, FlowSource } from "@specmock/ui-server/api-types";
+import type { Flow, FlowFeatureRef, FlowSource } from "@specmock/ui-server/api-types";
 import { useState } from "react";
 import { BASIS_LABEL, edgeLabel, resultOf, stepView, type Runs } from "../flowModel";
 import { BASIS_VARIANT } from "./InputEditor";
@@ -8,7 +8,7 @@ import { StepCard } from "./StepCard";
 
 const ROLE_LABEL = { prep: "준비", main: "본 단계", cleanup: "정리" } as const;
 
-export function FlowChart({ flow, runs, empty, onSave }: { flow: Flow; runs: Runs; empty: string[]; onSave: (stepId: string, slot: string, source: FlowSource) => Promise<void> }) {
+export function FlowChart({ flow, features, runs, empty, onSave }: { flow: Flow; features: Record<string, FlowFeatureRef>; runs: Runs; empty: string[]; onSave: (stepId: string, slot: string, source: FlowSource) => Promise<void> }) {
   const [open, setOpen] = useState<string | null>(null);
   return (
     <ol className="flow-chart">
@@ -33,8 +33,13 @@ export function FlowChart({ flow, runs, empty, onSave }: { flow: Flow; runs: Run
                 </div>
               ) : null}
               <button type="button" className="flow-node-btn" aria-expanded={open === s.id} onClick={() => setOpen(open === s.id ? null : s.id)}>
-                <span className="flow-path">{s.id}</span>
-                <span className="muted">{s.featureId}</span>
+                {features[s.featureId] ? (
+                  <>
+                    <span className="flow-method">{features[s.featureId]!.method}</span>
+                    <span className="flow-path" title={`${s.id} · ${s.featureId}`}>{features[s.featureId]!.path}</span>
+                  </>
+                ) : <span className="flow-path">{s.featureId}</span>}
+                <span className="flow-stepid">{s.id}</span>
                 <span className="flow-role">{ROLE_LABEL[s.role]}</span>
                 {v.mock === "pending" && !runs.real ? <StatePill state="pending" /> : (
                   <>

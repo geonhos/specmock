@@ -29,7 +29,7 @@ export type FeatureListRow = FeatureRow & { summary: string; codes: string[] };
 export type FeatureGroups = { total: number; groups: { group: string; total: number }[] };
 export type FeatureList = { total: number; rows: FeatureListRow[]; groups: string[] };
 export type { AnalyzeSpecResult, ChunkSummary, Feature, FeatureRow, GenerateInfo, IngestSpecResult, Selection, SelectResult, SourceInput } from "@specmock/core";
-export type { Flow, FlowDetail, FlowInput, FlowList, FlowRun, FlowRunOutcome, FlowSource, FlowStep, FlowSummary, FlowTargetName, Leftover, StepResult, StepState } from "@specmock/core";
+export type { Flow, FlowDetail, FlowFeatureRef, FlowInput, FlowList, FlowRun, FlowRunOutcome, FlowSource, FlowStep, FlowSummary, FlowTargetName, Leftover, StepResult, StepState } from "@specmock/core";
 export type FlowRunBody = { targets: FlowTargetNameT[]; cleanup?: boolean };
 export type SafetyState = { on: boolean };
 
